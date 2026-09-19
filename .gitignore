@@ -1,6 +1,13 @@
 .secrets/
 .env
 .env.*
+!.env.example
 node_modules/
-pb_data/
-recordings/
+data/
+web/build/
+web/.svelte-kit/
+web/test-results/
+web/playwright-report/
+pocketbase/pocketbase
+pocketbase/pb_data/
+.worktrees/
