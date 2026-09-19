@@ -1,4 +1,5 @@
-import { seedAllowlist } from '../hooks/setup';
+import { deleteUserByName } from '../hooks/setup';
 export default async function () {
-  await seedAllowlist('+13125550123', 'E2E Rider');
+  await deleteUserByName('E2E Rider');
+  await deleteUserByName('E2E Boss');
 }

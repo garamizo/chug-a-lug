@@ -32,7 +32,8 @@ with an album and a scoreboard to argue about at dinner.
 - **Event: Saturday, December 26, 2026.** Metra runs its Saturday timetable. About 10 users.
 - **Web only, no app stores.** Installable PWA is encouraged, never required.
 - **Works on a phone in a loud bar with one bar of signal.** Big buttons, cached plan, degrades gracefully.
-- **Private.** Accounts are tied to a phone number on an allowlist the admin maintains.
+- **Private.** One shared crew password from the admin, plus your name so likes and comments are yours.
+  No sign-up, no recovery, no per-person accounts; the session lives in a cookie for a year.
 - **Lines:** UP-W (Ogilvie), MD-W (Union Station, turns at Elgin on weekends), BNSF (Union Station).
   Ogilvie and Union are a 5 min walk apart, so the plan can switch lines downtown.
 - **Runs on the admin's own computer.** One machine at home holds the database, the media, and the API
@@ -186,8 +187,9 @@ Recommendation, not yet decided. See the references doc for the alternatives con
 - **Metra proxy**: SvelteKit server routes using `gtfs-realtime-bindings` and `node-gtfs`. Polls Metra every
   30 s, caches, computes "next train from station A to B", and serves the recorded replay in sim mode.
   The only component that talks to Metra.
-- **Auth**: phone number on the admin's allowlist, SMS one-time code to create the account, then
-  phone plus PIN to log in. Recovery is the same SMS code. Implemented as a PocketBase hook calling Twilio Verify.
+- **Auth**: name plus the shared crew password (or the admin password for the Conductor role), checked by a
+  PocketBase hook that creates the identity for that name on first login and returns a one-year token kept
+  in a cookie. No SMS, no email, no recovery flow.
 - **Places**: Overpass (OpenStreetMap) for bars near stations, Photon for search, Google Places (server-side,
   key never leaves the box) for venue-card photos, fetched once per stop and stored on disk.
 - **Uploads**: PocketBase multipart, images compressed in the browser, videos capped at 90 MB because the
@@ -205,7 +207,7 @@ re-reads the feed rather than hard-coding it.
 
 | Milestone | Target | Done when |
 |---|---|---|
-| M0 Skeleton | early Oct | Repo skeleton, PocketBase + SvelteKit running locally, phone-OTP login, Cloudflare Tunnel live at chugalug.app |
+| M0 Skeleton | early Oct | Repo skeleton, PocketBase + SvelteKit running locally, shared-password login, Cloudflare Tunnel live at chugalug.app |
 | M1 Planning | end Oct | Diagram, stop picker, venue cards with Google photos, drafts with real train times, votes, comments, approval vote |
 | M2 Metra proxy | mid Nov | Proxy live and recording, departure banner with both alerts, schedule fallback |
 | M3 Live | end Nov | Check-in, roster, plan edits, broadcasts, drink log, media upload, offline cache |
@@ -234,14 +236,11 @@ Numbered to match the earlier review; each is reversible.
    The server stamps each file with the stop the admin is at, from the latest shared position, or the
    latest check-in if the position is stale. No EXIF reading needed, which also sidesteps iPhones stripping
    GPS from browser uploads. The admin fixes stragglers in the album.
-6. **Phone-number accounts with SMS recovery, via Twilio Verify. Accepted.** The admin pre-loads the ten
-   phone numbers. Signup is phone plus SMS code, then set a PIN. Login is phone plus PIN with a session
-   that lasts months and sends no SMS. Recovery is the SMS code again. Twilio Verify charges $0.05 per
-   successful verification (once at signup, once per reset) plus $0.0083 per SMS actually sent, including
-   resends and mistyped codes. No monthly fee and no phone number to rent, but the Twilio account needs a
-   prepaid balance (minimum $20). Ten signups and a handful of resets is about $1.50 of that balance.
-   Verify skips the US A2P 10DLC business registration that plain Twilio SMS requires, which is why
-   broadcasts stay in-app rather than going out by text.
+6. **Login is a shared crew password plus your name.** Replaces the earlier phone-number plan. The admin
+   hands out one password in the family chat and keeps a second admin password for the Conductor role.
+   The first login with a name creates that identity; the same name on another phone is the same person.
+   The session is a one-year cookie. Trade-off: anyone with the password can pick any name, which is
+   fine for ten relatives and removes Twilio, SMS costs, and PIN resets entirely.
 7. **Domain is chugalug.app.** HTTPS is mandatory on `.app`; Cloudflare Tunnel handles that from home.
 8. **Home server trade-offs.** Simpler and free, but the event depends on your power and internet.
    Mitigations: a UPS, the same Compose file restorable on a $5 VPS from the nightly backup in about

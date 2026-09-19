@@ -1,4 +1,4 @@
-// Disposable test service: never inherits production credentials or Twilio settings.
+// Disposable test service: never inherits production credentials.
 import { spawn } from 'node:child_process';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -14,7 +14,7 @@ const child = spawn('bash', ['scripts/pb-dev.sh', directory], {
   env: {
     ...process.env, PB_SKIP_ENV: '1', PB_HTTP: `127.0.0.1:${port}`,
     PB_ADMIN_EMAIL: 'tests@chugalug.invalid', PB_ADMIN_PASSWORD: 'local-test-password-only',
-    OTP_DEV_CODE: '000000', TWILIO_ACCOUNT_SID: '', TWILIO_AUTH_TOKEN: '', TWILIO_VERIFY_SID: ''
+    CREW_PASSWORD: 'crew-test-password', ADMIN_PASSWORD: 'admin-test-password'
   }
 });
 for (const signal of ['SIGTERM', 'SIGINT']) process.on(signal, () => child.kill(signal));

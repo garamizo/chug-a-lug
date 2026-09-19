@@ -26,7 +26,7 @@ try {
   test = spawn('npm', ['run', 'test:hooks'], {
     cwd: 'web', stdio: 'inherit', env: {
       ...process.env, PB_URL: 'http://127.0.0.1:18090', PB_ADMIN_EMAIL: 'tests@chugalug.invalid',
-      PB_ADMIN_PASSWORD: 'local-test-password-only', OTP_DEV_CODE: '000000'
+      PB_ADMIN_PASSWORD: 'local-test-password-only', CREW_PASSWORD: 'crew-test-password', ADMIN_PASSWORD: 'admin-test-password'
     }
   });
   const [code] = await once(test, 'exit');

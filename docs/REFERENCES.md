@@ -26,7 +26,7 @@ Quick picks are at the top; the long tables follow.
 | Fake GPS | `geolocation-simulator` pattern; Playwright `setGeolocation` in tests | Waypoint player behind a `?sim=1` flag |
 | Mock HTTP in the PWA | MSW | Service-worker interception; same handlers in dev and tests |
 | Leaderboard UI | Trophy UI (shadcn registry) | MIT podium, rankings, achievement toasts |
-| Auth | PocketBase hook + Twilio Verify (phone OTP, then phone + PIN) | Verify needs no US 10DLC registration; ~$0.06 per successful verification |
+| Auth | PocketBase hook, shared crew password + name | No third party; identities auto-created by name; one-year token in a cookie |
 | Home hosting | Cloudflare Tunnel (`cloudflared`) | Free, TLS at the edge (required for `.app`), no port forwarding |
 | Large uploads | tus (`@tus/server`) | Chunked resumable uploads; Cloudflare free tier caps one request at 100 MB |
 | Background tracking (later) | OwnTracks | Only maintained OSS stack with native iOS and Android background tracking to your own HTTP endpoint |
@@ -229,7 +229,7 @@ Verdict: Cloudflare Tunnel, since `chugalug.app` is HSTS-preloaded and the tunne
 | better-auth `phoneNumber` plugin ([docs](https://better-auth.com/docs/plugins/phone-number)) | MIT | see above | `sendOTP` and `sendPasswordResetOTP` hooks; you bring the SMS provider; note [issue 11297](https://github.com/better-auth/better-auth/issues/11297) on OTPs stored in clear |
 | Firebase Authentication (phone) | proprietary | n/a | Free phone verification tier; adds a Google dependency and client SDK |
 
-Verdict: PocketBase hook, roughly 80 lines: allowlisted `crew.phone`, Twilio Verify start/check, bcrypt PIN, long-lived token; recovery is the same OTP path.
+Verdict (revised): a shared crew password plus a display name, checked by a 40-line PocketBase hook that creates the identity on first login. Twilio Verify and the phone plugins above were evaluated and dropped; they stay listed in case per-person accounts are ever wanted.
 
 ---
 

@@ -3,7 +3,8 @@ import { defineConfig, devices } from '@playwright/test';
 process.env.PB_URL = 'http://127.0.0.1:18093';
 process.env.PB_ADMIN_EMAIL = 'tests@chugalug.invalid';
 process.env.PB_ADMIN_PASSWORD = 'local-test-password-only';
-process.env.OTP_DEV_CODE = '000000';
+process.env.CREW_PASSWORD = 'crew-test-password';
+process.env.ADMIN_PASSWORD = 'admin-test-password';
 
 export default defineConfig({
   testDir: 'tests/e2e',

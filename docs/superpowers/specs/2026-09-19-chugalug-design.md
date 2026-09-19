@@ -32,13 +32,12 @@ phone (PWA)  --https-->  Cloudflare edge  --tunnel-->  home box (Docker Compose)
                                                         │     └── /api/places/*  Google Places fetch-once
                                                         ├── pocketbase Go binary, port 8090
                                                         │     ├── SQLite, auth, collections, SSE realtime, files
-                                                        │     └── pb_hooks: OTP signup/recovery, media tagging
+                                                        │     └── pb_hooks: shared-password login, media tagging
                                                         └── cloudflared  outbound tunnel, no open ports
 ```
 
 Three processes. PocketBase owns all persistent state and realtime. The SvelteKit server owns everything
-that talks to third parties (Metra, Google, Twilio is the exception: called from a PocketBase hook because
-it must mint auth tokens). The browser talks to both: PocketBase directly for records and SSE, SvelteKit
+that talks to third parties (Metra, Google). The browser talks to both: PocketBase directly for records and SSE, SvelteKit
 for pages and proxy endpoints.
 
 Why not one process: PocketBase gives auth, admin UI, file storage, migrations, and SSE for free and is a
@@ -56,7 +55,7 @@ chug-a-lug/
   pocketbase/
     Dockerfile                # pins the PocketBase version
     pb_migrations/            # JS migrations, one file per schema change
-    pb_hooks/                 # JS hooks: otp.pb.js, media.pb.js, guards.pb.js
+    pb_hooks/                 # JS hooks: login.pb.js, media.pb.js, guards.pb.js
   web/
     package.json, svelte.config.js, vite.config.ts
     src/lib/labels.ts         # developer term -> UI label (the glossary)
@@ -77,10 +76,9 @@ chug-a-lug/
 ### 2.2 Environment and secrets
 
 All secrets live in `.env` on the home box, loaded by Compose. `.env.example` documents each.
-`METRA_API_TOKEN`, `GOOGLE_PLACES_KEY`, `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, `TWILIO_VERIFY_SID`,
-`CLOUDFLARE_TUNNEL_TOKEN`, `PB_ADMIN_EMAIL`, `PB_ADMIN_PASSWORD`, `PB_URL` (internal, `http://pocketbase:8090`),
+`METRA_API_TOKEN`, `GOOGLE_PLACES_KEY`,
+`CREW_PASSWORD`, `ADMIN_PASSWORD`, `CLOUDFLARE_TUNNEL_TOKEN`, `PB_ADMIN_EMAIL`, `PB_ADMIN_PASSWORD`, `PB_URL` (internal, `http://pocketbase:8090`),
 `PUBLIC_PB_URL` (what the browser uses: `http://localhost:8090` in dev, `https://pb.chugalug.app` in prod),
-`OTP_DEV_CODE` (dev only, honored only when PocketBase runs with `--dev`),
 `SIM` (0/1), `SIM_RECORDING`, `SIM_START`, `SIM_RATE`.
 
 ## 3. Data model (PocketBase collections)
@@ -90,8 +88,7 @@ America/Chicago. Access rules in brackets: A = admin only, U = any authenticated
 
 | Collection | Fields | Rules |
 |---|---|---|
-| `users` (auth) | `phone` (unique, E.164), `name`, `is_admin` bool, `share_position` bool, `home_station` text, `left_early` bool | list/view U, update O (except `is_admin`), create via hook only |
-| `allowlist` | `phone` (unique), `name`, `is_admin` | A |
+| `users` (auth) | `name` (display, first-seen spelling), `name_key` (unique, lowercased), `is_admin` bool, `share_position` bool, `home_station` text, `left_early` bool | list/view U, update O (except `name`, `name_key`, `is_admin`, `password`), create via hook only |
 | `stations` | `stop_id` (GTFS), `name`, `route_ids` json, `lat`, `lon` | view U, write A (seeded from GTFS) |
 | `itineraries` | `title`, `status` enum draft/locked/archived, `event_date`, `created_by` rel users, `locked_at` | list/view U, create U, update O or A, only A may set locked |
 | `stops` | `itinerary` rel, `order` int, `name`, `kind` enum bar/restaurant/other, `station` rel, `place_id`, `address`, `lat`, `lon`, `hours` json, `phone`, `confirmed_open` bool, `dwell_min` int, `walk_min` int, `notes`, `meet_point` text | view U, create/update U while itinerary draft; A always |
@@ -118,18 +115,25 @@ Notes
 
 ## 4. Authentication
 
-Flow (PocketBase hooks in `otp.pb.js`, Twilio Verify):
-1. `POST /api/crawl/otp/start {phone}`: normalize to E.164; reject unless in `allowlist`; call Verify
-   `Verifications.create`; respond 204. Rate limit 5 per phone per hour.
-2. `POST /api/crawl/otp/check {phone, code, pin}`: call Verify `VerificationChecks.create`; on approved,
-   create the `users` record if missing (name and is_admin copied from allowlist) and set its password to
-   the PIN; respond with a PocketBase auth token (`$tokens.recordAuthToken`).
-3. Login: standard `pb.collection('users').authWithPassword(phone, pin)` with `phone` configured as the only
-   identity field (`passwordAuth.identityFields = ["phone"]`, unique index on `phone`) and the password
-   field's `min` set to 4. Token lifetime 180 days (`authToken.duration = 15552000`).
-4. Recovery = step 1 and 2 again with a new PIN.
-5. Dev mode: when PocketBase runs with `--dev` and `OTP_DEV_CODE` is set, step 1 skips Twilio and step 2
-   accepts only that code. The production container never passes `--dev`, so the bypass cannot be enabled there.
+There are no per-person credentials. The admin shares one crew password with the family (and keeps a
+separate admin password). A person identifies themself by name so votes, comments, drinks, and uploads
+carry a name. The `users` record for a name is created on first login; nobody signs up or recovers anything.
+
+Flow (PocketBase hook `pb_hooks/login.pb.js`):
+1. `POST /api/crawl/login {name, password}`: normalize the name (trim, collapse spaces, 2 to 32 chars of
+   letters, digits, spaces, `.`, `'`, `-`; `name_key` = lowercase). Compare `password` in constant time
+   against `CREW_PASSWORD` and `ADMIN_PASSWORD` from the environment. Wrong password → 401.
+   Rate limit: 20 attempts per client IP per 15 minutes (429), persisted in the `_crawl_limits` table.
+2. Find the user by `name_key` or create it with a random unused password and `verified: true`.
+   The admin password sets `is_admin = true`; the crew password leaves the flag as it is, so the admin
+   can log in from any device with either password without losing the role.
+3. Respond `{token, record}`; `token` is a PocketBase auth token valid for one year (`authToken.duration = 31536000`).
+4. The browser keeps the token in a `pb_auth` cookie on the app origin (SameSite=Lax, Secure in production,
+   one-year Max-Age, readable by the app's JavaScript because the SDK sends it as an `Authorization` header
+   to `pb.chugalug.app`). Logout deletes the cookie. Same name on another phone = same identity.
+5. Password auth, OTP, and MFA on the `users` collection are disabled; the hook is the only way in.
+   Rotating `CREW_PASSWORD` does not invalidate existing sessions; to force everyone out, change the
+   collection's token secret in the PocketBase admin UI.
 
 Admin role: `users.is_admin`. Collection rules reference `@request.auth.is_admin = true`.
 
@@ -237,7 +241,7 @@ hours, phone. Budget guard: refuse when the month's counter exceeds 800 photo ca
 |---|---|
 | Metra RT fetch fails or stale | keep last feed, `status.mode = stale`, banner shows schedule times with tag |
 | Static GTFS download fails | keep the previous import, log, retry in 10 min |
-| Twilio error | 502 with a friendly message; dev code path unaffected |
+| Login not configured (no `CREW_PASSWORD`) | 503 with a message; nothing else works until `.env` is fixed |
 | Google Places error or budget | stop is created without photos; admin sees a retry button |
 | SSE disconnect | auto-reconnect, refetch collections, toast if offline > 60 s |
 | Upload over 90 MB | client-side check with a message before upload starts |
@@ -246,11 +250,11 @@ hours, phone. Budget guard: refuse when the month's counter exceeds 800 photo ca
 
 ## 14. Testing
 
-- Unit (Vitest): phone normalization, `nextTrips` against a fixture GTFS subset, banner state machine,
+- Unit (Vitest): label map, `nextTrips` against a fixture GTFS subset, banner state machine,
   recompute with hold/cancel/add cases, GTFS `>24:00` times, sim clock math.
-- Hook tests: run PocketBase on a temp `pb_data`, hit OTP endpoints with the dev code, assert user creation
-  and token; media tagging with seeded positions.
-- E2E (Playwright, mobile viewport): login, create draft, add stop, lock, live banner with MSW-mocked
+- Hook tests: run PocketBase on a temp `pb_data` with test passwords, hit the login endpoint, assert identity
+  creation, case-insensitive reuse, admin flag, access rules, and rate limits; media tagging with seeded positions.
+- E2E (Playwright, mobile viewport): name + password login with cookie persistence, create draft, add stop, lock, live banner with MSW-mocked
   proxy at fixed sim time, check-in, broadcast ack, upload a small image.
 - Manual: the December Saturday field test with real phones, and a full-day replay from the recording.
 

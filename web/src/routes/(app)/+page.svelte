@@ -11,6 +11,7 @@
     <li><strong>{label(phase as 'planningPhase' | 'livePhase' | 'wrapUpPhase')}</strong><span>{copy.comingSoon}</span></li>
   {/each}
 </ul>
+<p>{copy.notYou}</p>
 <button class="secondary" onclick={logout} data-testid="logout">{copy.logout}</button>
 
 <style>
