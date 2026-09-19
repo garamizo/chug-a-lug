@@ -11,8 +11,9 @@
 - The site is public only while the stack is up: `docker compose stop` takes it offline, `docker compose up -d`
   brings it back. The tunnel reconnects on its own after reboots because of `restart: unless-stopped`.
 - Data: `data/pb_data` (SQLite + uploads), `data/pb_data/backups` (PocketBase zips), `data/backups/snapshot-*` (host copies).
-  The pocketbase container runs as root, so files under `data/pb_data` are root-owned; use `sudo` or a
-  throwaway container to delete them. The backup script reads through the API, so it needs no special rights.
+  The pocketbase container runs as uid 1000 (your user), so everything under `data/` stays yours. If a
+  root-owned file ever appears there, fix it with
+  `docker run --rm -v "$PWD/data:/d" alpine sh -c 'chown -R 1000:1000 /d'`.
 - Secrets: `.env` (never committed). Metra token file in `.secrets/`.
 - Dashboards: Cloudflare Zero Trust → Networks → Tunnels → `chugalug`; PocketBase admin at http://127.0.0.1:8090/_/ from the box.
 
