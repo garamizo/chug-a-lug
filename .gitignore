@@ -1,0 +1,6 @@
+.secrets/
+.env
+.env.*
+node_modules/
+pb_data/
+recordings/
