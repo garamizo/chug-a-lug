@@ -1,15 +1,9 @@
-import PocketBase, { BaseAuthStore, type AuthRecord, type RecordModel } from 'pocketbase';
+import PocketBase, { BaseAuthStore, type AuthRecord } from 'pocketbase';
 import { writable } from 'svelte/store';
 import { env } from '$env/dynamic/public';
+import type { UserRecord } from './types';
 
-export type UserRecord = RecordModel & {
-  name: string;
-  name_key: string;
-  is_admin: boolean;
-  share_position: boolean;
-  home_station: string;
-  left_early: boolean;
-};
+export type { UserRecord } from './types';
 
 const COOKIE = 'pb_auth';
 const ONE_YEAR = 60 * 60 * 24 * 365;
