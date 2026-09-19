@@ -4,6 +4,8 @@
 - Home box: `~/chug-a-lug`, Docker Compose services `pocketbase`, `web`, `cloudflared` (the tunnel is in the
   `public` profile, so `docker compose --profile public up -d` starts all three).
 - Data: `data/pb_data` (SQLite + uploads), `data/pb_data/backups` (PocketBase zips), `data/backups/snapshot-*` (host copies).
+  The pocketbase container runs as root, so files under `data/pb_data` are root-owned; use `sudo` or a
+  throwaway container to delete them. The backup script reads through the API, so it needs no special rights.
 - Secrets: `.env` (never committed). Metra token file in `.secrets/`.
 - Dashboards: Cloudflare Zero Trust → Networks → Tunnels → `chugalug`; PocketBase admin at http://127.0.0.1:8090/_/ from the box.
 
