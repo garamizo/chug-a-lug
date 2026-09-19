@@ -1,0 +1,12 @@
+stop_id,stop_name,stop_desc,stop_lat,stop_lon,zone_id,stop_url,wheelchair_boarding
+OTC,"Chicago OTC",,41.8822222,-87.6405556,1,,1
+CUS,"Chicago Union Station",,41.8788889,-87.6388889,1,,1
+OAKPARK,Oak Park,,41.8872222,-87.7936111,2,,1
+ELMHURST,Elmhurst,,41.9008333,-87.9425000,3,,1
+WHEATON,Wheaton,,41.8636111,-88.1069444,4,,1
+GENEVA,Geneva,,41.8816667,-88.3100000,4,,1
+FRANKLINPK,Franklin Park,,41.9350000,-87.8655556,2,,1
+ELGIN,Elgin,,42.0361111,-88.2861111,4,,1
+LAGRANGE,La Grange Road,,41.8144444,-87.8694444,3,,1
+NAPERVILLE,Naperville,,41.7802778,-88.1466667,4,,1
+JOLIET,Joliet,,41.5250000,-88.0777778,4,,1

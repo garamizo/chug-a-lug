@@ -1,0 +1,5 @@
+route_id, route_short_name, route_long_name, route_desc, agency_id, route_type, route_color, route_text_color, route_url
+UP-W, UP-W, Union Pacific West, , METRA, 2, FE8D81, 000000,
+MD-W, MD-W, Milwaukee West, , METRA, 2, F1AD0E, 000000,
+BNSF, BNSF, Burlington Northern, , METRA, 2, 29C233, 000000,
+HC, HC, Heritage Corridor, , METRA, 2, 550E0C, FFFFFF,
