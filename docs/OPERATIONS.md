@@ -1,12 +1,15 @@
 # Operations
 
 ## Where things live
-- Home box: `~/chug-a-lug`, Docker Compose services `pocketbase` and `web`. The Cloudflare Tunnel runs as a
-  host systemd service (`sudo cloudflared service install <token>`), enabled at boot, and points the public
-  hostnames at `http://localhost:3000` (chugalug.app) and `http://localhost:8090` (pb.chugalug.app).
-  `systemctl status cloudflared` shows it; `journalctl -u cloudflared -f` tails it.
-- Never run the host service and the Compose `public` profile at the same time on the same box; Cloudflare
-  would split traffic across both. The Compose profile (host networking, same origins) is for the VPS fallback.
+- Home box: `~/chug-a-lug`, Docker Compose services `pocketbase`, `web`, and `cloudflared`. The tunnel
+  connector runs in the `cloudflared` container using `CLOUDFLARE_TUNNEL_TOKEN` from `.env`; the tunnel's
+  public hostnames point at the Docker service names `http://web:3000` (chugalug.app) and
+  `http://pocketbase:8090` (pb.chugalug.app). `docker compose logs -f cloudflared` shows
+  "Registered tunnel connection" when it is up.
+- Do not also install cloudflared as a host systemd service; two connectors with one token split the traffic.
+  If one exists: `sudo cloudflared service uninstall` (removes the unit and its token file).
+- The site is public only while the stack is up: `docker compose stop` takes it offline, `docker compose up -d`
+  brings it back. The tunnel reconnects on its own after reboots because of `restart: unless-stopped`.
 - Data: `data/pb_data` (SQLite + uploads), `data/pb_data/backups` (PocketBase zips), `data/backups/snapshot-*` (host copies).
   The pocketbase container runs as root, so files under `data/pb_data` are root-owned; use `sudo` or a
   throwaway container to delete them. The backup script reads through the API, so it needs no special rights.
@@ -54,12 +57,12 @@ Migrations apply automatically when the `pocketbase` container starts. Environme
 
 ## Disaster fallback (home internet or power is out on event day)
 1. On any Linux VPS: install Docker, `git clone` the repo, copy `.env` and the latest `data/backups/snapshot-*` over.
-2. Restore as above and start the stack with `docker compose --profile public up -d`. The tunnel token in
-   `.env` moves with it; Cloudflare routes to whichever `cloudflared` is connected, so stop the one at home
-   first (`sudo systemctl stop cloudflared`) if it is still alive.
+2. Restore as above and `docker compose up -d`. The tunnel token in `.env` moves with it; Cloudflare routes
+   to whichever `cloudflared` is connected, so `docker compose stop cloudflared` at home first if that box
+   is still alive.
 3. About 15 minutes; rehearse once before December.
 
 ## Rotate a secret
 Edit `.env`, then `docker compose up -d --force-recreate <service>`. The hooks read `CREW_PASSWORD`,
 `ADMIN_PASSWORD`, and the Metra token at request time from the container environment; the Cloudflare
-token lives in the host service (`sudo cloudflared service uninstall`, then install with the new token).
+token is read by the `cloudflared` container at start (`docker compose up -d --force-recreate cloudflared`).

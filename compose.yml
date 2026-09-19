@@ -26,14 +26,12 @@ services:
     ports:
       - "127.0.0.1:3000:3000"
 
-  # Optional. The home box runs cloudflared as a systemd service instead (see docs/OPERATIONS.md).
-  # This profile exists for the VPS fallback. Host networking lets it reach the same
-  # localhost:3000 / localhost:8090 origins the Cloudflare hostname config points at.
+  # Cloudflare Tunnel connector. The tunnel's public hostnames point at the Docker service names
+  # web:3000 and pocketbase:8090, which only resolve on this Compose network. Do not also run
+  # cloudflared as a host systemd service: it cannot resolve those names and would take half the traffic.
   cloudflared:
     image: cloudflare/cloudflared:latest
     restart: unless-stopped
-    profiles: [public]
-    network_mode: host
     command: tunnel --no-autoupdate run
     environment:
       TUNNEL_TOKEN: ${CLOUDFLARE_TUNNEL_TOKEN:-}
