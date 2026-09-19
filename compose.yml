@@ -1,0 +1,38 @@
+services:
+  pocketbase:
+    build: ./pocketbase
+    restart: unless-stopped
+    env_file: .env
+    volumes:
+      - ./data/pb_data:/pb/pb_data
+      - ./pocketbase/pb_hooks:/pb/pb_hooks:ro
+      - ./pocketbase/pb_migrations:/pb/pb_migrations:ro
+    ports:
+      - "127.0.0.1:8090:8090"
+
+  web:
+    build:
+      context: ./web
+      args:
+        PUBLIC_PB_URL: ${PUBLIC_PB_URL:?Set PUBLIC_PB_URL in .env}
+    restart: unless-stopped
+    environment:
+      ORIGIN: ${ORIGIN:?Set ORIGIN in .env}
+      PUBLIC_PB_URL: ${PUBLIC_PB_URL:?Set PUBLIC_PB_URL in .env}
+      PB_URL: http://pocketbase:8090
+    depends_on:
+      pocketbase:
+        condition: service_healthy
+    ports:
+      - "127.0.0.1:3000:3000"
+
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    restart: unless-stopped
+    profiles: [public]
+    command: tunnel --no-autoupdate run
+    environment:
+      TUNNEL_TOKEN: ${CLOUDFLARE_TUNNEL_TOKEN:-}
+    depends_on:
+      - web
+      - pocketbase

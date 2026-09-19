@@ -1,0 +1,77 @@
+// Developer term -> UI label. The README glossary is the source of truth; keep them in sync.
+export const labels = {
+  planningPhase: 'Route Planner',
+  itineraryDraft: 'Draft',
+  lockedItinerary: 'The Route',
+  approvalVote: 'Highball',
+  like: 'Cheers',
+  dislike: 'Pass',
+  livePhase: 'Live',
+  wrapUpPhase: 'Closing Time',
+  admin: 'Conductor',
+  users: 'Crew',
+  userRoster: 'Crew Board',
+  stop: 'Stop',
+  dwell: 'Layover',
+  trainLeg: 'Run',
+  walk: 'Walk',
+  venueCard: 'Stop card',
+  departureBanner: 'Departure Board',
+  firstWarning: 'Last Call',
+  leaveNow: 'All Aboard',
+  locationSharing: 'Position Report',
+  checkIn: 'Punch',
+  reroute: 'Reroute',
+  hold: 'Hold',
+  cancelStop: 'Annul',
+  addStop: 'Extra',
+  broadcast: 'Bulletin',
+  eventLog: 'Train Sheet',
+  drinkLog: 'Tab',
+  scoreboard: 'Hall of Fame',
+  awards: 'Golden Spikes',
+  media: 'Freight',
+  album: 'Roundhouse',
+  simulationMode: 'Shakedown Run',
+  simulationClock: 'Railroad Time',
+  meetingPoint: 'Meet Point',
+  straggler: 'Caboose',
+  leftEarly: 'Deadhead',
+  homeStation: 'Home Terminal'
+} as const;
+
+export type LabelKey = keyof typeof labels;
+
+export function label(key: LabelKey): string {
+  return labels[key];
+}
+
+// UI copy lives alongside the glossary so it can be changed in one place.
+export const copy = {
+  appTitle: 'Chug-a-Lug Choo-Choo',
+  appSubtitle: 'Your next stop starts here.',
+  loginTitle: 'Welcome aboard',
+  loginIntro: 'Use your phone number and PIN to join your crew.',
+  phone: 'Phone number',
+  phonePlaceholder: '(312) 555-0100',
+  pin: 'PIN',
+  newPin: 'Choose a PIN (4–8 digits)',
+  code: 'Code from the text message',
+  login: 'Log in',
+  signup: 'Join the Crew or reset your PIN',
+  sendCode: 'Text me a code',
+  verify: 'Set PIN and log in',
+  backToLogin: 'Back to log in',
+  changePhone: 'Use a different number',
+  codeSent: 'Enter the code we sent to your phone and choose a PIN.',
+  working: 'Please wait…',
+  phoneError: 'Enter a 10-digit US phone number.',
+  pinError: 'PIN must be 4 to 8 digits.',
+  genericError: 'Something went wrong. Please try again.',
+  welcome: 'Welcome aboard,',
+  role: 'You are part of the',
+  comingSoon: 'Coming soon',
+  homeIntro: 'You’re ready for the ride. Planning, live updates, and the album will arrive next.',
+  logout: 'Log out',
+  footer: 'Family, friends, and the next train.',
+} as const;
