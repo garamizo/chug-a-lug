@@ -5,6 +5,8 @@ services:
     # Run as the host user so files under ./data stay owned by you (backups, cleanup, no sudo).
     user: "1000:1000"
     env_file: .env
+    environment:
+      WEB_INTERNAL_URL: http://web:3000
     volumes:
       - ./data/pb_data:/pb/pb_data
       - ./pocketbase/pb_hooks:/pb/pb_hooks:ro
@@ -18,10 +20,15 @@ services:
       args:
         PUBLIC_PB_URL: ${PUBLIC_PB_URL:?Set PUBLIC_PB_URL in .env}
     restart: unless-stopped
+    env_file: .env
     environment:
       ORIGIN: ${ORIGIN:?Set ORIGIN in .env}
       PUBLIC_PB_URL: ${PUBLIC_PB_URL:?Set PUBLIC_PB_URL in .env}
       PB_URL: http://pocketbase:8090
+      DATA_DIR: /data
+    volumes:
+      - ./data/gtfs:/data/gtfs
+      - ./data/places:/data/places
     depends_on:
       pocketbase:
         condition: service_healthy

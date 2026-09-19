@@ -28,6 +28,7 @@ build:
     cd web && npm run build
 
 up:
+    mkdir -p data/gtfs data/places
     docker compose up -d --build
 
 down:

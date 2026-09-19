@@ -10,6 +10,8 @@ await new Promise((resolve, reject) => {
   probe.listen(18090, '127.0.0.1', resolve);
 });
 await new Promise(resolve => probe.close(resolve));
+process.env.WEB_INTERNAL_URL = 'http://127.0.0.1:18095';
+process.env.INTERNAL_SECRET = 'hooks-test-secret';
 const server = spawn(process.execPath, ['scripts/pb-test-server.mjs', '18090'], { stdio: ['ignore', 'ignore', 'inherit'] });
 const serverExit = once(server, 'exit');
 let test;
