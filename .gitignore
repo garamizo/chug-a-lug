@@ -14,3 +14,4 @@ pocketbase/pb_data/
 .svelte-kit/
 test-results/
 playwright-report/
+.superpowers/
