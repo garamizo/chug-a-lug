@@ -13,7 +13,7 @@
     "prepare": "svelte-kit sync",
     "check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
     "test": "vitest run tests/unit",
-    "test:hooks": "vitest run tests/hooks",
+    "test:hooks": "vitest run tests/hooks --no-file-parallelism",
     "test:e2e": "playwright test"
   },
   "dependencies": {
