@@ -28,21 +28,25 @@ export function nextTrips(s: Schedule, from: string, to: string, afterMin: numbe
   return out.slice(0, limit);
 }
 
-function walk(from: string, to: string, minutes: number, readyMin: number): LegPlan {
-  return { kind: 'walk', segments: [{ kind: 'walk', minutes, from, to }], departMin: readyMin, arriveMin: readyMin + minutes };
+function walk(from: string, to: string, minutes: number, atStationMin: number): LegPlan {
+  return { kind: 'walk', segments: [{ kind: 'walk', minutes, from, to }], departMin: atStationMin, arriveMin: atStationMin + minutes };
 }
 
-/** Station to station: a walk, one train, or two trains via downtown (OTC <-> Union is a 6 min walk). */
-export function planLeg(s: Schedule, from: string, to: string, readyMin: number, date: string): LegPlan {
-  if (from === to) return walk(from, to, 0, readyMin);
-  if (DOWNTOWN.has(from) && DOWNTOWN.has(to)) return walk(from, to, DOWNTOWN_WALK_MIN, readyMin);
-  const direct = nextTrips(s, from, to, readyMin, date, 1)[0];
+/**
+ * Station to station: a walk, one train, or two trains via downtown (OTC <-> Union is a 6 min
+ * walk). `atStationMin` is the minute you are physically at (or ready to leave from) `from` —
+ * callers such as recomputeLegs pass the venue's ready time plus its walk-to-station time.
+ */
+export function planLeg(s: Schedule, from: string, to: string, atStationMin: number, date: string): LegPlan {
+  if (from === to) return walk(from, to, 0, atStationMin);
+  if (DOWNTOWN.has(from) && DOWNTOWN.has(to)) return walk(from, to, DOWNTOWN_WALK_MIN, atStationMin);
+  const direct = nextTrips(s, from, to, atStationMin, date, 1)[0];
   if (direct) return { kind: 'train', segments: [{ kind: 'train', ...direct }], departMin: direct.dep, arriveMin: direct.arr };
   let best: LegPlan | null = null;
   for (const d1 of DOWNTOWN) {
     for (const d2 of DOWNTOWN) {
       if (d1 === from || d2 === to) continue;
-      const c1 = nextTrips(s, from, d1, readyMin, date, 1)[0];
+      const c1 = nextTrips(s, from, d1, atStationMin, date, 1)[0];
       if (!c1) continue;
       const hop = d1 === d2 ? 0 : DOWNTOWN_WALK_MIN;
       const c2 = nextTrips(s, d2, to, c1.arr + hop, date, 1)[0];
@@ -55,7 +59,7 @@ export function planLeg(s: Schedule, from: string, to: string, readyMin: number,
       }
     }
   }
-  return best ?? { kind: 'impossible', segments: [], departMin: readyMin, arriveMin: readyMin };
+  return best ?? { kind: 'impossible', segments: [], departMin: atStationMin, arriveMin: atStationMin };
 }
 
 /** Walk the itinerary: at stop 1 at startMin, dwell, walk to the station, ride, walk to the next venue. */
