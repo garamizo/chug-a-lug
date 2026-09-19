@@ -60,4 +60,30 @@ describe('static loader', () => {
     expect(calls.filter((u) => u.endsWith('schedule.zip'))).toHaveLength(2);
     expect(loader.status().publishedAt).toBe('v2');
   });
+
+  it('keeps the previous schedule when a re-download fails, and retries on the next check', async () => {
+    const dataDir = mkdtempSync(join(tmpdir(), 'gtfs-'));
+    let published = 'v1';
+    let failZip = false;
+    const fetchImpl = (async (input: string | URL | Request) => {
+      const url = String(input);
+      if (url.endsWith('published.txt')) return new Response(published);
+      if (failZip) throw new Error('network down');
+      return new Response(zipBytes);
+    }) as unknown as typeof fetch;
+    const loader = createStaticLoader({ url: 'http://x/schedule.zip', publishedUrl: 'http://x/published.txt', dataDir, fetchImpl, refreshMs: 0 });
+
+    const first = await loader.getSchedule();
+    expect(loader.status().publishedAt).toBe('v1');
+
+    published = 'v2';
+    failZip = true;
+    const second = await loader.getSchedule();
+    expect(second.trips.length).toBe(first.trips.length);
+    expect(loader.status().publishedAt).toBe('v1');
+
+    failZip = false;
+    await loader.getSchedule();
+    expect(loader.status().publishedAt).toBe('v2');
+  });
 });

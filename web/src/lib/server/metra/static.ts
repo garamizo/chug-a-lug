@@ -51,13 +51,20 @@ export function createStaticLoader(cfg: StaticConfig) {
     if (schedule && published === status.publishedAt) return schedule;
     const cached = schedule ? null : await readCache();
     if (cached && cached.publishedAt === published) return build(cached.bytes, published, 'cache');
-    const res = await fetchImpl(cfg.url);
-    if (!res.ok) throw new Error(`schedule.zip HTTP ${res.status}`);
-    const bytes = new Uint8Array(await res.arrayBuffer());
-    await mkdir(dir, { recursive: true });
-    await writeFile(zipPath, bytes);
-    await writeFile(publishedPath, published);
-    return build(bytes, published, 'download');
+    try {
+      const res = await fetchImpl(cfg.url);
+      if (!res.ok) throw new Error(`schedule.zip HTTP ${res.status}`);
+      const bytes = new Uint8Array(await res.arrayBuffer());
+      await mkdir(dir, { recursive: true });
+      await writeFile(zipPath, bytes);
+      await writeFile(publishedPath, published);
+      return build(bytes, published, 'download');
+    } catch (err) {
+      if (schedule) { console.warn('[metra] schedule.zip download failed, keeping previous schedule:', (err as Error).message); return schedule; }
+      const fallback = await readCache();
+      if (fallback) { console.warn('[metra] schedule.zip download failed, using cached schedule:', (err as Error).message); return build(fallback.bytes, fallback.publishedAt, 'cache'); }
+      throw err;
+    }
   }
 
   return {

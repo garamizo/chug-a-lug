@@ -13,9 +13,22 @@ export const GET: RequestHandler = async ({ request, url }) => {
   const date = url.searchParams.get('date') ?? '2026-12-26';
   if (!from || !to || !/^\d{4}-\d{2}-\d{2}$/.test(date)) throw error(400, 'from, to and date=YYYY-MM-DD are required.');
   const after = url.searchParams.get('after');
-  const limit = Math.min(10, Math.max(1, Number(url.searchParams.get('limit') ?? 3)));
-  const afterMin = minutesOfDay(date, after ? new Date(after) : new Date());
-  const s = await metra.getSchedule();
+  let afterDate = new Date();
+  if (after) {
+    afterDate = new Date(after);
+    if (Number.isNaN(afterDate.getTime())) throw error(400, 'after must be a valid ISO date-time.');
+  }
+  const limitParam = url.searchParams.get('limit');
+  const limitNum = limitParam === null ? 3 : Number(limitParam);
+  if (Number.isNaN(limitNum)) throw error(400, 'limit must be a number.');
+  const limit = Math.min(10, Math.max(1, limitNum));
+  const afterMin = minutesOfDay(date, afterDate);
+  let s;
+  try {
+    s = await metra.getSchedule();
+  } catch {
+    throw error(503, 'Metra schedule is not available yet. Try again in a minute.');
+  }
   const trips: NextTrip[] = nextTrips(s, from, to, afterMin, date, limit).map((c) => ({
     tripId: c.tripId, routeId: c.routeId, headsign: c.headsign,
     schedDepart: localToUtc(date, c.dep).toISOString(), schedArrive: localToUtc(date, c.arr).toISOString(),
