@@ -94,6 +94,12 @@ client-side:
 and a single **Save** at the bottom. Nothing reaches the database until Save. A red bar across the
 top says the route is live and the crew will see the change when it is saved.
 
+Adding a stop leaves the editor for the venue picker, which would throw the staged change away with
+the component, so the whole staged plan is written to `sessionStorage` before navigating and restored
+on the way back. "Fix the layovers, then add a bar" has to work in that order; it is the ordinary
+sequence, not an edge case. New stops are given a real PocketBase id when they are staged rather than
+a placeholder, so the preview, the anchor and a retried save all refer to the same record.
+
 ### 3.2 Preview
 
 Staged edits need leg times before they are written. `POST /api/plan/preview` (authenticated):
@@ -124,20 +130,33 @@ annul LaGrange or shorten the layover here."
 
 `POST /api/plan/commit` (admin only), one request, in this order:
 
-1. Re-run the preview server-side on the submitted plan and reject with 409 if it is incoherent. The
-   client's gate is a courtesy; this is the guard.
-2. Create the anchor `checkins` row with `at` = the server's now.
-3. Apply stop deletes, updates and creates.
-4. `await recomputeItinerary(id)` — anchored, so the legs match the preview.
-5. Create the `broadcasts` row, if the Conductor kept one.
-6. Append `event_log { kind: 'plan_edit', payload: diff }`.
+1. **Reconcile.** Load the itinerary's stops. Every submitted id and every id in `removed` must be a
+   stop of *this* itinerary, and the persisted set minus `removed` must be exactly the submitted
+   existing stops. Anything else means the route moved under the editor — `409 stale`, nothing
+   written, reload and start again. Without this the next step would validate one plan and step 4
+   would recompute a different one.
+2. **Validate.** Plan the legs from the submitted stops with the anchor at the server's now, and run
+   the cohesion gate. Incoherent means `409` with the blockers; nothing is written. The client's gate
+   is a courtesy; this is the guard.
+3. **Apply the stops.** Deletes, then updates, then creates. A new stop carries an id the editor
+   generated, so every write in this step is idempotent: a delete of an already-deleted stop is
+   success, an update is naturally repeatable, and a create that collides with its own id means the
+   previous attempt got that far.
+4. **Anchor.** Create the `checkins` row with `at` = the server's now. New stops already exist by
+   then, so the crew can be standing in one this very commit created.
+5. **Recompute** (`await recomputeItinerary(id)`) — anchored, so the legs match what step 2 validated.
+   Its `impossible` count comes back in the response; it should always be zero, and if it is not, the
+   editor says so rather than leaving a broken route looking saved.
+6. **Bulletin**, if the Conductor kept one, created with an id the editor generated so a retry cannot
+   say the same thing twice.
+7. **Train Sheet**: `event_log { kind: 'plan_edit', payload: diff }`.
 
-PocketBase has no cross-request transaction, so this is ordered rather than atomic. The order is
-chosen so a failure part-way is safe to re-drive: the anchor is harmless on its own, stop writes are
-idempotent against the staged plan, and recompute is idempotent by construction. The `stops`
-after-write hook also fires its own recompute per write; the existing per-itinerary queue in
-`recomputeItinerary` serialises them, and every run reads the same anchor, so the extra passes cost
-a little time and converge on the same legs.
+PocketBase has no cross-request transaction, so this is ordered rather than atomic. What makes it
+safe is that every write is idempotent under the ids the editor generated: the same payload can be
+sent again after any failure and converges on the same route, with no duplicate stop and no second
+Bulletin. The `stops` after-write hook also fires its own recompute per write; the existing
+per-itinerary queue in `recomputeItinerary` serialises them, and every run reads the same anchor, so
+the extra passes cost a little time and converge on the same legs.
 
 Failure is reported on the editor, which keeps the staged change so the Conductor can retry rather
 than reconstruct it.
@@ -258,7 +277,9 @@ No changes to `users`, `checkins`, `stops`, `legs` or `event_log`. New `event_lo
 | What fails | What the user sees |
 |---|---|
 | Commit rejected as incoherent (409) | The reason on the editor; the staged change is kept. |
-| Commit fails part-way | "Saved partly — check the route and try again", the staged change kept, the Train Sheet showing what landed. |
+| Commit fails part-way | "That did not all land — try again", the staged change kept. Retrying the same save is safe: the ids the editor generated make every write idempotent. |
+| Commit rejected as stale (409) | "The Route changed while you were editing. Reload and make the change again." The editor reloads rather than pretending it can merge. |
+| Recompute comes back with an unrideable leg | The save stands (it is already written) and the editor says which leg broke, so the Conductor fixes it in a second pass rather than discovering it on the platform. |
 | Recompute unreachable | The commit still returns; the hook's own recompute retries on the next write. Legs may lag the plan for seconds, which the board's `computed_at` already exposes. |
 | Upload too large / rejected | Named message with the 90 MB limit and a retry. |
 | No signal | The mirror renders with its age; writes say "no signal". |
