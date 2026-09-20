@@ -26,7 +26,7 @@
   async function pick(s: Station) {
     station = s; nearby = null; results = null; error = '';
     try { nearby = (await api<{ venues: Venue[] }>(`/api/places/nearby?station=${encodeURIComponent(s.id)}`)).venues; }
-    catch (err) { nearby = []; error = (err as Error).message; }
+    catch (err) { nearby = null; error = (err as Error).message; }
   }
 
   async function search(event: SubmitEvent) {
@@ -34,13 +34,13 @@
     if (!station || query.trim().length < 2) return;
     busy = 'search'; error = '';
     try { results = (await api<{ venues: Venue[] }>(`/api/places/search?q=${encodeURIComponent(query.trim())}&station=${encodeURIComponent(station.id)}`)).venues; }
-    catch (err) { results = []; error = (err as Error).message; }
+    catch (err) { results = null; error = (err as Error).message; }
     finally { busy = ''; }
   }
 
   async function add(venue: Venue) {
     if (!station || busy) return;
-    busy = venue.id; error = '';
+    busy = venue.id || 'manual'; error = '';
     try {
       const stop = await pb.collection('stops').create<Stop>({
         itinerary: itineraryId, name: venue.name, kind: venue.kind, station_id: station.id, station_name: station.name,
@@ -74,7 +74,7 @@
 
   <h2>{copy.nearby} {station.name}</h2>
   {#if nearby === null}
-    <p>{copy.loadingNearby}</p>
+    {#if !error}<p>{copy.loadingNearby}</p>{/if}
   {:else if nearby.length === 0}
     <p>{copy.noNearby}</p>
   {:else}
@@ -91,7 +91,7 @@
   <h2>{copy.searchByName}</h2>
   <form onsubmit={search}>
     <input bind:value={query} placeholder={copy.searchPlaceholder} minlength="2" data-testid="search-input" />
-    <button type="submit" disabled={busy === 'search'} data-testid="search-button">{busy === 'search' ? copy.searching : copy.search}</button>
+    <button type="submit" disabled={!!busy} data-testid="search-button">{busy === 'search' ? copy.searching : copy.search}</button>
   </form>
   {#if results}
     {#if results.length === 0}<p>{copy.noSearchResults}</p>{/if}

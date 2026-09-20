@@ -28,7 +28,7 @@
       {#each line.stations as station, j}
         <g role="button" tabindex="0" data-testid="station-{station.id}" aria-label={station.name} aria-pressed={selected === station.id}
            onclick={() => onpick(station)} onkeydown={(e) => onkey(e, station)} style="cursor: pointer">
-          <circle cx={x(j)} cy={y(i)} r="16" fill="transparent" />
+          <circle cx={x(j)} cy={y(i)} r="24" fill="transparent" />
           <circle cx={x(j)} cy={y(i)} r={selected === station.id ? 10 : 7} fill={selected === station.id ? line.color : '#111'} stroke={line.color} stroke-width="3" />
           <text x={x(j) + 6} y={y(i) + 22} transform="rotate(35 {x(j) + 6} {y(i) + 22})" fill={selected === station.id ? '#fff' : '#bbb'} font-size="11">{station.name}</text>
         </g>
