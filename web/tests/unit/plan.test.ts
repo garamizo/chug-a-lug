@@ -54,6 +54,29 @@ describe('planLeg', () => {
     expect(back.segments.map((x) => (x.kind === 'train' ? x.tripId : `walk${x.minutes}`))).toEqual(['BN2', 'walk6', 'UW5']);
     expect(back.arriveMin).toBe(905);
   });
+  it('rides to the other downtown terminal and walks across when the destination is downtown', () => {
+    const leg = planLeg(s, 'ELMHURST', 'CUS', 660, D);
+    expect(leg.kind).toBe('train');
+    expect(leg.segments.map((x) => (x.kind === 'train' ? x.tripId : `walk${x.minutes}`))).toEqual(['UW2', 'walk6']);
+    expect(leg.segments[0]).toMatchObject({ kind: 'train', dep: 665, arr: 695, to: 'OTC' });
+    expect(leg.segments[1]).toMatchObject({ kind: 'walk', from: 'OTC', to: 'CUS' });
+    expect(leg).toMatchObject({ departMin: 665, arriveMin: 701 });
+    const back = planLeg(s, 'NAPERVILLE', 'OTC', 600, D);
+    expect(back.segments.map((x) => (x.kind === 'train' ? x.tripId : `walk${x.minutes}`))).toEqual(['BN2', 'walk6']);
+    expect(back).toMatchObject({ kind: 'train', departMin: 725, arriveMin: 781 });
+  });
+
+  it('walks across downtown first to catch a train from the other terminal', () => {
+    // departMin is the moment the walk starts, i.e. the at-station time passed in.
+    const leg = planLeg(s, 'CUS', 'GENEVA', 600, D);
+    expect(leg.kind).toBe('train');
+    expect(leg.segments.map((x) => (x.kind === 'train' ? x.tripId : `walk${x.minutes}`))).toEqual(['walk6', 'UW1']);
+    expect(leg.segments[0]).toMatchObject({ kind: 'walk', from: 'CUS', to: 'OTC' });
+    expect(leg.segments[1]).toMatchObject({ kind: 'train', dep: 640, arr: 710 });
+    expect(leg).toMatchObject({ departMin: 600, arriveMin: 710 });
+    expect(planLeg(s, 'OTC', 'NAPERVILLE', 600, D)).toMatchObject({ kind: 'train', departMin: 600, arriveMin: 800 });
+  });
+
   it('is impossible after the last train', () => {
     expect(planLeg(s, 'GENEVA', 'ELMHURST', 1400, D)).toEqual({ kind: 'impossible', segments: [], departMin: 1400, arriveMin: 1400 });
   });
