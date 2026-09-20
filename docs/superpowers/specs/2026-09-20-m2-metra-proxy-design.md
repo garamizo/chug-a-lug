@@ -56,7 +56,7 @@ open a socket).
 `nextTrips` stays the pure schedule scan it is today. A new pure function wraps it:
 
 ```
-mergeLive(trips, tripUpdates, now) -> NextTrip[]
+mergeLive(trips, predictions, fromStopId, toStopId) -> NextTrip[]
 ```
 
 - A `TripUpdate` whose `trip_id` matches overrides `schedDepart` / `schedArrive` with its predicted times,
@@ -67,15 +67,38 @@ mergeLive(trips, tripUpdates, now) -> NextTrip[]
   rolls to the next trip.
 - `status` is `live` when the trip carried an update, `scheduled` otherwise.
 
+**Order of operations.** The merge happens *before* any filtering or limiting, because both depend on the
+effective departure rather than the scheduled one:
+
+1. Draw candidates from `nextTrips` starting `DELAY_LOOKBACK_MIN` (60) **before** the caller's `after`,
+   with a generous internal limit. A train scheduled for 20:31 and running ten minutes late has not left
+   at 20:35; filtering on the scheduled time would drop it while it is still standing at the platform.
+2. Merge predictions and drop cancellations.
+3. Filter to trips whose **effective** departure is at or after `after`.
+4. Sort by effective departure, then cut to the caller's `limit`.
+
+Limiting first would also let three cancelled trips empty a board that has perfectly good service behind
+them. The lookback is cheap: `nextTrips` is a scan over the line's trips and costs about a millisecond.
+
 ### 2.3 Staleness
 
-One `mode` value, computed on every read and reported in every response:
+Freshness is tracked **per feed**, not across the poller. Each feed keeps the `fetchedAt` of its own last
+successful fetch, and one `mode` is computed from whichever feed the caller depends on:
 
 | Condition | `mode` | What the UI does |
 |---|---|---|
-| `rtAgeSec <= 120` | `live` | Shows merged times, no qualifier |
-| `rtAgeSec > 120` | `stale` | Shows timetable times with the "Timetable only" notice and the age |
-| Feed never fetched, or no token configured | `schedule_only` | Same notice, wording omits the age |
+| That feed's `ageSec <= 120` | `live` | Shows merged times, no qualifier |
+| That feed's `ageSec > 120` | `stale` | Shows timetable times with the "Timetable only" notice and the age |
+| That feed never fetched, or no token configured | `schedule_only` | Same notice, wording omits the age |
+
+`/api/metra/next` gates on the **tripupdates** feed alone. A shared timestamp advanced by any successful
+fetch would let a healthy `positions` or `alerts` feed vouch for trip predictions that stopped arriving an
+hour ago, and the board would keep counting down to times nobody is publishing any more — the precise
+failure this section exists to prevent. `/api/metra/alerts` gates on the alerts feed the same way.
+
+`/api/metra/status` reports the newest fetch across all feeds as `rtFetchedAt` / `rtAgeSec` for the
+operator's benefit, plus a per-feed breakdown, and its top-level `mode` is the tripupdates mode so the
+status page agrees with what the board is actually doing.
 
 120 s is four missed polls. The threshold lives in one constant so the plan can tune it against the real
 feed during the field test.
@@ -86,8 +109,8 @@ All require an authenticated user, as the existing ones do.
 
 | Endpoint | Change |
 |---|---|
-| `GET /api/metra/next` | Already exists. Now fills `liveDepart`, `liveArrive`, `delayMin`, `status` from `mergeLive`, drops cancelled trips, and returns the real `mode`. |
-| `GET /api/metra/status` | Already exists. Now fills `rtFetchedAt`, `rtAgeSec` and the real `mode`. |
+| `GET /api/metra/next` | Already exists. Now fills `liveDepart`, `liveArrive`, `delayMin`, `status` from `mergeLive`, drops cancelled trips, filters and sorts on the effective departure per §2.2, and returns the tripupdates `mode`. |
+| `GET /api/metra/status` | Already exists. Now fills `rtFetchedAt`, `rtAgeSec`, the per-feed breakdown, and the real `mode`. |
 | `GET /api/metra/alerts` | New. Active BNSF alerts, shaped for the UI (below). |
 
 `GET /api/metra/alerts` returns `{ mode, fetchedAt, alerts: Alert[] }` where
@@ -246,10 +269,12 @@ has to enable them.
 | Failure | Behaviour |
 |---|---|
 | Realtime fetch fails | Keep the last feed, log once per failure, keep polling. `mode` becomes `stale` after 120 s. |
+| One feed fails while the others succeed | Only that feed ages. Trip predictions are dropped once **tripupdates** is stale, however fresh `alerts` and `positions` are. |
 | No token configured | No poller starts; every endpoint reports `schedule_only`; the board shows timetable times with the notice. |
 | Static schedule unavailable | Unchanged from today: `/api/metra/next` and `/api/metra/status` return 503 with the existing message. |
 | Feed decodes but has no trip updates | Every trip is on time, which is what Metra means. `mode` stays `live`. |
 | Next train cancelled or already gone | Roll to the following trip and show a notice. |
+| Next train delayed past its scheduled time | Still offered. Candidates come from a 60-minute lookback and are filtered on the effective departure, so a late train stays catchable. |
 | No train works at all for the leg | The board says so and points at the itinerary, reusing M1's impossible-leg copy. |
 | Itinerary not locked, or the date is not today | `/live` shows the "no active route" state rather than an empty board. |
 | Alerts endpoint fails | Bubbles disappear; the board is unaffected. Alerts are never a hard dependency. |
@@ -269,6 +294,9 @@ has to enable them.
 ## 9. Testing
 
 - **Unit** (`web/tests/unit/`): `mergeLive` against a fixture feed (on time, delayed, cancelled, missing);
+  a tripupdates feed that has been failing past 120 s while another feed keeps succeeding, proving its
+  predictions are not used; a train delayed past its scheduled departure still appearing in `/api/metra/next`,
+  and three cancelled trips not emptying a board that has later service;
   alert selection and the active-period window; `mode` thresholds around 120 s; `currentStop` for each
   `source`, including multiple stops at one station and an override that would move the crawl backwards;
   the board's state machine across the two thresholds and the missed-train roll.

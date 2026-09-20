@@ -36,11 +36,17 @@
 
 **Interfaces:**
 - Consumes: nothing from earlier tasks.
-- Produces: `createRealtimeLoader(cfg: RealtimeConfig)` returning `{ feeds(): Feeds; status(): RealtimeStatus; stop(): void }`, where
+- Produces: `createRealtimeLoader(cfg: RealtimeConfig)` returning `{ refresh(opts?); start(); feeds(): Feeds; status(): RealtimeStatus; statusOf(name: FeedName): FeedStatus; setFetch(fn); stop(): void }`, where
   `type FeedName = 'positions' | 'tripupdates' | 'alerts'`,
   `type Feeds = Record<FeedName, { message: FeedMessage; fetchedAt: string } | null>`,
-  `type RealtimeStatus = { fetchedAt: string | null; ageSec: number | null; enabled: boolean }`.
+  `type FeedStatus = { fetchedAt: string | null; ageSec: number | null; enabled: boolean }`,
+  `type RealtimeStatus = FeedStatus & { feeds: Record<FeedName, FeedStatus> }`.
   Also `web/tests/fixtures/rt.ts` exporting `encodeFeed(entities, timestampSec)`, `tripUpdate(...)`, `alertEntity(...)`.
+
+**Why per-feed freshness.** One shared "last fetched" timestamp advanced by whichever feed happened to
+succeed lets a healthy `positions` or `alerts` vouch for trip predictions that stopped arriving an hour
+ago, and the board keeps counting down to times nobody publishes any more. Each feed carries its own
+`fetchedAt`, and callers ask about the feed they actually depend on (spec §2.3).
 
 - [ ] **Step 1: Add the dependency**
 
@@ -145,13 +151,24 @@ function stubFetch(body: Uint8Array, ok = true) {
   return { impl, calls };
 }
 
+/** A fetch that fails only the named feeds, so one feed can rot while the others stay healthy. */
+function stubFailing(body: Uint8Array, failing: string[]) {
+  return (async (url: string) => {
+    if (failing.some((f) => String(url).endsWith(`/${f}`))) {
+      return { ok: false, status: 503, arrayBuffer: async () => new ArrayBuffer(0) };
+    }
+    return { ok: true, status: 200, arrayBuffer: async () => body.slice().buffer };
+  }) as unknown as typeof fetch;
+}
+
 describe('createRealtimeLoader', () => {
   it('is disabled without a token and never fetches', async () => {
     const { impl, calls } = stubFetch(bytes(1));
     const rt = createRealtimeLoader({ base: 'https://x.test', token: '', fetchImpl: impl });
     await rt.refresh();
     expect(calls).toHaveLength(0);
-    expect(rt.status()).toEqual({ fetchedAt: null, ageSec: null, enabled: false });
+    expect(rt.status()).toMatchObject({ fetchedAt: null, ageSec: null, enabled: false });
+    expect(rt.statusOf('tripupdates')).toEqual({ fetchedAt: null, ageSec: null, enabled: false });
     expect(rt.feeds().tripupdates).toBeNull();
     rt.stop();
   });
@@ -189,6 +206,30 @@ describe('createRealtimeLoader', () => {
     expect(rt.status().ageSec).toBe(120);
     rt.stop();
   });
+
+  it('ages each feed on its own, so a healthy feed cannot vouch for a broken one', async () => {
+    let clock = new Date('2026-12-26T20:00:00Z');
+    const body = bytes(1700000000);
+    const { impl } = stubFetch(body);
+    const rt = createRealtimeLoader({ base: 'https://x.test', token: 'S', fetchImpl: impl, now: () => clock });
+    // Everything healthy at 20:00.
+    await rt.refresh({ at: new Date('2026-12-26T20:00:00Z') });
+    expect(rt.statusOf('tripupdates').ageSec).toBe(0);
+
+    // tripupdates starts failing; alerts and positions keep succeeding for another ten minutes.
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    rt.setFetch(stubFailing(body, ['tripupdates']));
+    clock = new Date('2026-12-26T20:10:00Z');
+    await rt.refresh({ at: clock });
+
+    expect(rt.statusOf('alerts').ageSec).toBe(0);
+    expect(rt.statusOf('tripupdates').ageSec).toBe(600);
+    // The retained message is still there — it is the freshness that must give it away.
+    expect(rt.feeds().tripupdates).not.toBeNull();
+    // The overall figure follows the newest feed, which is why callers must not use it for predictions.
+    expect(rt.status().ageSec).toBe(0);
+    rt.stop();
+  });
 });
 ```
 
@@ -213,7 +254,9 @@ export const FEED_NAMES: FeedName[] = ['positions', 'tripupdates', 'alerts'];
 
 export type Feed = { message: FeedMessage; fetchedAt: string };
 export type Feeds = Record<FeedName, Feed | null>;
-export type RealtimeStatus = { fetchedAt: string | null; ageSec: number | null; enabled: boolean };
+export type FeedStatus = { fetchedAt: string | null; ageSec: number | null; enabled: boolean };
+/** The newest fetch across all feeds, plus each feed on its own. */
+export type RealtimeStatus = FeedStatus & { feeds: Record<FeedName, FeedStatus> };
 
 export type RealtimeConfig = {
   base: string;
@@ -229,7 +272,6 @@ export function createRealtimeLoader(cfg: RealtimeConfig) {
   const now = cfg.now ?? (() => new Date());
   const pollMs = cfg.pollMs ?? 30_000;
   const feeds: Feeds = { positions: null, tripupdates: null, alerts: null };
-  let newest: string | null = null;
   let timer: ReturnType<typeof setInterval> | null = null;
   let inFlight: Promise<void> | null = null;
 
@@ -246,13 +288,13 @@ export function createRealtimeLoader(cfg: RealtimeConfig) {
     const at = opts?.at ?? now();
     inFlight = (async () => {
       const results = await Promise.allSettled(FEED_NAMES.map((n) => fetchOne(n, at)));
-      let any = false;
       results.forEach((r, i) => {
-        if (r.status === 'fulfilled') { any = true; return; }
+        if (r.status === 'fulfilled') return;
         // Never log the reason object wholesale: it can carry the request headers.
         console.warn(`[metra-rt] ${FEED_NAMES[i]} fetch failed:`, (r.reason as Error)?.message ?? 'unknown');
       });
-      if (any) newest = at.toISOString();
+      // Nothing to record here: each feed's own `fetchedAt` was stamped by its successful fetchOne,
+      // and a failed feed keeps the older one. Freshness is per feed on purpose.
     })().finally(() => { inFlight = null; });
     return inFlight;
   }
@@ -265,14 +307,31 @@ export function createRealtimeLoader(cfg: RealtimeConfig) {
     (timer as unknown as { unref?: () => void }).unref?.();
   }
 
+  const ageOf = (at: string | null): number | null =>
+    at === null ? null : Math.max(0, Math.round((now().getTime() - new Date(at).getTime()) / 1000));
+
+  function statusOf(name: FeedName): FeedStatus {
+    if (!cfg.token) return { fetchedAt: null, ageSec: null, enabled: false };
+    const fetchedAt = feeds[name]?.fetchedAt ?? null;
+    return { fetchedAt, ageSec: ageOf(fetchedAt), enabled: true };
+  }
+
   return {
     refresh,
     start,
     feeds: () => feeds,
+    statusOf,
     status(): RealtimeStatus {
-      if (!cfg.token) return { fetchedAt: null, ageSec: null, enabled: false };
-      const ageSec = newest === null ? null : Math.max(0, Math.round((now().getTime() - new Date(newest).getTime()) / 1000));
-      return { fetchedAt: newest, ageSec, enabled: true };
+      const perFeed = Object.fromEntries(FEED_NAMES.map((n) => [n, statusOf(n)])) as Record<FeedName, FeedStatus>;
+      if (!cfg.token) return { fetchedAt: null, ageSec: null, enabled: false, feeds: perFeed };
+      // The headline figure is the newest fetch of any feed: useful to an operator, useless for
+      // deciding whether one feed's contents can be trusted. Callers that care use statusOf().
+      const newest = FEED_NAMES
+        .map((n) => perFeed[n].fetchedAt)
+        .filter((at): at is string => at !== null)
+        .sort()
+        .at(-1) ?? null;
+      return { fetchedAt: newest, ageSec: ageOf(newest), enabled: true, feeds: perFeed };
     },
     /** Tests swap the fetch to simulate an outage after a good poll. */
     setFetch(next: typeof fetch) { fetchImpl = next; },
@@ -284,7 +343,7 @@ export function createRealtimeLoader(cfg: RealtimeConfig) {
 - [ ] **Step 8: Run the tests**
 
 Run: `cd web && npx vitest run tests/unit/realtime.test.ts`
-Expected: PASS, 4 tests.
+Expected: PASS, 5 tests.
 
 - [ ] **Step 9: Commit**
 
@@ -309,9 +368,16 @@ Co-Authored-By: Claude Opus 5 (1M context) <noreply@anthropic.com>"
 - Consumes: `FeedMessage` from Task 1; `encodeFeed`, `tripUpdate` from `web/tests/fixtures/rt.ts`.
 - Produces:
   `readPredictions(feed: FeedMessage | null, routeId: string): Predictions` in `decode.ts`;
-  `mergeLive(trips: NextTrip[], preds: Predictions, fromStopId: string, toStopId: string): NextTrip[]` and
-  `modeFor(status: { ageSec: number | null; enabled: boolean }): FeedMode` in `live.ts`;
+  `mergeLive(trips: NextTrip[], preds: Predictions, fromStopId: string, toStopId: string): NextTrip[]`,
+  `selectDepartures(candidates: NextTrip[], preds: Predictions, fromStopId: string, toStopId: string, after: Date, limit: number): NextTrip[]`,
+  `modeFor(status: { ageSec: number | null; enabled: boolean }): FeedMode` and the constants
+  `STALE_AFTER_SEC`, `DELAY_LOOKBACK_MIN` in `live.ts`;
   widened `NextTrip` and new `FeedMode` in `types.ts`.
+
+**Why selection is a separate function.** Merging has to happen before any filtering or limiting. A train
+scheduled for 20:31 and running ten minutes late has not left at 20:35, but a filter on the *scheduled*
+time drops it while it is still at the platform — and cutting to `limit` before cancellations are removed
+lets three cancelled trains empty a board that has good service behind them (spec §2.2).
 
 - [ ] **Step 1: Widen the types in `web/src/lib/types.ts`**
 
@@ -335,7 +401,7 @@ export type FeedMode = 'live' | 'stale' | 'schedule_only';
 import { describe, expect, it } from 'vitest';
 import GtfsRealtimeBindings from 'gtfs-realtime-bindings';
 import { readPredictions } from '../../src/lib/server/metra/decode';
-import { mergeLive, modeFor, STALE_AFTER_SEC } from '../../src/lib/metra/live';
+import { mergeLive, modeFor, selectDepartures, STALE_AFTER_SEC } from '../../src/lib/metra/live';
 import { encodeFeed, tripUpdate } from '../fixtures/rt';
 import type { NextTrip } from '../../src/lib/types';
 
@@ -407,6 +473,53 @@ describe('mergeLive', () => {
   });
 });
 
+describe('selectDepartures', () => {
+  const after = new Date('2026-12-26T20:35:00.000Z');
+  const candidates = [
+    trip('T1', '2026-12-26T20:31:00.000Z', '2026-12-26T20:46:00.000Z'), // late, still catchable
+    trip('T2', '2026-12-26T21:00:00.000Z', '2026-12-26T21:15:00.000Z'),
+    trip('T3', '2026-12-26T22:00:00.000Z', '2026-12-26T22:15:00.000Z'),
+    trip('T4', '2026-12-26T23:00:00.000Z', '2026-12-26T23:15:00.000Z')
+  ];
+
+  it('keeps a train delayed past its scheduled departure', () => {
+    // Scheduled 20:31, predicted 20:41. At 20:35 it has not left.
+    const preds = { T1: { canceled: false, stops: { LAGRANGE: { departAt: '2026-12-26T20:41:00.000Z' } } } };
+    const out = selectDepartures(candidates, preds, 'LAGRANGE', 'BERWYN', after, 3);
+    expect(out[0].tripId).toBe('T1');
+    expect(out[0].liveDepart).toBe('2026-12-26T20:41:00.000Z');
+  });
+
+  it('drops a train that has really gone', () => {
+    const out = selectDepartures(candidates, {}, 'LAGRANGE', 'BERWYN', after, 3);
+    expect(out.map((t) => t.tripId)).toEqual(['T2', 'T3', 'T4']);
+  });
+
+  it('does not let cancellations empty the board', () => {
+    const cancel = { canceled: true, stops: {} };
+    const preds = { T1: cancel, T2: cancel, T3: cancel };
+    const out = selectDepartures(candidates, preds, 'LAGRANGE', 'BERWYN', after, 3);
+    expect(out.map((t) => t.tripId)).toEqual(['T4']);
+  });
+
+  it('sorts by effective departure, not scheduled', () => {
+    // T2 is held 90 minutes, so T3 overtakes it.
+    const preds = { T2: { canceled: false, stops: { LAGRANGE: { departAt: '2026-12-26T22:30:00.000Z' } } } };
+    const out = selectDepartures(candidates, preds, 'LAGRANGE', 'BERWYN', after, 3);
+    expect(out.map((t) => t.tripId)).toEqual(['T3', 'T2', 'T4']);
+  });
+
+  it('applies the limit last', () => {
+    const out = selectDepartures(candidates, {}, 'LAGRANGE', 'BERWYN', after, 2);
+    expect(out).toHaveLength(2);
+    expect(out.map((t) => t.tripId)).toEqual(['T2', 'T3']);
+  });
+
+  it('returns nothing when the service day is over', () => {
+    expect(selectDepartures(candidates, {}, 'LAGRANGE', 'BERWYN', new Date('2026-12-27T02:00:00.000Z'), 3)).toEqual([]);
+  });
+});
+
 describe('modeFor', () => {
   it('is schedule_only without a token or before the first successful fetch', () => {
     expect(modeFor({ ageSec: null, enabled: false })).toBe('schedule_only');
@@ -474,6 +587,13 @@ import type { FeedMode, NextTrip } from '$lib/types';
 /** Four missed polls. One constant so the field test can tune it. */
 export const STALE_AFTER_SEC = 120;
 
+/**
+ * How far before the caller's `after` to look for candidate trips. A train can be running late, and a
+ * late train has not departed: drawing candidates only from `after` onwards would hide one still standing
+ * at the platform. Metra delays past an hour are rare, and the scan costs about a millisecond.
+ */
+export const DELAY_LOOKBACK_MIN = 60;
+
 export type StopPrediction = { departAt?: string; arriveAt?: string };
 export type TripPrediction = { canceled: boolean; stops: Record<string, StopPrediction> };
 export type Predictions = Record<string, TripPrediction>;
@@ -500,7 +620,28 @@ export function mergeLive(trips: NextTrip[], preds: Predictions, fromStopId: str
   return out;
 }
 
-/** `live` while the newest successful fetch is recent, `stale` once it is not, else `schedule_only`. */
+const effective = (t: NextTrip) => new Date(t.liveDepart ?? t.schedDepart).getTime();
+
+/**
+ * Merge first, then filter, then sort, then cut. Every step after the merge depends on the effective
+ * departure, so doing any of them earlier throws away trips that are still catchable: a delayed train
+ * filtered out by its scheduled time, or good service cut off behind three cancellations.
+ */
+export function selectDepartures(
+  candidates: NextTrip[],
+  preds: Predictions,
+  fromStopId: string,
+  toStopId: string,
+  after: Date,
+  limit: number
+): NextTrip[] {
+  return mergeLive(candidates, preds, fromStopId, toStopId)
+    .filter((t) => effective(t) >= after.getTime())
+    .sort((a, b) => effective(a) - effective(b))
+    .slice(0, limit);
+}
+
+/** `live` while that feed's last successful fetch is recent, `stale` once it is not, else `schedule_only`. */
 export function modeFor(status: { ageSec: number | null; enabled: boolean }): FeedMode {
   if (!status.enabled || status.ageSec === null) return 'schedule_only';
   return status.ageSec <= STALE_AFTER_SEC ? 'live' : 'stale';
@@ -510,7 +651,7 @@ export function modeFor(status: { ageSec: number | null; enabled: boolean }): Fe
 - [ ] **Step 6: Run the tests**
 
 Run: `cd web && npx vitest run tests/unit/live.test.ts`
-Expected: PASS, 9 tests.
+Expected: PASS, 15 tests.
 
 - [ ] **Step 7: Commit**
 
@@ -541,9 +682,15 @@ Co-Authored-By: Claude Opus 5 (1M context) <noreply@anthropic.com>"
 After the `FeedMode` type added in Task 2:
 
 ```ts
+/**
+ * `mode` is the tripupdates mode — the one the Departure Board actually runs on — so the status page
+ * agrees with the board. `rtFetchedAt` / `rtAgeSec` are the newest fetch of any feed, and `feeds` breaks
+ * it down so an operator can see which one is failing.
+ */
 export type MetraStatus = {
   staticPublishedAt: string; staticSource: string;
   rtFetchedAt: string | null; rtAgeSec: number | null; mode: FeedMode;
+  feeds: Record<'positions' | 'tripupdates' | 'alerts', { fetchedAt: string | null; ageSec: number | null; mode: FeedMode }>;
 };
 ```
 
@@ -567,17 +714,35 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { encodeFeed, tripUpdate } from '../fixtures/rt';
 import { fixtureSchedule } from '../fixtures/loadFixture';
 
-const state = vi.hoisted(() => ({ rtStatus: { fetchedAt: null as string | null, ageSec: null as number | null, enabled: false }, feed: null as unknown }));
+type S = { fetchedAt: string | null; ageSec: number | null; enabled: boolean };
+const off: S = { fetchedAt: null, ageSec: null, enabled: false };
+const state = vi.hoisted(() => ({
+  perFeed: {
+    positions: { fetchedAt: null, ageSec: null, enabled: false },
+    tripupdates: { fetchedAt: null, ageSec: null, enabled: false },
+    alerts: { fetchedAt: null, ageSec: null, enabled: false }
+  } as Record<'positions' | 'tripupdates' | 'alerts', S>,
+  overall: { fetchedAt: null, ageSec: null, enabled: false } as S,
+  feed: null as unknown
+}));
 
 vi.mock('$lib/server/pb', () => ({ requireUser: vi.fn(async () => ({ id: 'u1', is_admin: false })) }));
 vi.mock('$lib/server/metra', () => ({
   metra: { getSchedule: vi.fn(async () => fixtureSchedule()), status: () => ({ publishedAt: 'P', loadedAt: 'L', source: 'file' }) },
   metraRt: {
     start: vi.fn(),
-    status: () => state.rtStatus,
+    status: () => ({ ...state.overall, feeds: state.perFeed }),
+    statusOf: (name: 'positions' | 'tripupdates' | 'alerts') => state.perFeed[name],
     feeds: () => ({ positions: null, tripupdates: state.feed, alerts: null })
   }
 }));
+
+/** Marks every feed fresh at the same moment. */
+const allFresh = (ageSec = 10) => {
+  const s: S = { fetchedAt: '2026-12-26T20:00:00.000Z', ageSec, enabled: true };
+  state.perFeed = { positions: { ...s }, tripupdates: { ...s }, alerts: { ...s } };
+  state.overall = { ...s };
+};
 
 const get = async (mod: string, url: string) => {
   const { GET } = await import(mod);
@@ -585,8 +750,15 @@ const get = async (mod: string, url: string) => {
   return res.json();
 };
 
+const reset = () => {
+  vi.resetModules();
+  state.perFeed = { positions: { ...off }, tripupdates: { ...off }, alerts: { ...off } };
+  state.overall = { ...off };
+  state.feed = null;
+};
+
 describe('/api/metra/status', () => {
-  beforeEach(() => { vi.resetModules(); state.rtStatus = { fetchedAt: null, ageSec: null, enabled: false }; state.feed = null; });
+  beforeEach(reset);
 
   it('reports schedule_only with no realtime', async () => {
     const body = await get('../../src/routes/api/metra/status/+server', 'http://x/api/metra/status');
@@ -594,20 +766,38 @@ describe('/api/metra/status', () => {
     expect(body.rtAgeSec).toBeNull();
   });
 
-  it('reports live with a fresh fetch', async () => {
-    state.rtStatus = { fetchedAt: '2026-12-26T20:00:00.000Z', ageSec: 12, enabled: true };
+  it('reports live with a fresh fetch, and breaks it down per feed', async () => {
+    allFresh(12);
     const body = await get('../../src/routes/api/metra/status/+server', 'http://x/api/metra/status');
     expect(body).toMatchObject({ mode: 'live', rtAgeSec: 12, rtFetchedAt: '2026-12-26T20:00:00.000Z' });
+    expect(body.feeds.tripupdates.mode).toBe('live');
+    expect(body.feeds.alerts.mode).toBe('live');
   });
 
   it('reports stale past the threshold', async () => {
-    state.rtStatus = { fetchedAt: '2026-12-26T20:00:00.000Z', ageSec: 300, enabled: true };
+    allFresh(300);
     expect((await get('../../src/routes/api/metra/status/+server', 'http://x/api/metra/status')).mode).toBe('stale');
+  });
+
+  it('follows the tripupdates feed even when the others are fresh', async () => {
+    allFresh(10);
+    state.perFeed.tripupdates = { fetchedAt: '2026-12-26T19:50:00.000Z', ageSec: 600, enabled: true };
+    const body = await get('../../src/routes/api/metra/status/+server', 'http://x/api/metra/status');
+    expect(body.mode).toBe('stale');
+    expect(body.feeds.alerts.mode).toBe('live');
+    // The headline age still shows the newest fetch, which is why it must not drive the mode.
+    expect(body.rtAgeSec).toBe(10);
   });
 });
 
 describe('/api/metra/next', () => {
-  beforeEach(() => { vi.resetModules(); state.rtStatus = { fetchedAt: null, ageSec: null, enabled: false }; state.feed = null; });
+  beforeEach(reset);
+
+  const decodeFeed = async (tripId: string, departure: number) => ({
+    fetchedAt: '2026-12-26T20:00:00.000Z',
+    message: (await import('gtfs-realtime-bindings')).default.transit_realtime.FeedMessage.decode(
+      encodeFeed([tripUpdate({ id: 'e', tripId, stops: [{ stopId: 'LAGRANGE', departure }] })], 1))
+  });
 
   it('returns scheduled trips with live fields filled from the timetable', async () => {
     const body = await get('../../src/routes/api/metra/next/+server', 'http://x/api/metra/next?from=LAGRANGE&to=CUS&date=2026-12-26');
@@ -619,15 +809,25 @@ describe('/api/metra/next', () => {
   });
 
   it('applies a live prediction to the matching trip', async () => {
-    const schedule = fixtureSchedule();
-    const first = schedule.trips.find((t) => t.routeId === 'BNSF')!;
-    state.rtStatus = { fetchedAt: '2026-12-26T20:00:00.000Z', ageSec: 10, enabled: true };
-    state.feed = { fetchedAt: '2026-12-26T20:00:00.000Z', message: (await import('gtfs-realtime-bindings')).default.transit_realtime.FeedMessage.decode(
-      encodeFeed([tripUpdate({ id: 'e', tripId: first.id, stops: [{ stopId: 'LAGRANGE', departure: 4102444800 }] })], 1)) };
+    const first = fixtureSchedule().trips.find((t) => t.routeId === 'BNSF')!;
+    allFresh(10);
+    state.feed = await decodeFeed(first.id, 4102444800);
     const body = await get('../../src/routes/api/metra/next/+server', 'http://x/api/metra/next?from=LAGRANGE&to=CUS&date=2026-12-26');
     expect(body.mode).toBe('live');
     const hit = body.trips.find((t: { tripId: string }) => t.tripId === first.id);
     if (hit) expect(hit.status).toBe('live');
+  });
+
+  it('ignores predictions when the tripupdates feed is stale, however fresh the others are', async () => {
+    const first = fixtureSchedule().trips.find((t) => t.routeId === 'BNSF')!;
+    allFresh(10);
+    // Only tripupdates has rotted. The retained message is still in memory and must not be used.
+    state.perFeed.tripupdates = { fetchedAt: '2026-12-26T19:50:00.000Z', ageSec: 600, enabled: true };
+    state.feed = await decodeFeed(first.id, 4102444800);
+    const body = await get('../../src/routes/api/metra/next/+server', 'http://x/api/metra/next?from=LAGRANGE&to=CUS&date=2026-12-26');
+    expect(body.mode).toBe('stale');
+    expect(body.trips.every((t: { status: string }) => t.status === 'scheduled')).toBe(true);
+    expect(body.trips.every((t: { liveDepart: string; schedDepart: string }) => t.liveDepart === t.schedDepart)).toBe(true);
   });
 });
 ```
@@ -657,9 +857,17 @@ export const GET: RequestHandler = async ({ request }) => {
   metraRt.start();
   const st = metra.status();
   const rt = metraRt.status();
+  const feeds = Object.fromEntries(
+    (['positions', 'tripupdates', 'alerts'] as const).map((n) => [n, {
+      fetchedAt: rt.feeds[n].fetchedAt, ageSec: rt.feeds[n].ageSec, mode: modeFor(rt.feeds[n])
+    }])
+  ) as MetraStatus['feeds'];
   const body: MetraStatus = {
     staticPublishedAt: st.publishedAt, staticSource: st.source,
-    rtFetchedAt: rt.fetchedAt, rtAgeSec: rt.ageSec, mode: modeFor(rt)
+    rtFetchedAt: rt.fetchedAt, rtAgeSec: rt.ageSec,
+    // The board runs on trip updates, so that is the mode this page reports.
+    mode: modeFor(metraRt.statusOf('tripupdates')),
+    feeds
   };
   return json(body);
 };
@@ -672,7 +880,7 @@ Add the imports:
 ```ts
 import { metra, metraRt } from '$lib/server/metra';
 import { readPredictions } from '$lib/server/metra/decode';
-import { mergeLive, modeFor } from '$lib/metra/live';
+import { DELAY_LOOKBACK_MIN, modeFor, selectDepartures } from '$lib/metra/live';
 import { PLANNER_ROUTE } from '$lib/lineMap';
 ```
 
@@ -680,22 +888,27 @@ Replace the final two statements (the `const trips: NextTrip[] = ...` mapping an
 
 ```ts
   metraRt.start();
-  const rt = metraRt.status();
-  const mode = modeFor(rt);
-  const scheduled: NextTrip[] = nextTrips(s, from, to, afterMin, date, limit).map((c) => ({
+  // Trip predictions are only as trustworthy as the tripupdates feed itself. A healthy positions or
+  // alerts feed says nothing about whether departures are still being published.
+  const mode = modeFor(metraRt.statusOf('tripupdates'));
+
+  // Look back before `after` so a delayed train is still a candidate, and take more than the caller
+  // asked for so cancellations cannot empty the result. Both are trimmed by selectDepartures.
+  const fromMin = Math.max(0, afterMin - DELAY_LOOKBACK_MIN);
+  const candidates: NextTrip[] = nextTrips(s, from, to, fromMin, date, limit + 8).map((c) => ({
     tripId: c.tripId, routeId: c.routeId, headsign: c.headsign,
     schedDepart: localToUtc(date, c.dep).toISOString(), schedArrive: localToUtc(date, c.arr).toISOString(),
     liveDepart: null, liveArrive: null, delayMin: null, status: 'scheduled'
   }));
   // Stale times are worse than none: fall back to the timetable rather than show old predictions.
   const preds = mode === 'live' ? readPredictions(metraRt.feeds().tripupdates?.message ?? null, PLANNER_ROUTE) : {};
-  return json({ mode, trips: mergeLive(scheduled, preds, from, to) });
+  return json({ mode, trips: selectDepartures(candidates, preds, from, to, afterDate, limit) });
 ```
 
 - [ ] **Step 7: Run the tests**
 
 Run: `cd web && npx vitest run tests/unit/metra-endpoints.test.ts`
-Expected: PASS, 5 tests.
+Expected: PASS, 7 tests.
 
 - [ ] **Step 8: Run the whole unit suite and the type check**
 
@@ -882,8 +1095,9 @@ export const GET: RequestHandler = async ({ request }) => {
     throw error(503, 'Metra schedule is not available yet. Try again in a minute.');
   }
   metraRt.start();
-  const rt = metraRt.status();
-  const mode = modeFor(rt);
+  // Alerts carry their own active periods, so a stale feed is still worth showing; the mode simply
+  // says how fresh it is. It is gated on the alerts feed, never on a shared timestamp.
+  const mode = modeFor(metraRt.statusOf('alerts'));
   const feed = metraRt.feeds().alerts;
   // Alerts have their own active periods, so a stale feed is still worth showing; only an absent
   // one yields nothing.
@@ -2800,6 +3014,8 @@ Before calling M2 done, confirm each line of the spec's section 10 by running it
 
 - [ ] `GET /api/metra/status` against the real feed reports `mode: "live"` with `rtAgeSec` under 30.
 - [ ] `GET /api/metra/next` shows a delay that matches Metra's own app for the same train.
+- [ ] A train whose predicted departure is past its scheduled one is still listed by `/api/metra/next` when asked with `after` between the two.
+- [ ] Blocking only the tripupdates URL (point `METRA_RT_BASE` at a host that 503s for it) drives `mode` to `stale` within 120 s while `feeds.alerts.mode` stays `live`, and the board falls back to timetable times.
 - [ ] Emptying `METRA_API_TOKEN` and restarting degrades to `schedule_only`, the board shows the "Timetable only" notice, and nothing else breaks.
 - [ ] `just record saturday` produces a folder whose file count grows only when the feed changes.
 - [ ] `/live` shows all three board states against the frozen clock, and the Conductor's correction moves the crawl.
