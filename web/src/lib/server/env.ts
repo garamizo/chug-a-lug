@@ -10,6 +10,8 @@ export const serverEnv = {
   get googleKey() { return env.GOOGLE_PLACES_KEY || ''; },
   get gtfsUrl() { return env.GTFS_URL || 'https://schedules.metrarail.com/gtfs/schedule.zip'; },
   get gtfsPublishedUrl() { return env.GTFS_PUBLISHED_URL || 'https://schedules.metrarail.com/gtfs/published.txt'; },
+  get metraToken() { return env.METRA_API_TOKEN || ''; },
+  get metraRtBase() { return env.METRA_RT_BASE || 'https://gtfspublic.metrarr.com/gtfs/public'; },
   get overpassUrl() { return env.OVERPASS_URL || 'https://overpass-api.de/api/interpreter'; },
   /** Runtime state root: data/ next to the repo in dev, /data in the container. */
   get dataDir() { return env.DATA_DIR || resolve(process.cwd(), '..', 'data'); }

@@ -139,13 +139,20 @@ import { encodeFeed, tripUpdate } from '../fixtures/rt';
 
 const bytes = (ts: number) => encodeFeed([tripUpdate({ id: 'e1', tripId: 'T1' })], ts);
 
+/**
+ * A tight ArrayBuffer copy. protobufjs's `finish()` returns a Node Buffer backed by an 8 KB pool,
+ * and `Buffer.prototype.slice` is subarray semantics, so `.buffer` would hand back the whole pool
+ * and the decoder would read past the message.
+ */
+const toArrayBuffer = (u8: Uint8Array): ArrayBuffer => new Uint8Array(u8).buffer;
+
 /** A fetch that answers every feed with the same bytes and counts calls. */
 function stubFetch(body: Uint8Array, ok = true) {
   const calls: { url: string; auth: string | null }[] = [];
   const impl = (async (url: string, init?: RequestInit) => {
     calls.push({ url, auth: new Headers(init?.headers).get('authorization') });
     return ok
-      ? { ok: true, status: 200, arrayBuffer: async () => body.slice().buffer }
+      ? { ok: true, status: 200, arrayBuffer: async () => toArrayBuffer(body) }
       : { ok: false, status: 503, arrayBuffer: async () => new ArrayBuffer(0) };
   }) as unknown as typeof fetch;
   return { impl, calls };
@@ -157,7 +164,7 @@ function stubFailing(body: Uint8Array, failing: string[]) {
     if (failing.some((f) => String(url).endsWith(`/${f}`))) {
       return { ok: false, status: 503, arrayBuffer: async () => new ArrayBuffer(0) };
     }
-    return { ok: true, status: 200, arrayBuffer: async () => body.slice().buffer };
+    return { ok: true, status: 200, arrayBuffer: async () => toArrayBuffer(body) };
   }) as unknown as typeof fetch;
 }
 
