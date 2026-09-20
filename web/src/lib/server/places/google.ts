@@ -1,4 +1,5 @@
 // Google Places API (New). Called only by the server; the key never leaves the box.
+import { haversineM } from '$lib/geo';
 import type { Venue, VenueKind } from '$lib/types';
 
 export type GoogleConfig = { key: string; fetchImpl?: typeof fetch };
@@ -27,7 +28,7 @@ async function call(cfg: GoogleConfig, url: string, init: RequestInit, fieldMask
 
 type GPlace = {
   id: string; displayName?: { text: string }; formattedAddress?: string; location?: { latitude: number; longitude: number };
-  primaryType?: string; regularOpeningHours?: { weekdayDescriptions?: string[] }; rating?: number; nationalPhoneNumber?: string;
+  primaryType?: string; regularOpeningHours?: { weekdayDescriptions?: string[] }; rating?: number; userRatingCount?: number; nationalPhoneNumber?: string;
   websiteUri?: string; googleMapsUri?: string; photos?: { name: string; authorAttributions?: { displayName?: string }[] }[];
 };
 
@@ -40,6 +41,30 @@ export async function searchText(cfg: GoogleConfig, query: string, bias: { lat: 
   return places.filter((p) => p.location).map((p) => ({
     source: 'google', id: p.id, name: p.displayName?.text ?? '', kind: kindFromGoogleType(p.primaryType),
     lat: p.location!.latitude, lon: p.location!.longitude, address: p.formattedAddress
+  }));
+}
+
+/** Place types (Table A) the station list asks for. Breweries and taprooms carry `bar` as well. */
+export const NEARBY_TYPES = ['bar', 'pub', 'wine_bar', 'night_club', 'restaurant', 'cafe'];
+
+/**
+ * Bars and restaurants inside a circle, with their Google rating so the list can be ranked. One
+ * call returns at most 20 places, plenty for a 250 m circle around a suburban station.
+ */
+export async function searchNearby(cfg: GoogleConfig, center: { lat: number; lon: number }, radiusM: number): Promise<Venue[]> {
+  const res = await call(cfg, `${BASE}/places:searchNearby`, {
+    method: 'POST', headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      includedTypes: NEARBY_TYPES, maxResultCount: 20,
+      locationRestriction: { circle: { center: { latitude: center.lat, longitude: center.lon }, radius: radiusM } }
+    })
+  }, 'places.id,places.displayName,places.formattedAddress,places.location,places.primaryType,places.rating,places.userRatingCount');
+  const places = ((await res.json()).places ?? []) as GPlace[];
+  return places.filter((p) => p.location).map((p) => ({
+    source: 'google', id: p.id, name: p.displayName?.text ?? '', kind: kindFromGoogleType(p.primaryType),
+    lat: p.location!.latitude, lon: p.location!.longitude, address: p.formattedAddress,
+    rating: p.rating, ratingCount: p.userRatingCount,
+    distanceM: Math.round(haversineM(center.lat, center.lon, p.location!.latitude, p.location!.longitude))
   }));
 }
 

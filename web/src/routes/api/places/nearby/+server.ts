@@ -1,7 +1,8 @@
-import { error, json } from '@sveltejs/kit';
+import { error, isHttpError, json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import { requireUser } from '$lib/server/pb';
 import { nearbyForStation } from '$lib/server/places/nearby';
+import { describePbError } from '$lib/server/places/store';
 
 export const GET: RequestHandler = async ({ request, url }) => {
   const user = await requireUser(request);
@@ -11,8 +12,12 @@ export const GET: RequestHandler = async ({ request, url }) => {
   try {
     return json(await nearbyForStation(station, refresh));
   } catch (err) {
-    if ((err as { status?: number }).status) throw err;
+    // Only our own error(...) calls pass through; a PocketBase or Google failure gets a message the
+    // picker can show instead of SvelteKit's bare "Internal Error".
+    if (isHttpError(err)) throw err;
     console.error('[places] nearby failed', station, err);
-    throw error(502, 'OpenStreetMap is not answering right now. Try again in a minute or search by name.');
+    const pbMessage = describePbError(err);
+    if (pbMessage) throw error(502, pbMessage);
+    throw error(502, 'The venue lookup is not answering right now. Try again in a minute or search by name.');
   }
 };

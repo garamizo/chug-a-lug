@@ -13,11 +13,20 @@ export type Hours = { source: 'osm'; raw: string } | { source: 'google'; weekday
 export type VenueKind = 'bar' | 'restaurant' | 'other';
 export type PhotosStatus = 'none' | 'pending' | 'done' | 'failed';
 
+/** One venue, shared by every stop that points at it. Written only by the server. */
+export type Place = RecordModel & {
+  ref: string; source: 'google' | 'osm'; place_id: string; osm_id: string; name: string; kind: VenueKind;
+  lat: number; lon: number; address: string; rating: number | null; rating_count: number | null; hours: Hours | null;
+  phone: string; website: string; maps_url: string; station_id: string; distance_m: number | null;
+  photos: string[]; photo_refs: string[] | null; photo_attributions: string[] | null; details_at: string; fetched_at: string;
+};
+export type PlaceLookup = RecordModel & { station_id: string; source: 'google' | 'osm'; count: number; fetched_at: string };
+
 export type Stop = RecordModel & {
   itinerary: string; order: number; name: string; kind: VenueKind; station_id: string; station_name: string;
-  place_id: string; osm_id: string; address: string; lat: number; lon: number; hours: Hours | null; phone: string;
+  place: string; place_id: string; osm_id: string; address: string; lat: number; lon: number; hours: Hours | null; phone: string;
   website: string; confirmed_open: boolean; dwell_min: number; walk_min: number; notes: string; meet_point: string;
-  photos_status: PhotosStatus;
+  photos_status: PhotosStatus; direction: 'out' | 'back' | ''; expand?: { place?: Place };
 };
 
 export type StopPhoto = RecordModel & { stop: string; file: string; source: 'google' | 'user'; attribution: string };
@@ -35,12 +44,17 @@ export type Vote = RecordModel & { user: string; target_collection: string; targ
 export type Comment = RecordModel & { user: string; target_collection: string; target_id: string; body: string; expand?: { user?: UserRecord } };
 export type ApprovalVote = RecordModel & { itinerary: string; user: string; value: 'go' | 'nogo'; expand?: { user?: UserRecord } };
 
-export type Station = { id: string; name: string; lat: number; lon: number };
+/** `served` is set when the stations were asked for a date: false means no train stops there that day. */
+export type Station = { id: string; name: string; lat: number; lon: number; served?: boolean };
 export type Line = { routeId: string; name: string; color: string; stations: Station[] };
 
 export type Venue = {
   source: 'osm' | 'google'; id: string; name: string; kind: VenueKind; lat: number; lon: number;
   address?: string; hours?: Hours; phone?: string; website?: string; distanceM?: number;
+  /** Google rating (1 to 5) and review count; absent for OpenStreetMap results. */
+  rating?: number; ratingCount?: number;
+  /** The `places` record id, when the venue has been stored. */
+  placeRef?: string;
 };
 
 export type NextTrip = {

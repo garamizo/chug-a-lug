@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { mkdtempSync, readFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { consumeBudget } from '../../src/lib/server/places/budget';
@@ -12,6 +12,16 @@ describe('consumeBudget', () => {
     expect(await consumeBudget(dir, 'photos', 2)).toBe(false);
     expect(await consumeBudget(dir, 'details', 1)).toBe(true);
     expect(await consumeBudget(dir, 'details', 1)).toBe(false);
+  });
+
+  it('counts a kind that an older budget file does not have yet', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'budget-'));
+    mkdirSync(join(dir, 'places'), { recursive: true });
+    writeFileSync(join(dir, 'places', 'budget.json'), JSON.stringify({ month: new Date().toISOString().slice(0, 7), details: 3, photos: 4 }));
+    expect(await consumeBudget(dir, 'nearby', 2)).toBe(true);
+    expect(await consumeBudget(dir, 'nearby', 2)).toBe(true);
+    expect(await consumeBudget(dir, 'nearby', 2)).toBe(false);
+    expect(JSON.parse(readFileSync(join(dir, 'places', 'budget.json'), 'utf8'))).toMatchObject({ details: 3, photos: 4, nearby: 2 });
   });
 
   it('serializes concurrent calls so no increment is lost', async () => {

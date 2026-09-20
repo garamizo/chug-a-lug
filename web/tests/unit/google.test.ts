@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { kindFromGoogleType, photoBytes, placeDetails, searchText } from '../../src/lib/server/places/google';
+import { kindFromGoogleType, photoBytes, placeDetails, searchNearby, searchText } from '../../src/lib/server/places/google';
 
 function capture(body: unknown, status = 200) {
   const calls: { url: string; init: RequestInit }[] = [];
@@ -30,6 +30,33 @@ describe('searchText', () => {
     expect(headers.get('x-goog-api-key')).toBe('K');
     expect(headers.get('x-goog-fieldmask')).toContain('places.id');
     expect(JSON.parse(String(calls[0].init.body))).toMatchObject({ textQuery: 'tap house', locationBias: { circle: { center: { latitude: 41.9, longitude: -87.94 }, radius: 1500 } } });
+  });
+});
+
+describe('searchNearby', () => {
+  it('restricts to the radius, asks for ratings, and maps results with a distance', async () => {
+    const { calls, fetchImpl } = capture({ places: [
+      { id: 'p1', displayName: { text: 'Corner Tap' }, formattedAddress: '2 Main St', location: { latitude: 41.8155, longitude: -87.8694 }, primaryType: 'bar', rating: 4.6, userRatingCount: 312 },
+      { id: 'p2', displayName: { text: 'No Location' }, primaryType: 'bar' }
+    ] });
+    const venues = await searchNearby({ key: 'K', fetchImpl }, { lat: 41.8144444, lon: -87.8694444 }, 250);
+    expect(venues).toHaveLength(1);
+    expect(venues[0]).toMatchObject({ source: 'google', id: 'p1', name: 'Corner Tap', kind: 'bar', address: '2 Main St', rating: 4.6, ratingCount: 312 });
+    expect(venues[0].distanceM).toBeGreaterThan(100);
+    expect(venues[0].distanceM).toBeLessThan(130);
+    expect(calls[0].url).toBe('https://places.googleapis.com/v1/places:searchNearby');
+    const headers = new Headers(calls[0].init.headers);
+    expect(headers.get('x-goog-api-key')).toBe('K');
+    expect(headers.get('x-goog-fieldmask')).toContain('places.rating');
+    expect(headers.get('x-goog-fieldmask')).toContain('places.userRatingCount');
+    const body = JSON.parse(String(calls[0].init.body));
+    expect(body).toMatchObject({ maxResultCount: 20, locationRestriction: { circle: { center: { latitude: 41.8144444, longitude: -87.8694444 }, radius: 250 } } });
+    expect(body.includedTypes).toContain('bar');
+    expect(body.includedTypes).toContain('restaurant');
+  });
+  it('throws with the status on failure', async () => {
+    const { fetchImpl } = capture({ error: { message: 'nope' } }, 429);
+    await expect(searchNearby({ key: 'K', fetchImpl }, { lat: 0, lon: 0 }, 250)).rejects.toThrow('Google 429');
   });
 });
 
