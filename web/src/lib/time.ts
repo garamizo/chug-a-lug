@@ -84,3 +84,8 @@ export function fmtWeekday(date: string, style: 'long' | 'short' = 'long'): stri
   const [y, m, d] = date.split('-').map(Number);
   return new Intl.DateTimeFormat('en-US', { timeZone: 'UTC', weekday: style }).format(new Date(Date.UTC(y, m - 1, d)));
 }
+
+/** Today's date in the crawl's timezone as YYYY-MM-DD, whatever timezone the phone is in. */
+export function todayInTz(now: Date = new Date()): string {
+  return new Intl.DateTimeFormat('en-CA', { timeZone: TZ, year: 'numeric', month: '2-digit', day: '2-digit' }).format(now);
+}
