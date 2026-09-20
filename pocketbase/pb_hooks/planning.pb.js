@@ -27,9 +27,20 @@ onRecordUpdateRequest((e) => {
         throw new ForbiddenError('Only the admin can change ' + f)
       }
     }
+    // Once it leaves draft the itinerary is frozen for everyone but the admin, its creator
+    // included: the collection updateRule alone still lets the owner edit the schedule.
+    if (original.getString('status') !== 'draft') {
+      for (const f of ['title', 'event_date', 'start_time']) {
+        if (Object.prototype.hasOwnProperty.call(body, f) && String(body[f]) !== String(original.get(f))) {
+          throw new ForbiddenError('This itinerary is no longer a draft')
+        }
+      }
+    }
   }
   const locking = e.record.getString('status') === 'locked' && original.getString('status') !== 'locked'
   if (locking) e.record.set('locked_at', new Date().toISOString())
+  // Back to draft (admin only): the record is no longer locked, so it carries no lock time.
+  if (original.getString('status') === 'locked' && e.record.getString('status') === 'draft') e.record.set('locked_at', '')
   const scheduleChanged = e.record.getString('start_time') !== original.getString('start_time') ||
     e.record.getString('event_date') !== original.getString('event_date')
   e.next()
@@ -51,10 +62,14 @@ onRecordUpdateRequest((e) => {
 
 onRecordCreateRequest((e) => {
   const r = e.record
+  // A number field that was not submitted reads back as 0, so "absent" is decided from the request
+  // body: an explicit dwell_min/order of 0 is a real value and must survive.
+  const body = e.requestInfo().body
+  const submitted = (f) => Object.prototype.hasOwnProperty.call(body, f) && body[f] !== null && body[f] !== ''
   if (!r.getString('kind')) r.set('kind', 'bar')
   if (!r.getString('photos_status')) r.set('photos_status', 'none')
-  if (r.get('dwell_min') === null || r.get('dwell_min') === undefined || r.getInt('dwell_min') === 0) r.set('dwell_min', 60)
-  if (!r.getInt('order')) {
+  if (!submitted('dwell_min')) r.set('dwell_min', 60)
+  if (!submitted('order')) {
     const last = $app.findRecordsByFilter('stops', 'itinerary = {:it}', '-order', 1, 0, { it: r.getString('itinerary') })
     r.set('order', last.length ? last[0].getInt('order') + 1 : 1)
   }

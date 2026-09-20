@@ -52,6 +52,21 @@ describe('itineraries', () => {
     expect(again.status).toBe('archived');
   });
 
+  it('freezes a locked itinerary for its creator; the admin can edit it and unlock it', async () => {
+    const { id } = await (await createItinerary(crew.token, { title: 'Frozen' })).json();
+    await patch(`/api/collections/itineraries/records/${id}`, { status: 'locked' }, admin.token);
+    expect((await patch(`/api/collections/itineraries/records/${id}`, { start_time: '12:00' }, crew.token)).status).toBe(403);
+    expect((await patch(`/api/collections/itineraries/records/${id}`, { title: 'Renamed' }, crew.token)).status).toBe(403);
+    expect((await patch(`/api/collections/itineraries/records/${id}`, { event_date: '2026-12-27' }, crew.token)).status).toBe(403);
+    // A no-op write of the same values is not an edit, so it still goes through.
+    expect((await patch(`/api/collections/itineraries/records/${id}`, { title: 'Frozen' }, crew.token)).status).toBe(200);
+    expect((await patch(`/api/collections/itineraries/records/${id}`, { start_time: '12:00' }, admin.token)).status).toBe(200);
+    const back = await patch(`/api/collections/itineraries/records/${id}`, { status: 'draft' }, admin.token);
+    expect(back.status).toBe(200);
+    expect((await back.json()).locked_at).toBe('');
+    expect((await patch(`/api/collections/itineraries/records/${id}`, { start_time: '12:30' }, crew.token)).status).toBe(200);
+  });
+
   it('owner can delete a draft but not a locked itinerary', async () => {
     const { id } = await (await createItinerary(crew.token)).json();
     await patch(`/api/collections/itineraries/records/${id}`, { status: 'locked' }, admin.token);
@@ -78,6 +93,16 @@ describe('stops', () => {
     expect((await patch(`/api/collections/stops/records/${stop.id}`, { dwell_min: 30 }, other.token)).status).toBe(404);
     expect((await createStop(admin.token, id)).status).toBe(200);
     expect((await patch(`/api/collections/stops/records/${stop.id}`, { dwell_min: 30 }, admin.token)).status).toBe(200);
+  });
+
+  it('keeps an explicit zero dwell or order instead of treating it as absent', async () => {
+    const { id } = await (await createItinerary(crew.token)).json();
+    const zero = await (await createStop(crew.token, id, { dwell_min: 0, order: 0 })).json();
+    expect(zero.dwell_min).toBe(0);
+    expect(zero.order).toBe(0);
+    const next = await (await createStop(crew.token, id)).json();
+    expect(next.dwell_min).toBe(60);
+    expect(next.order).toBe(1);
   });
 
   it('legs and event_log are read-only for users', async () => {
