@@ -2,7 +2,7 @@
   import { onMount } from 'svelte';
   import { pb, auth, subscribe } from '$lib/pb';
   import { copy } from '$lib/labels';
-  import { fmtDate, fmtTime } from '$lib/time';
+  import { fmtDateTime } from '$lib/time';
   import type { Comment } from '$lib/types';
 
   let { targetCollection, targetId }: { targetCollection: string; targetId: string } = $props();
@@ -40,7 +40,7 @@
   <ul>
     {#each comments as c (c.id)}
       <li>
-        <div class="who"><strong>{c.expand?.user?.name ?? '…'}</strong> <span>{fmtDate(c.created.slice(0, 10))} {fmtTime(c.created)}</span></div>
+        <div class="who"><strong>{c.expand?.user?.name ?? '…'}</strong> <span>{fmtDateTime(c.created)}</span></div>
         <p>{c.body}</p>
         {#if canDelete(c)}<button type="button" class="link" onclick={() => remove(c)} data-testid="comment-delete-{c.id}">{copy.delete}</button>{/if}
       </li>

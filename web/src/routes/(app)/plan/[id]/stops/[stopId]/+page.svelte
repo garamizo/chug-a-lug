@@ -38,6 +38,7 @@
   }
   $effect(() => {
     dirty = false; saveStatus = ''; photoError = '';
+    stop = null; itinerary = null; photos = [];
     void load();
     const unsubs = [
       subscribe('stops', pb.filter('id = {:id}', { id: data.stopId }), load),

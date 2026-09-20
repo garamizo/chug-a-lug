@@ -1,17 +1,6 @@
 import { test, expect, type Page } from '@playwright/test';
-import { deleteUserByName } from '../hooks/setup';
 
 const ADMIN = process.env.ADMIN_PASSWORD ?? 'admin-test-password';
-
-// login.spec.ts's "admin password makes the name a Conductor" test runs earlier in this same
-// Playwright invocation (one shared PocketBase for the whole run) and creates a user with
-// name_key "e2e boss" (from 'e2e boss'). Names are case-insensitively the same identity
-// (name_key = display.toLowerCase()), so logging in here as 'E2E Boss' would reuse that record
-// and keep its first-seen lowercase display spelling instead of 'E2E Boss'. Clear it first so
-// this test gets its own fresh identity with the exact display name it asserts on.
-test.beforeAll(async () => {
-  await deleteUserByName('E2E Boss');
-});
 
 const venuesFor: Record<string, unknown[]> = {
   ELMHURST: [{ source: 'osm', id: 'node/1', name: 'Test Tavern', kind: 'bar', lat: 41.9012, lon: -87.9412, distanceM: 120, address: '1 York St' }],
@@ -36,7 +25,7 @@ test.beforeEach(async ({ page }) => {
 });
 
 test('draft with real train times, layover change, card edits, votes, comments, approval and lock', async ({ page }) => {
-  await login(page, 'E2E Boss', ADMIN);
+  await login(page, 'E2E Skipper', ADMIN);
   await page.getByTestId('nav-plan').click();
   await page.getByTestId('draft-title').fill('E2E Crawl');
   await page.getByTestId('create-draft').click();
@@ -82,11 +71,11 @@ test('draft with real train times, layover change, card edits, votes, comments, 
   await page.getByTestId('comment-input').fill('Nice route');
   await page.getByTestId('comment-post').click();
   await expect(page.getByTestId('comments')).toContainText('Nice route');
-  await expect(page.getByTestId('comments')).toContainText('E2E Boss');
+  await expect(page.getByTestId('comments')).toContainText('E2E Skipper');
 
   await page.getByTestId('open-vote').click();
   await page.getByTestId('vote-go').click();
-  await expect(page.getByTestId('tally')).toContainText('E2E Boss');
+  await expect(page.getByTestId('tally')).toContainText('E2E Skipper');
   page.once('dialog', (d) => d.accept());
   await page.getByTestId('lock-route').click();
   await expect(page).toHaveURL(/\/route$/);

@@ -61,6 +61,12 @@ export function fmtTime(iso: string | Date): string {
     .replace(/ /g, ' ');
 }
 
+export function fmtDateTime(iso: string | Date): string {
+  return new Intl.DateTimeFormat('en-US', { timeZone: TZ, weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })
+    .format(new Date(iso))
+    .replace(/ /g, ' ');
+}
+
 export function fmtDate(date: string): string {
   const [y, m, d] = date.split('-').map(Number);
   return new Intl.DateTimeFormat('en-US', { timeZone: 'UTC', weekday: 'short', month: 'short', day: 'numeric' }).format(new Date(Date.UTC(y, m - 1, d)));

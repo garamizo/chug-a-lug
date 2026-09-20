@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { localToUtc, minutesOfDay, parseHm, fmtHm, fmtTime, fmtDate } from '../../src/lib/time';
+import { localToUtc, minutesOfDay, parseHm, fmtHm, fmtTime, fmtDate, fmtDateTime } from '../../src/lib/time';
 
 describe('time', () => {
   it('converts Chicago local minutes to UTC across DST', () => {
@@ -46,5 +46,10 @@ describe('time', () => {
     expect(fmtTime('2026-12-26T17:00:00.000Z')).toBe('11:00 AM');
     expect(fmtTime('2026-12-27T07:10:00.000Z')).toBe('1:10 AM');
     expect(fmtDate('2026-12-26')).toBe('Sat, Dec 26');
+  });
+  it('formats a local date and time together, past midnight UTC', () => {
+    // 2026-09-20T00:15Z is still 2026-09-19 evening in Chicago (UTC-5 in September); fmtDateTime
+    // must use the Chicago calendar date, not the UTC one.
+    expect(fmtDateTime('2026-09-20T00:15:00.000Z')).toBe('Sat, Sep 19, 7:15 PM');
   });
 });
