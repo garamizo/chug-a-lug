@@ -1,5 +1,4 @@
 <script lang="ts">
-  import { onMount } from 'svelte';
   import { goto } from '$app/navigation';
   import { pb, auth, subscribe } from '$lib/pb';
   import { copy } from '$lib/labels';
@@ -26,7 +25,7 @@
       itinerary = it; stops = st; legs = lg;
     } catch { error = copy.loadError; }
   }
-  onMount(() => {
+  $effect(() => {
     void load();
     const filter = pb.filter('itinerary = {:id}', { id: data.id });
     const unsubs = [subscribe('stops', filter, load), subscribe('legs', filter, load), subscribe('itineraries', pb.filter('id = {:id}', { id: data.id }), load)];

@@ -1,5 +1,4 @@
 <script lang="ts">
-  import { onMount } from 'svelte';
   import { pb, auth, subscribe } from '$lib/pb';
   import { api } from '$lib/api';
   import { copy } from '$lib/labels';
@@ -37,7 +36,8 @@
       }
     } catch { error = copy.loadError; }
   }
-  onMount(() => {
+  $effect(() => {
+    dirty = false; saveStatus = ''; photoError = '';
     void load();
     const unsubs = [
       subscribe('stops', pb.filter('id = {:id}', { id: data.stopId }), load),
