@@ -36,6 +36,8 @@ with an album and a scoreboard to argue about at dinner.
   No sign-up, no recovery, no per-person accounts; the session lives in a cookie for a year.
 - **Lines:** UP-W (Ogilvie), MD-W (Union Station, turns at Elgin on weekends), BNSF (Union Station).
   Ogilvie and Union are a 6 min walk apart, so the plan can switch lines downtown.
+- **The crawl is settled on the BNSF line** (Aurora to Union Station). The planner shows only that line;
+  the schedule still loads all three so a stop on another line in an older draft keeps its train times.
 - **Runs on the admin's own computer.** One machine at home holds the database, the media, and the API
   keys, published to the internet through a Cloudflare Tunnel at chugalug.app. No cloud accounts to manage.
 - **Simulation is a first-class feature.** The whole live experience must be rehearsable at home with a fake
@@ -96,14 +98,29 @@ users see. Bars and restaurants keep their plain names.
 Goal: by early December, one locked itinerary that everyone has seen and voted on.
 
 **Must have (MVP)**
-- Schematic diagram of the three lines with stations. Tap a station to see nearby bars and restaurants
-  (Overpass query on OpenStreetMap within about 800 m of the station).
+- The BNSF line drawn top to bottom down the middle of the screen, Aurora at the top and Union Station at
+  the bottom. Tap a station to see the best rated bars and restaurants within 250 m of it (Google Places
+  Nearby Search, one call per station cached forever; OpenStreetMap, nearest first, when no key is set).
+- The draft is laid out on that same line: a stop sits left of the line while the crawl heads toward
+  Chicago and right of it on the way back to Aurora, in its station's row, with its train leg underneath.
+  The two sides are panes wider than half the screen; one is in focus and a fifth of the other peeks in.
+  Drag, tap the direction tab, or focus a card on the other side to shift. Tap a station's circle to add
+  a stop there: the side of the map you tap on is the stop's direction (going or return), and the crawl
+  is always the going stops top to bottom, then the return stops bottom to top, so a new stop slots in
+  by station rather than at the end. Stations no train stops at on the crawl date (Metra skips Congress
+  Park, Highlands, LaVergne, Stone Ave and West Hinsdale on weekends) are greyed out with no circle to
+  tap, and a leg that still touches one says which station has no trains that day instead of blaming
+  the layover. The last stop at a station picks its departure from that day's trains toward the next
+  stop; earlier stops at the same station pick a plain layover and can swap places with the small arrows.
+  A draft has two screens: the view (`/plan/<id>`) with the read-only route, cheers, comments and the
+  Highball, and the edit screen (`/plan/<id>/edit`) with the controls and nothing else.
 - Build an itinerary draft: ordered stops, each tied to a station and a planned dwell time. The app fills
   in train legs and walks from the Saturday Metra schedule, so the draft shows real train times and flags
   any leg that doesn't work.
-- Venue card: name, address, hours, walk time from station, up to 5 photos, link to Google Maps, notes.
-  When anyone adds a stop, the server calls Google Places once, saves the photos to disk, and every user
-  sees the same card from then on (see Decisions, item 3).
+- Venue card: name, address, hours, rating, walk time from station, up to 5 photos, link to Google Maps,
+  notes. Venues live in a `places` table: the station lookup stores the basics, the first stop that
+  points at a venue adds Google details and photos, and every later stop in any draft reuses the same
+  record (see Decisions, item 3).
 - **"Confirmed open on event day" checkbox with phone number.** Dec 26 is a normal Saturday for most
   bars, but the week after Christmas still catches some closures.
 - Like / dislike and comments on each draft and each stop.
@@ -190,8 +207,9 @@ Recommendation, not yet decided. See the references doc for the alternatives con
 - **Auth**: name plus the shared crew password (or the admin password for the Conductor role), checked by a
   PocketBase hook that creates the identity for that name on first login and returns a one-year token kept
   in a cookie. No SMS, no email, no recovery flow.
-- **Places**: Overpass (OpenStreetMap) for bars near stations, Photon for search, Google Places (server-side,
-  key never leaves the box) for venue-card photos, fetched once per stop and stored on disk.
+- **Places**: Google Places (server-side, key never leaves the box) for the rated list near each station,
+  text search by name, and venue-card photos fetched once per stop and stored on disk; Overpass
+  (OpenStreetMap) is the fallback for the station list when no key is configured.
 - **Uploads**: PocketBase multipart, images compressed in the browser, videos capped at 90 MB because the
   Cloudflare free tier rejects requests over 100 MB. Chunked (tus) uploads are a later upgrade if the cap bites.
 
@@ -221,13 +239,18 @@ re-reads the feed rather than hard-coding it.
 
 Numbered to match the earlier review; each is reversible.
 
-1. **Bars near a station come from OpenStreetMap, not Google.** Free, cacheable, no key in the browser.
+1. **Bars near a station come from Google Places Nearby Search, ranked by rating.** One call per station
+   (about 20 for the BNSF line); the venues go into the `places` table and a `place_lookups` row marks the
+   station as searched, so the database answers every later request. The key never reaches the browser.
+   OpenStreetMap remains the fallback without a key; it has no ratings, so that list is nearest first.
+   Both are cut at 250 m.
 2. **Metra key verified on Sept 19, 2026.** All three realtime endpoints return protobuf that decodes; the
    static schedule needs no key. The file in `.secrets/` is git-ignored.
-3. **Venue-card photos come from Google Places, fetched once per stop and stored on our disk.** Flow: a user
-   picks a bar; the server calls Place Details (name, address, hours, rating, photo references) and then
-   Place Photos for up to 5 images, writes the JPEGs under the stop's folder with Google attribution, and
-   never calls Google for that stop again. Everyone sees the same five photos. Budget: about 30 stops
+3. **Venue-card photos come from Google Places, fetched once per venue and stored on the venue's record.**
+   Flow: a user picks a bar; the server calls Place Details (name, address, hours, rating, photo
+   references) and then Place Photos for up to 5 images, stores them as files on the `places` record with
+   Google attribution, and never calls Google for that venue again, whichever draft or stop asks.
+   Everyone sees the same five photos. Budget: about 30 stops
    means 30 detail calls and 150 photo calls, inside the 1,000 free calls a month for each. The key lives
    only on the home box with a monthly cap set in the Google console. Accepted caveat: Google's terms say
    Places photos may not be cached; the realistic downside for a private app is a disabled key.
@@ -251,9 +274,9 @@ Numbered to match the earlier review; each is reversible.
    12:40 AM. BNSF 20 trips each way, hourly, last outbound 12:33 AM. Last inbound: UP-W 10:25 PM from
    Elburn, MD-W 10:10 PM from Elgin, BNSF 11:05 PM from Aurora.
 10. **Route optimizer is a nice-to-have, not a phase.**
-11. **Venue lookup has three sources.** OpenStreetMap near the station (free, cached forever), Google text
-    search by name for the thin suburbs, and plain name entry. Google details and photos are still fetched
-    once per stop.
+11. **Venue lookup has three sources.** The rated list within 250 m of the station (Google, cached forever;
+    OpenStreetMap fallback), Google text search by name for anything farther out, and plain name entry.
+    Google details and photos are still fetched once per stop.
 
 ## Open questions
 

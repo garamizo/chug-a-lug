@@ -15,8 +15,8 @@
   root-owned file ever appears there, fix it with
   `docker run --rm -v "$PWD/data:/d" alpine sh -c 'chown -R 1000:1000 /d'`.
 - `data/gtfs/` (Metra static feed, re-downloaded when `published.txt` changes, safe to delete) and
-  `data/places/` (OSM nearby cache per station, Google `meta.json` and photos per place id, `budget.json`
-  monthly counters; keep it, it is what saves Google calls).
+  `data/places/budget.json` (monthly Google call counters). Venues, their details and photos live in
+  PocketBase (`places`, `place_lookups`), so they are covered by the database backup.
 - Secrets: `.env` (never committed). Metra token file in `.secrets/`.
 - Dashboards: Cloudflare Zero Trust → Networks → Tunnels → `chugalug`; PocketBase admin at http://127.0.0.1:8090/_/ from the box.
 
@@ -36,12 +36,20 @@ changing it means `docker compose up -d --build web`.
 dev (the PocketBase hook calls the SvelteKit server with that secret and URL after every `stops` write).
 
 ## Planning data
-- Nearby venues per station come from OpenStreetMap once and are cached in `data/places/nearby/<STATION>.json`.
-  To refresh one: as the Conductor, open `/api/places/nearby?station=ELMHURST&refresh=1` (with the app's token; easiest is the browser console snippet in the M1 plan, Task 6).
-- Google Places is called once per stop (details) plus once per photo. `data/places/budget.json` counts calls per month;
-  the server refuses new calls past 800 of either. Reset by deleting the file at month start if needed.
-- A stop whose photos failed shows "Try again" on its card. Adding a `place_id` to the stop in the PocketBase admin UI
-  and retrying fixes wrong matches.
+- Nearby venues per station (within 250 m, best rated first) come from Google Places Nearby Search once; the
+  venues are stored in the `places` collection and the station is marked in `place_lookups`, after which
+  the database answers. Without `GOOGLE_PLACES_KEY` the server falls back to OpenStreetMap (no ratings,
+  nearest first). To search a station again: as the Conductor, open
+  `/api/places/nearby?station=LAGRANGE&refresh=1` (with the app's token; easiest is the browser console snippet in the M1 plan, Task 6).
+  Old `data/places/nearby/*.json` and `data/places/<place_id>/` folders from before the table existed can be deleted.
+- Google Places is called once per station (nearby), once per venue (details) plus once per photo, whichever
+  stop or draft asks first; details and photos sit on the `places` record. `data/places/budget.json` counts
+  calls per month; the server refuses new calls past 200 nearby or 800 of the other two. Reset by deleting
+  the file at month start if needed.
+- The Metra timetable zip is cached in `data/gtfs/` (a bind mount, so it survives `docker compose up`) and
+  `published.txt` is checked once a day; delete the folder to force a fresh download.
+- A stop whose photos failed shows "Try again" on its card. Setting `place_id` on the stop in the PocketBase admin UI
+  (and clearing its `place` relation) then retrying fixes wrong matches.
 - The Metra feed is checked every 10 minutes; the app keeps the last good copy if Metra is down.
 - If venue photos fail with `Google 403`, enable **Places API (New)** for the project in the Google Cloud
   console (APIs & Services → Library → Places API (New)); the key itself is fine.
