@@ -28,7 +28,7 @@ build:
     cd web && npm run build
 
 up:
-    mkdir -p data/gtfs data/places
+    mkdir -p data/gtfs data/places data/recordings
     docker compose up -d --build
 
 down:
@@ -39,3 +39,6 @@ logs SERVICE="":
 
 backup:
     bash scripts/backup.sh
+
+record NAME:
+    node web/scripts/record.mjs "{{NAME}}"

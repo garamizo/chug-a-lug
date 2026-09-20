@@ -29,6 +29,7 @@ services:
     volumes:
       - ./data/gtfs:/data/gtfs
       - ./data/places:/data/places
+      - ./data/recordings:/data/recordings
     depends_on:
       pocketbase:
         condition: service_healthy

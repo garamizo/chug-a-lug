@@ -15,3 +15,4 @@ pocketbase/pb_data/
 test-results/
 playwright-report/
 .superpowers/
+data/recordings/
