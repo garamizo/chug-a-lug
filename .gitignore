@@ -11,6 +11,7 @@ web/playwright-report/
 pocketbase/pocketbase
 pocketbase/pb_data/
 .worktrees/
+.claude/worktrees/
 .svelte-kit/
 test-results/
 playwright-report/
