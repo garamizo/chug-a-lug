@@ -6,6 +6,7 @@
   import ItineraryView from '$lib/components/ItineraryView.svelte';
   import Votes from '$lib/components/Votes.svelte';
   import Comments from '$lib/components/Comments.svelte';
+  import ApprovalPanel from '$lib/components/ApprovalPanel.svelte';
   import type { Itinerary, Leg, Stop } from '$lib/types';
 
   let { data } = $props();
@@ -48,7 +49,7 @@
   <ItineraryView {itinerary} {stops} {legs} {editable} {canManage} onerror={(m) => (error = m)} />
   <Votes targetCollection="itineraries" targetId={itinerary.id} />
   <Comments targetCollection="itineraries" targetId={itinerary.id} />
-  <!-- approval -->
+  <ApprovalPanel {itinerary} />
   {#if canManage && itinerary.status === 'draft'}
     <button type="button" class="secondary" onclick={deleteDraft} data-testid="delete-draft">{copy.deleteDraft}</button>
   {/if}
