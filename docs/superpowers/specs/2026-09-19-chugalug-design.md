@@ -60,6 +60,7 @@ chug-a-lug/
     package.json, svelte.config.js, vite.config.ts
     src/lib/labels.ts         # developer term -> UI label (the glossary)
     src/lib/pb.ts             # PocketBase client + auth store
+    src/lib/metra/            # pure gtfs + plan (parser, nextTrips, planLeg, recomputeLegs)
     src/lib/server/metra/     # gtfs static loader, rt poller, next-train, recorder, replayer
     src/lib/server/sim/       # sim clock
     src/lib/server/places/    # google places fetch-once
@@ -67,7 +68,7 @@ chug-a-lug/
     tests/                    # vitest unit, playwright e2e
   data/                       # git-ignored runtime state
     pb_data/                  # SQLite + uploaded files
-    gtfs/                     # schedule.zip + published.txt + sqlite import
+    gtfs/                     # schedule.zip + published.txt (no sqlite)
     recordings/<name>/        # <epoch>.positions.pb etc.
     places/<place_id>/        # 1.jpg .. 5.jpg + meta.json
     backups/
@@ -89,14 +90,13 @@ America/Chicago. Access rules in brackets: A = admin only, U = any authenticated
 | Collection | Fields | Rules |
 |---|---|---|
 | `users` (auth) | `name` (display, first-seen spelling), `name_key` (unique, lowercased), `is_admin` bool, `share_position` bool, `home_station` text, `left_early` bool | list/view U, update O (except `name`, `name_key`, `is_admin`, `password`), create via hook only |
-| `stations` | `stop_id` (GTFS), `name`, `route_ids` json, `lat`, `lon` | view U, write A (seeded from GTFS) |
-| `itineraries` | `title`, `status` enum draft/locked/archived, `event_date`, `created_by` rel users, `locked_at` | list/view U, create U, update O or A, only A may set locked |
-| `stops` | `itinerary` rel, `order` int, `name`, `kind` enum bar/restaurant/other, `station` rel, `place_id`, `address`, `lat`, `lon`, `hours` json, `phone`, `confirmed_open` bool, `dwell_min` int, `walk_min` int, `notes`, `meet_point` text | view U, create/update U while itinerary draft; A always |
+| `itineraries` | `title`, `status` enum draft/locked/archived, `event_date`, `start_time`, `vote_open` bool, `created_by` rel users, `locked_at` | list/view U, create U, update O or A, only A may set locked |
+| `stops` | `itinerary` rel, `order` int, `name`, `kind` enum bar/restaurant/other, `station_id`, `station_name`, `place_id`, `osm_id`, `address`, `lat`, `lon`, `hours` json, `phone`, `website`, `confirmed_open` bool, `dwell_min` int, `walk_min` int, `notes`, `meet_point` text, `photos_status` enum none/pending/done/failed | view U, create/update U while itinerary draft; A always |
 | `stop_photos` | `stop` rel, `file` file, `source` enum google/user, `attribution` text | view U, create U (user source) or hook (google) |
 | `votes` | `user` rel, `target_collection` text, `target_id` text, `value` enum up/down | view U, create/update/delete O; unique (user, target) |
 | `comments` | `user` rel, `target_collection`, `target_id`, `body` | view U, create U, update/delete O |
-| `approval_votes` | `itinerary` rel, `user` rel, `value` enum go/nogo | view U, create/update O while itinerary draft |
-| `legs` | `itinerary` rel, `from_stop` rel, `to_stop` rel, `route_id`, `trip_id`, `depart_station`, `arrive_station`, `sched_depart`, `sched_arrive`, `computed_at` | view U, write server only |
+| `approval_votes` | `itinerary` rel, `user` rel, `value` enum go/nogo | view U, create/update O while itinerary `vote_open` |
+| `legs` | `itinerary` rel, `from_stop` rel, `to_stop` rel, `kind` enum train/walk/impossible, `ready_at`, `depart_at`, `arrive_at`, `segments` json, `computed_at` | view U, write server only |
 | `checkins` | `user` rel, `stop` rel nullable, `kind` enum at_stop/on_train, `at` datetime | view U, create O |
 | `positions` | `user` rel, `lat`, `lon`, `accuracy`, `at` | view U, create O; server keeps only the latest 50 per user |
 | `broadcasts` | `itinerary` rel, `kind` enum reroute/hold/cancel/add/message, `body`, `created_by` rel | view U, create A |
@@ -111,7 +111,11 @@ Notes
   place and append to `event_log`; there is no versioning beyond the log.
 - `legs` is a cache. The server recomputes it whenever `stops` of the itinerary change, using the GTFS
   schedule for `event_date`. Recompute is idempotent and takes under a second for ten stops.
-- `stations` is seeded by a script from `stops.txt` filtered to UP-W, MD-W, BNSF.
+- One vote per `(user, target)`: `votes.value` is up/down on any `target_collection`/`target_id` pair
+  (an itinerary or a stop); a second vote from the same user on the same target updates in place.
+- Approval votes only while `vote_open`: `approval_votes` can be created/updated only while the
+  itinerary's `vote_open` is true; the admin opens the vote and locks the itinerary from the tally.
+- No `stations` collection: stations come straight from GTFS (`GET /api/metra/stations`), nothing to seed.
 
 ## 4. Authentication
 
@@ -142,8 +146,11 @@ Admin role: `users.is_admin`. Collection rules reference `@request.auth.is_admin
 Module `web/src/lib/server/metra/`, started once at server boot.
 
 - **Static**: on boot and every 10 minutes, fetch `published.txt`; if changed, download `schedule.zip`
-  and import into `data/gtfs/gtfs.sqlite` with `node-gtfs`. Expose `nextTrips(fromStopId, toStopId,
-  afterTime, serviceDate)` returning trips that stop at both stops in order, express-aware.
+  to `data/gtfs/` and parse it in memory with a pure TypeScript loader (no `node-gtfs`, no sqlite); a
+  download failure keeps the previous import and logs, retrying in 10 minutes. Expose
+  `nextTrips(fromStopId, toStopId, afterTime, serviceDate)` returning trips that stop at both stops in
+  order, express-aware; `nextTrips` is a scan over the three lines' trips (2,400) and takes about a
+  millisecond.
 - **Realtime**: every 30 s fetch positions, tripupdates, alerts with the bearer token; decode with
   `gtfs-realtime-bindings`; keep the latest FeedMessage of each in memory plus `fetchedAt`. Never expose
   the token; never let the browser hit Metra.
@@ -181,11 +188,20 @@ The banner subscribes to SSE on `stops`, `legs`, `broadcasts` and polls `/api/me
 
 Admin actions are ordinary record writes on `stops` (reorder, insert, delete, change `dwell_min`), plus a
 `broadcasts` record. A PocketBase hook on `stops` after-write calls `POST /api/internal/recompute?itinerary=`
-on the SvelteKit server (shared secret header). Recompute:
-1. Sort stops by `order`. For each consecutive pair, find the first trip from stop A's station to stop B's
-   station departing after `arrivalAtA + dwell_min + walk_min`, on `event_date`.
-2. Write `legs`, append `event_log {kind: recompute, payload: diff}`.
-3. If any pair has no trip before the day's last train, mark the leg `status: impossible`; the UI shows it red.
+on the SvelteKit server (shared secret header). Recompute (`recomputeLegs`, pure function, unit-tested):
+1. Sort stops by `order`, starting from `itineraries.start_time` at the first stop. For each consecutive
+   pair A → B: `ready_at` = A's arrival + A's `dwell_min` (leave the venue); `depart_at`-eligible time =
+   `ready_at` + A's `walk_min` (at A's station).
+2. Plan the station-to-station hop from that time (`planLeg`): same station → a 0-minute walk; both
+   stations are the downtown pair (OTC/CUS) → a 6-minute walk; otherwise the first direct trip after that
+   time, or if none exists, the fastest pair of trips via a downtown transfer (OTC↔CUS, 6 min walk between
+   them); if neither exists, `kind: impossible`.
+3. `arrive_at` = the hop's arrival (or the eligible time, for `impossible`) + B's `walk_min` (walk from B's
+   station to the venue). Write `legs` with `kind`, `ready_at`, `depart_at`, `arrive_at`, `segments` (json:
+   one or two `train` segments and any `walk` segment), `computed_at`; append `event_log {kind: recompute,
+   payload: diff}`.
+4. A leg with no trip before the day's last train is `kind: impossible`; the UI shows it red and an admin
+   broadcast is suggested.
 Hold = increase `dwell_min` of the current stop until the next trip. Cancel = delete stop. Add = insert stop.
 
 ## 8. Media
@@ -200,11 +216,24 @@ Hold = increase `dwell_min` of the current stop until the next trip. Cancel = de
 
 ## 9. Venue photos (Google Places, fetch-once)
 
-`POST /api/places/attach {stopId, placeId}` (authenticated): if `data/places/<placeId>/meta.json` exists,
-reuse it. Otherwise call Place Details (field mask: displayName, formattedAddress, regularOpeningHours,
-rating, nationalPhoneNumber, photos) then up to 5 Place Photos (max 800 px), write JPEGs and meta, create
-`stop_photos` records with `source: google` and the photo's author attribution, update the stop's address,
-hours, phone. Budget guard: refuse when the month's counter exceeds 800 photo calls.
+`POST /api/places/attach {stopId}` (authenticated): if the stop already has a `place_id`, use it. Otherwise
+run a Google Text Search for `"<stop name> <station name>"` biased to the station and take the first hit as
+`place_id` (the text-search step for stops with no `place_id` — manual-entry stops and OSM picks alike); no
+match fails the stop with a retryable message rather than guessing. Then, if `data/places/<place_id>/meta.json`
+exists, reuse it. Otherwise call Place Details (field mask: displayName, formattedAddress, regularOpeningHours,
+rating, nationalPhoneNumber, websiteUri, googleMapsUri, photos) then up to 5 Place Photos (max 800 px), write
+JPEGs and meta under `data/places/<place_id>/`, create `stop_photos` records with `source: google` and the
+photo's author attribution, update the stop's `place_id`, address, hours, phone, website. Budget guard:
+`data/places/budget.json` keeps separate monthly counters for `details` and `photos` calls; each refuses a
+new call once its counter reaches 800. A call blocked by the budget leaves the stop `photos_status: failed`
+with a retry button rather than a partial write (unless at least one photo already made it through the
+batch, in which case the stop finishes `done` with those).
+
+The stop picker itself (Task 6) has three sources ahead of this endpoint: the Overpass nearby list per
+station (cached forever, no Google call), Google Text Search by name for the thin suburbs
+(`GET /api/places/search?q=&station=`, same field-limited search as above), and plain manual name entry
+(no `place_id`, no coordinates beyond the station's) — `attach` is what turns any of the three into a
+`place_id` and a card.
 
 ## 10. Simulation mode
 
@@ -250,12 +279,24 @@ hours, phone. Budget guard: refuse when the month's counter exceeds 800 photo ca
 
 ## 14. Testing
 
-- Unit (Vitest): label map, `nextTrips` against a fixture GTFS subset, banner state machine,
-  recompute with hold/cancel/add cases, GTFS `>24:00` times, sim clock math.
+- Unit (Vitest): label map (`labels.test.ts`), GTFS parser against the fixture feed incl. `>24:00` times
+  (`gtfs.test.ts`), `nextTrips`/`planLeg`/`recomputeLegs` incl. downtown transfer and impossible cases
+  (`plan.test.ts`), time zone and DST edge cases (`time.test.ts`), haversine/walk minutes (`geo.test.ts`),
+  static schedule download/cache/keep-previous-on-failure (`static.test.ts`), Overpass nearby with disk
+  cache (`overpass.test.ts`), Google text search/details/photos field mapping (`google.test.ts`), the
+  monthly budget counters (`budget.test.ts`), and `attachPlace`'s fetch-once/text-search/budget-blocked
+  paths (`attach.test.ts`). Banner state machine and sim clock math are deferred to M2.
 - Hook tests: run PocketBase on a temp `pb_data` with test passwords, hit the login endpoint, assert identity
-  creation, case-insensitive reuse, admin flag, access rules, and rate limits; media tagging with seeded positions.
-- E2E (Playwright, mobile viewport): name + password login with cookie persistence, create draft, add stop, lock, live banner with MSW-mocked
-  proxy at fixed sim time, check-in, broadcast ack, upload a small image.
+  creation, case-insensitive reuse, admin flag, access rules, and rate limits (`login.test.ts`); planning
+  collections' defaults, lock guard, and event log (`planning.test.ts`); the `stops`-write → internal
+  recompute trigger (`recompute.test.ts`). Media tagging with seeded positions is deferred to M3.
+- E2E (Playwright, mobile viewport, fixture GTFS + mocked `/api/places/*`): name + password login with
+  cookie persistence (`login.spec.ts`); create a draft, add two stops from the schematic and a station
+  select, real train times and a leg that recomputes after a layover change, open a stop card, retry
+  photos (Google not configured), edit notes/confirmed-open/phone and have them survive a reload, vote and
+  comment on the draft, run and tally an approval vote, and lock into The Route (`planning.spec.ts`). Live
+  banner with MSW-mocked proxy at fixed sim time, check-in, broadcast ack, and image upload are deferred to
+  M2/M3.
 - Manual: the December Saturday field test with real phones, and a full-day replay from the recording.
 
 ## 15. Milestones

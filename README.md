@@ -181,12 +181,12 @@ Recommendation, not yet decided. See the references doc for the alternatives con
 - **Host**: the admin's home computer, Docker Compose, published through a Cloudflare Tunnel.
   chugalug.app is on the HSTS preload list, so HTTPS is mandatory; the tunnel provides the certificate
   and needs no port forwarding. Nightly backup of the data directory to a second disk or drive.
-- **Frontend**: SvelteKit PWA (`@vite-pwa/sveltekit`), MapLibre GL for the map, a hand-authored
-  `d3-tube-map` JSON for the schematic diagram, PhotoSwipe for the gallery.
+- **Frontend**: SvelteKit PWA (`@vite-pwa/sveltekit`), MapLibre GL for the map, a generated SVG schematic
+  of the three lines (stations ordered from GTFS), PhotoSwipe for the gallery.
 - **Backend**: PocketBase, a single binary with SQLite, file storage on local disk, and server-sent-event realtime.
-- **Metra proxy**: SvelteKit server routes using `gtfs-realtime-bindings` and `node-gtfs`. Polls Metra every
-  30 s, caches, computes "next train from station A to B", and serves the recorded replay in sim mode.
-  The only component that talks to Metra.
+- **Metra proxy**: SvelteKit server routes using `gtfs-realtime-bindings` and a pure-TypeScript GTFS loader
+  (the feed is 700 KB; the three lines fit in memory). Polls Metra every 30 s, caches, computes "next train
+  from station A to B", and serves the recorded replay in sim mode. The only component that talks to Metra.
 - **Auth**: name plus the shared crew password (or the admin password for the Conductor role), checked by a
   PocketBase hook that creates the identity for that name on first login and returns a one-year token kept
   in a cookie. No SMS, no email, no recovery flow.
@@ -196,8 +196,9 @@ Recommendation, not yet decided. See the references doc for the alternatives con
   Cloudflare free tier rejects requests over 100 MB. Chunked (tus) uploads are a later upgrade if the cap bites.
 
 Data model sketch: `user`, `itinerary` (draft or locked), `stop` (venue, station, dwell, place_id),
-`stop_photo` (file, source, attribution), `leg` (computed), `vote`, `comment`, `checkin`, `broadcast`,
-`drink_entry`, `media` (file, taken_at, stop, tagged_by), `event_log`, `position`.
+`stop_photo` (file, source, attribution), `leg` (computed: walk, one train, or two trains via a downtown
+transfer; segments json), `vote`, `comment`, `checkin`, `broadcast`, `drink_entry`, `media` (file, taken_at,
+stop, tagged_by), `event_log`, `position`. Stations come straight from GTFS.
 
 ## Roadmap
 
@@ -208,7 +209,7 @@ re-reads the feed rather than hard-coding it.
 | Milestone | Target | Done when |
 |---|---|---|
 | M0 Skeleton | early Oct | Repo skeleton, PocketBase + SvelteKit running locally, shared-password login, Cloudflare Tunnel live at chugalug.app |
-| M1 Planning | end Oct | Diagram, stop picker, venue cards with Google photos, drafts with real train times, votes, comments, approval vote |
+| M1 Planning | end Oct | Diagram, stop picker, venue cards with Google photos, drafts with real train times, votes, comments, approval vote — done 2026-09-19 (see docs/superpowers/plans/2026-09-19-m1-planning.md) |
 | M2 Metra proxy | mid Nov | Proxy live and recording, departure banner with both alerts, schedule fallback |
 | M3 Live | end Nov | Check-in, roster, plan edits, broadcasts, drink log, media upload, offline cache |
 | M4 Simulation | Sat Dec 5 | Sim clock, replay, scripted GPS; full sim run at home |
@@ -250,6 +251,9 @@ Numbered to match the earlier review; each is reversible.
    12:40 AM. BNSF 20 trips each way, hourly, last outbound 12:33 AM. Last inbound: UP-W 10:25 PM from
    Elburn, MD-W 10:10 PM from Elgin, BNSF 11:05 PM from Aurora.
 10. **Route optimizer is a nice-to-have, not a phase.**
+11. **Venue lookup has three sources.** OpenStreetMap near the station (free, cached forever), Google text
+    search by name for the thin suburbs, and plain name entry. Google details and photos are still fetched
+    once per stop.
 
 ## Open questions
 

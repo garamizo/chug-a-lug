@@ -14,6 +14,9 @@
   The pocketbase container runs as uid 1000 (your user), so everything under `data/` stays yours. If a
   root-owned file ever appears there, fix it with
   `docker run --rm -v "$PWD/data:/d" alpine sh -c 'chown -R 1000:1000 /d'`.
+- `data/gtfs/` (Metra static feed, re-downloaded when `published.txt` changes, safe to delete) and
+  `data/places/` (OSM nearby cache per station, Google `meta.json` and photos per place id, `budget.json`
+  monthly counters; keep it, it is what saves Google calls).
 - Secrets: `.env` (never committed). Metra token file in `.secrets/`.
 - Dashboards: Cloudflare Zero Trust → Networks → Tunnels → `chugalug`; PocketBase admin at http://127.0.0.1:8090/_/ from the box.
 
@@ -28,6 +31,20 @@ because this box is the server. `.env.local` (git-ignored, read by Vite only) ov
 `http://127.0.0.1:8090` so `just web` talks to the local PocketBase. Tests never read either file; they start
 a disposable PocketBase with their own passwords. The web image bakes `PUBLIC_PB_URL` in at build time, so
 changing it means `docker compose up -d --build web`.
+
+`.env` also needs `INTERNAL_SECRET` and `WEB_INTERNAL_URL=http://127.0.0.1:5173` for legs to recompute in
+dev (the PocketBase hook calls the SvelteKit server with that secret and URL after every `stops` write).
+
+## Planning data
+- Nearby venues per station come from OpenStreetMap once and are cached in `data/places/nearby/<STATION>.json`.
+  To refresh one: as the Conductor, open `/api/places/nearby?station=ELMHURST&refresh=1` (with the app's token; easiest is the browser console snippet in the M1 plan, Task 6).
+- Google Places is called once per stop (details) plus once per photo. `data/places/budget.json` counts calls per month;
+  the server refuses new calls past 800 of either. Reset by deleting the file at month start if needed.
+- A stop whose photos failed shows "Try again" on its card. Adding a `place_id` to the stop in the PocketBase admin UI
+  and retrying fixes wrong matches.
+- The Metra feed is checked every 10 minutes; the app keeps the last good copy if Metra is down.
+- If venue photos fail with `Google 403`, enable **Places API (New)** for the project in the Google Cloud
+  console (APIs & Services → Library → Places API (New)); the key itself is fine.
 
 ## Daily
 - `just logs` to tail everything. `docker compose ps` should show the services `Up` and pocketbase `healthy`.
@@ -67,3 +84,5 @@ Migrations apply automatically when the `pocketbase` container starts. Environme
 Edit `.env`, then `docker compose up -d --force-recreate <service>`. The hooks read `CREW_PASSWORD`,
 `ADMIN_PASSWORD`, and the Metra token at request time from the container environment; the Cloudflare
 token is read by the `cloudflared` container at start (`docker compose up -d --force-recreate cloudflared`).
+`INTERNAL_SECRET` is read by both containers (the PocketBase hook sends it, the SvelteKit server checks
+it), so rotate it with `docker compose up -d --force-recreate pocketbase web`.
