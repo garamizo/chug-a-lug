@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  import { auth, logout, pb } from '$lib/pb';
+  import { auth, pb } from '$lib/pb';
   import { label, copy } from '$lib/labels';
   import type { Itinerary } from '$lib/types';
 
@@ -22,7 +22,6 @@
   <li><strong>{label('wrapUpPhase')}</strong><span>{copy.comingSoon}</span></li>
 </ul>
 <p>{copy.notYou}</p>
-<button class="secondary" onclick={logout} data-testid="logout">{copy.logout}</button>
 
 <style>
   ul { list-style: none; padding: 0; margin: 28px 0; }
