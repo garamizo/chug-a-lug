@@ -1,7 +1,10 @@
 import { error, json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import { requireUser } from '$lib/server/pb';
-import { metra } from '$lib/server/metra';
+import { metra, metraRt } from '$lib/server/metra';
+import { readPredictions } from '$lib/server/metra/decode';
+import { DELAY_LOOKBACK_MIN, modeFor, selectDepartures } from '$lib/metra/live';
+import { PLANNER_ROUTE } from '$lib/lineMap';
 import { nextTrips } from '$lib/metra/plan';
 import { localToUtc, minutesOfDay } from '$lib/time';
 import type { NextTrip } from '$lib/types';
@@ -29,10 +32,20 @@ export const GET: RequestHandler = async ({ request, url }) => {
   } catch {
     throw error(503, 'Metra schedule is not available yet. Try again in a minute.');
   }
-  const trips: NextTrip[] = nextTrips(s, from, to, afterMin, date, limit).map((c) => ({
+  metraRt.start();
+  // Trip predictions are only as trustworthy as the tripupdates feed itself. A healthy positions or
+  // alerts feed says nothing about whether departures are still being published.
+  const mode = modeFor(metraRt.statusOf('tripupdates'));
+
+  // Look back before `after` so a delayed train is still a candidate, and take more than the caller
+  // asked for so cancellations cannot empty the result. Both are trimmed by selectDepartures.
+  const fromMin = Math.max(0, afterMin - DELAY_LOOKBACK_MIN);
+  const candidates: NextTrip[] = nextTrips(s, from, to, fromMin, date, limit + 8).map((c) => ({
     tripId: c.tripId, routeId: c.routeId, headsign: c.headsign,
     schedDepart: localToUtc(date, c.dep).toISOString(), schedArrive: localToUtc(date, c.arr).toISOString(),
     liveDepart: null, liveArrive: null, delayMin: null, status: 'scheduled'
   }));
-  return json({ mode: 'schedule_only', trips });
+  // Stale times are worse than none: fall back to the timetable rather than show old predictions.
+  const preds = mode === 'live' ? readPredictions(metraRt.feeds().tripupdates?.message ?? null, PLANNER_ROUTE) : {};
+  return json({ mode, trips: selectDepartures(candidates, preds, from, to, afterDate, limit) });
 };

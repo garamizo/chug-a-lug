@@ -67,4 +67,15 @@ export type NextTrip = {
 /** How much the server trusts its train times right now. */
 export type FeedMode = 'live' | 'stale' | 'schedule_only';
 
+/**
+ * `mode` is the tripupdates mode — the one the Departure Board actually runs on — so the status page
+ * agrees with the board. `rtFetchedAt` / `rtAgeSec` are the newest fetch of any feed, and `feeds` breaks
+ * it down so an operator can see which one is failing.
+ */
+export type MetraStatus = {
+  staticPublishedAt: string; staticSource: string;
+  rtFetchedAt: string | null; rtAgeSec: number | null; mode: FeedMode;
+  feeds: Record<'positions' | 'tripupdates' | 'alerts', { fetchedAt: string | null; ageSec: number | null; mode: FeedMode }>;
+};
+
 export type AttachResult = { status: 'done' | 'failed'; photos: number; message?: string };
