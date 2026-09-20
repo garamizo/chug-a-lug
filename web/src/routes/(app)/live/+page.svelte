@@ -62,11 +62,14 @@
   }
 
   async function loadTrains() {
-    if (!here?.stop || !here.nextStop || !itinerary) { trips = []; return; }
+    // The train goes to the next *different* station: with several bars at one station the literal
+    // next stop is another bar here, and a trip from a station to itself does not exist.
+    if (!here?.stop || !here.onwardStop || !itinerary) { trips = []; return; }
     try {
-      const res = await fetchNext(here.stop.station_id, here.nextStop.station_id, itinerary.event_date, now);
+      const res = await fetchNext(here.stop.station_id, here.onwardStop.station_id, itinerary.event_date, now);
       trips = res.trips;
       mode = res.mode;
+      rtFetchedAt = res.fetchedAt;
     } catch {
       trips = [];
     }
@@ -74,9 +77,9 @@
 
   async function loadAlerts() {
     try {
+      // Only the alerts themselves come from here: the board's freshness is the trip-update feed's.
       const res = await fetchAlerts();
       alerts = res.alerts;
-      rtFetchedAt = res.fetchedAt;
     } catch {
       alerts = [];
     }
@@ -96,7 +99,7 @@
   $effect(() => {
     void loadRoute();
     void loadAlerts();
-    void fetchStatus().then((s) => { rtFetchedAt = s.rtFetchedAt; mode = s.mode; }).catch(() => {});
+    void fetchStatus().then((s) => { rtFetchedAt = s.feeds?.tripupdates?.fetchedAt ?? null; mode = s.mode; }).catch(() => {});
     // The board re-reads the clock every 15 s and the feeds every 30 s.
     const tick = setInterval(() => { now = new Date(); }, 15_000);
     const poll = setInterval(() => { void loadTrains(); void loadAlerts(); }, 30_000);
@@ -109,7 +112,7 @@
   });
 
   // Re-ask for trains whenever the leg we are counting down changes.
-  $effect(() => { void here?.stop?.id; void here?.nextStop?.id; void loadTrains(); });
+  $effect(() => { void here?.stop?.id; void here?.onwardStop?.id; void loadTrains(); });
 </script>
 
 <svelte:head><title>{copy.live}</title></svelte:head>
@@ -123,7 +126,7 @@
   <DepartureBoard
     station={here.stop.station_name || here.stop.station_id}
     stopName={here.stop.name}
-    nextStation={here.nextStop?.station_name || here.nextStop?.station_id || ''}
+    nextStation={here.onwardStop?.station_name || here.onwardStop?.station_id || ''}
     {trip}
     walkMin={here.stop.walk_min}
     {now}

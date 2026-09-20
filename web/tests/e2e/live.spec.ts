@@ -17,7 +17,7 @@ const TRIP = {
 };
 
 async function stubProxy(page: Page, alerts: unknown[] = []) {
-  await page.route('**/api/metra/next**', (r) => r.fulfill({ json: { mode: 'live', trips: [TRIP] } }));
+  await page.route('**/api/metra/next**', (r) => r.fulfill({ json: { mode: 'live', fetchedAt: '2026-12-26T20:00:00.000Z', trips: [TRIP] } }));
   await page.route('**/api/metra/status', (r) => r.fulfill({ json: {
     staticPublishedAt: 'P', staticSource: 'file', rtFetchedAt: '2026-12-26T20:00:00.000Z', rtAgeSec: 10, mode: 'live',
     feeds: {
@@ -32,11 +32,11 @@ async function stubProxy(page: Page, alerts: unknown[] = []) {
 }
 
 /** Logs in, seeds a locked crawl owned by that identity, and freezes the clock at `at`. */
-async function arrive(page: Page, name: string, password: string, at: string, alerts: unknown[] = []) {
+async function arrive(page: Page, name: string, password: string, at: string, alerts: unknown[] = [], opts: { extraVenueAtFirstStation?: boolean } = {}) {
   await stubProxy(page, alerts);
   await login(page, name, password);
   await clearLockedCrawls();
-  await seedLockedCrawl({ ownerName: name, eventDate: DATE, startTime: '12:00', departAt: DEPART, arriveAt: ARRIVE });
+  await seedLockedCrawl({ ownerName: name, eventDate: DATE, startTime: '12:00', departAt: DEPART, arriveAt: ARRIVE, ...opts });
   await page.clock.install({ time: new Date(at) });
   await page.goto('/live');
 }
@@ -88,4 +88,15 @@ test('the Conductor can move the crawl to another stop', async ({ page }) => {
   await page.getByTestId('set-our-stop').click();
   await page.getByRole('button', { name: /Berwyn Beer Hall/ }).click();
   await expect(page.getByTestId('departure-board')).toContainText('Union Station');
+});
+
+test('two venues at one station still show the onward train', async ({ page }) => {
+  // The literal next stop is another bar at La Grange; the train goes to Union Station. Asking the
+  // timetable for La Grange to La Grange returns nothing, which used to read as "no train left".
+  await arrive(page, 'E2E Same Station', ADMIN, '2026-12-26T19:00:00.000Z', [], { extraVenueAtFirstStation: true });
+  const board = page.getByTestId('departure-board');
+  await expect(board.getByRole('heading')).toHaveText('La Grange Road');
+  await expect(board).toContainText('Union Station');
+  await expect(board).toContainText('Leave in');
+  await expect(board).not.toContainText('No train left today');
 });

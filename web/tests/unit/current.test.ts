@@ -100,4 +100,31 @@ describe('currentStop', () => {
     expect(r.stop?.id).toBe('B1');
     expect(r.departAt).toBe('2026-12-26T20:00:00.000Z');
   });
+
+  it('looks past same-station venues for the station the train actually goes to', () => {
+    // At B1 the literal next stop is B2, another bar at La Grange. Asking for trains from LAGRANGE
+    // to LAGRANGE returns nothing, so the board would claim there is no train at all.
+    const sameStation = [stop('A', 'AURORA', 1), stop('B1', 'LAGRANGE', 2), stop('B2', 'LAGRANGE', 3), stop('C', 'CUS', 4)];
+    const ls = [
+      leg('A', 'B1', '2026-12-26T19:00:00.000Z', '2026-12-26T19:20:00.000Z'),
+      { ...leg('B1', 'B2', '2026-12-26T20:00:00.000Z', '2026-12-26T20:05:00.000Z'), kind: 'walk' } as Leg,
+      leg('B2', 'C', '2026-12-26T21:00:00.000Z', '2026-12-26T21:20:00.000Z')
+    ];
+    const r = currentStop(sameStation, ls, new Date('2026-12-26T19:30:00.000Z'), { startAt });
+    expect(r.stop?.id).toBe('B1');
+    expect(r.nextStop?.id).toBe('B2');
+    expect(r.onwardStop?.id).toBe('C');
+    expect(r.onwardStop?.station_id).toBe('CUS');
+  });
+
+  it('has no onward stop when every remaining venue shares this station', () => {
+    const sameStation = [stop('B1', 'LAGRANGE', 1), stop('B2', 'LAGRANGE', 2)];
+    const ls = [{ ...leg('B1', 'B2', '2026-12-26T20:00:00.000Z', '2026-12-26T20:05:00.000Z'), kind: 'walk' } as Leg];
+    const r = currentStop(sameStation, ls, new Date('2026-12-26T19:30:00.000Z'), { startAt });
+    expect(r.onwardStop).toBeNull();
+  });
+
+  it('onward is simply the next stop when the stations already differ', () => {
+    expect(at('2026-12-26T18:30:00.000Z').onwardStop?.id).toBe('B');
+  });
 });

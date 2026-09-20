@@ -14,13 +14,16 @@ export function encodeFeed(entity: unknown[], timestampSec: number): Uint8Array 
 
 /** One TripUpdate entity. `stops` maps stopId to seconds-since-epoch departure and arrival. */
 export function tripUpdate(opts: {
-  id: string; tripId: string; routeId?: string; canceled?: boolean;
+  id: string; tripId: string; routeId?: string; canceled?: boolean; startDate?: string;
   stops?: { stopId: string; departure?: number; arrival?: number }[];
 }) {
   return {
     id: opts.id,
     tripUpdate: {
-      trip: { tripId: opts.tripId, routeId: opts.routeId ?? 'BNSF', scheduleRelationship: opts.canceled ? 3 : 0 },
+      trip: {
+        tripId: opts.tripId, routeId: opts.routeId ?? 'BNSF', scheduleRelationship: opts.canceled ? 3 : 0,
+        ...(opts.startDate === undefined ? {} : { startDate: opts.startDate })
+      },
       stopTimeUpdate: (opts.stops ?? []).map((s) => ({
         stopId: s.stopId,
         ...(s.arrival === undefined ? {} : { arrival: { time: s.arrival } }),

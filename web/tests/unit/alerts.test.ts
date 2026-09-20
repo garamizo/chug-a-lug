@@ -12,10 +12,34 @@ const opts = { routeId: 'BNSF', stationIds: STATIONS, now: NOW };
 
 describe('selectAlerts', () => {
   it('keeps an alert informing our route and reads its text', () => {
-    const feed = decode(encodeFeed([alertEntity({ id: 'a1', header: 'Delays', body: 'Signal problem', effect: 2 })], 1));
+    const feed = decode(encodeFeed([alertEntity({ id: 'a1', header: 'Delays', body: 'Signal problem', effect: 3 })], 1));
     expect(selectAlerts(feed, opts)).toEqual([
       { id: 'a1', effect: 'SIGNIFICANT_DELAYS', header: 'Delays', body: 'Signal problem', startsAt: null, endsAt: null, stationIds: [] }
     ]);
+  });
+
+  it('labels effects by the GTFS-realtime enum, which starts at 1', () => {
+    const feed = decode(encodeFeed([
+      alertEntity({ id: 'e1', header: 'a', effect: 1 }),
+      alertEntity({ id: 'e2', header: 'b', effect: 2 }),
+      alertEntity({ id: 'e9', header: 'c', effect: 9 }),
+      alertEntity({ id: 'e11', header: 'd', effect: 11 })
+    ], 1));
+    expect(selectAlerts(feed, opts).map((a) => a.effect)).toEqual([
+      'NO_SERVICE', 'REDUCED_SERVICE', 'STOP_MOVED', 'ACCESSIBILITY_ISSUE'
+    ]);
+  });
+
+  it('keeps an alert that has started and has no end', () => {
+    // protobufjs surfaces an absent `end` as Long(0) through the prototype, which must not be read
+    // as "expired in 1970" — that would silently drop every ongoing alert.
+    const feed = decode(encodeFeed([alertEntity({ id: 'ongoing', header: 'Construction', activeStart: sec('2026-12-26T06:00:00Z') })], 1));
+    expect(selectAlerts(feed, opts).map((a) => a.id)).toEqual(['ongoing']);
+  });
+
+  it('keeps an alert that ends later and has no start', () => {
+    const feed = decode(encodeFeed([alertEntity({ id: 'until', header: 'Until noon', activeEnd: sec('2026-12-26T23:00:00Z') })], 1));
+    expect(selectAlerts(feed, opts).map((a) => a.id)).toEqual(['until']);
   });
 
   it('keeps an alert informing one of our stations and lists it', () => {

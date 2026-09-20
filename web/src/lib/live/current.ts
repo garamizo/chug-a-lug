@@ -8,12 +8,21 @@ export type Current = {
   stop: Stop | null;
   /** The stop after this one, or null at the end of the crawl. */
   nextStop: Stop | null;
+  /**
+   * The next stop at a *different* station: where the train is actually headed. With several venues
+   * at one station this is not `nextStop`, and asking the timetable for a trip from a station to
+   * itself returns nothing, which would read as "no train left today" for the whole layover.
+   */
+  onwardStop: Stop | null;
   /** When the crawl leaves `stop`, or null when nothing follows. */
   departAt: string | null;
   source: CurrentSource;
 };
 
-type Timing = { stop: Stop; arriveAt: number; departAt: number | null; next: Stop | null; departIso: string | null };
+type Timing = {
+  stop: Stop; arriveAt: number; departAt: number | null; departIso: string | null;
+  next: Stop | null; onward: Stop | null;
+};
 
 /** Arrival and departure per stop: the incoming leg's arrival (or the start) and the outgoing leg's departure. */
 function timings(stops: Stop[], legs: Leg[], startAt: Date): Timing[] {
@@ -29,13 +38,14 @@ function timings(stops: Stop[], legs: Leg[], startAt: Date): Timing[] {
       arriveAt: arriveIso ? new Date(arriveIso).getTime() : startAt.getTime(),
       departAt: outLeg?.depart_at ? new Date(outLeg.depart_at).getTime() : null,
       departIso: outLeg?.depart_at ?? null,
-      next: ordered[i + 1] ?? null
+      next: ordered[i + 1] ?? null,
+      onward: ordered.slice(i + 1).find((s) => s.station_id !== stop.station_id) ?? null
     };
   });
 }
 
 const result = (t: Timing, source: CurrentSource): Current =>
-  ({ stop: t.stop, nextStop: t.next, departAt: t.departIso, source });
+  ({ stop: t.stop, nextStop: t.next, onwardStop: t.onward, departAt: t.departIso, source });
 
 export function currentStop(
   stops: Stop[],
@@ -44,7 +54,7 @@ export function currentStop(
   opts: { startAt: Date; override?: { stopId: string; at: string } | null }
 ): Current {
   const ts = timings(stops, legs, opts.startAt);
-  if (ts.length === 0) return { stop: null, nextStop: null, departAt: null, source: 'before' };
+  if (ts.length === 0) return { stop: null, nextStop: null, onwardStop: null, departAt: null, source: 'before' };
 
   const at = now.getTime();
   const last = ts[ts.length - 1];

@@ -26,6 +26,25 @@ describe('readPredictions', () => {
     expect(preds.T9).toBeUndefined();
   });
 
+  it('keeps a trip whose start date is the one asked for', () => {
+    const feed = decode(encodeFeed([tripUpdate({ id: 'a', tripId: 'T1', startDate: '20261226', stops: [{ stopId: 'LAGRANGE', departure: sec('2026-12-26T20:34:00Z') }] })], 1));
+    expect(readPredictions(feed, 'BNSF', '2026-12-26').T1).toBeDefined();
+  });
+
+  it('drops a trip running on another service date', () => {
+    // Trip ids repeat weekly, so today's predictions must never be pinned onto another Saturday:
+    // the absolute times would look long departed and the board would go empty.
+    const feed = decode(encodeFeed([tripUpdate({ id: 'a', tripId: 'T1', startDate: '20260920', stops: [{ stopId: 'LAGRANGE', departure: sec('2026-09-20T20:34:00Z') }] })], 1));
+    expect(readPredictions(feed, 'BNSF', '2026-12-26').T1).toBeUndefined();
+    expect(readPredictions(feed, 'BNSF', '2026-09-20').T1).toBeDefined();
+  });
+
+  it('keeps a trip with no start date, and ignores dates when none is asked for', () => {
+    const feed = decode(encodeFeed([tripUpdate({ id: 'a', tripId: 'T1' })], 1));
+    expect(readPredictions(feed, 'BNSF', '2026-12-26').T1).toBeDefined();
+    expect(readPredictions(feed, 'BNSF').T1).toBeDefined();
+  });
+
   it('marks a cancelled trip and survives a missing feed', () => {
     const feed = decode(encodeFeed([tripUpdate({ id: 'c', tripId: 'T2', canceled: true })], 1));
     expect(readPredictions(feed, 'BNSF').T2.canceled).toBe(true);

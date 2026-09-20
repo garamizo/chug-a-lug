@@ -45,6 +45,8 @@ export async function clearLockedCrawls(): Promise<void> {
  */
 export async function seedLockedCrawl(opts: {
   ownerName: string; eventDate: string; startTime: string; departAt: string; arriveAt: string;
+  /** Adds a second bar at the first stop's station, joined by a walk: the same-station case. */
+  extraVenueAtFirstStation?: boolean;
 }) {
   const token = await superuserToken();
   const users = await fetch(`${PB}/api/collections/users/records?filter=${encodeURIComponent(`name_key="${opts.ownerName.toLowerCase()}"`)}`, {
@@ -70,15 +72,29 @@ export async function seedLockedCrawl(opts: {
     itinerary: itinerary.id, order: 1, name: 'The Whistle Stop', kind: 'bar',
     station_id: 'LAGRANGE', station_name: 'La Grange Road', dwell_min: 90, walk_min: 5, direction: 'out'
   }, token);
+  // Optionally a second bar at the SAME station, reached on foot, before the train leaves.
+  const middle = opts.extraVenueAtFirstStation ? await create('stops', {
+    itinerary: itinerary.id, order: 2, name: 'The Second Round', kind: 'bar',
+    station_id: 'LAGRANGE', station_name: 'La Grange Road', dwell_min: 45, walk_min: 5, direction: 'out'
+  }, token) : null;
+
   const second = await create('stops', {
-    itinerary: itinerary.id, order: 2, name: 'Berwyn Beer Hall', kind: 'bar',
+    itinerary: itinerary.id, order: middle ? 3 : 2, name: 'Berwyn Beer Hall', kind: 'bar',
     station_id: 'CUS', station_name: 'Union Station', dwell_min: 60, walk_min: 4, direction: 'out'
   }, token);
+
+  if (middle) {
+    await create('legs', {
+      itinerary: itinerary.id, from_stop: first.id, to_stop: middle.id, kind: 'walk',
+      ready_at: opts.departAt, depart_at: '2026-12-26T20:10:00.000Z', arrive_at: '2026-12-26T20:15:00.000Z',
+      segments: [], computed_at: opts.departAt
+    }, token);
+  }
   await create('legs', {
-    itinerary: itinerary.id, from_stop: first.id, to_stop: second.id, kind: 'train',
+    itinerary: itinerary.id, from_stop: (middle ?? first).id, to_stop: second.id, kind: 'train',
     ready_at: opts.departAt, depart_at: opts.departAt, arrive_at: opts.arriveAt,
     segments: [], computed_at: opts.departAt
   }, token);
 
-  return { itineraryId: itinerary.id, firstStopId: first.id, secondStopId: second.id };
+  return { itineraryId: itinerary.id, firstStopId: first.id, middleStopId: middle?.id ?? null, secondStopId: second.id };
 }

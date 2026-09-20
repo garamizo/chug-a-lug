@@ -12,8 +12,10 @@ const authed = async (path: string) => {
 export const fetchAlerts = (): Promise<{ mode: FeedMode; fetchedAt: string | null; alerts: Alert[] }> =>
   authed('/api/metra/alerts');
 
-export const fetchNext = (from: string, to: string, date: string, after: Date): Promise<{ mode: FeedMode; trips: NextTrip[] }> =>
+export const fetchNext = (from: string, to: string, date: string, after: Date): Promise<{ mode: FeedMode; fetchedAt: string | null; trips: NextTrip[] }> =>
   authed(`/api/metra/next?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}&date=${date}&after=${after.toISOString()}&limit=3`);
 
-export const fetchStatus = (): Promise<{ rtFetchedAt: string | null; mode: FeedMode }> =>
-  authed('/api/metra/status');
+export const fetchStatus = (): Promise<{
+  rtFetchedAt: string | null; mode: FeedMode;
+  feeds: Record<'positions' | 'tripupdates' | 'alerts', { fetchedAt: string | null; ageSec: number | null; mode: FeedMode }>;
+}> => authed('/api/metra/status');

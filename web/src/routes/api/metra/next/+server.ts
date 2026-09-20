@@ -46,6 +46,9 @@ export const GET: RequestHandler = async ({ request, url }) => {
     liveDepart: null, liveArrive: null, delayMin: null, status: 'scheduled'
   }));
   // Stale times are worse than none: fall back to the timetable rather than show old predictions.
-  const preds = mode === 'live' ? readPredictions(metraRt.feeds().tripupdates?.message ?? null, PLANNER_ROUTE) : {};
-  return json({ mode, trips: selectDepartures(candidates, preds, from, to, afterDate, limit) });
+  const preds = mode === 'live' ? readPredictions(metraRt.feeds().tripupdates?.message ?? null, PLANNER_ROUTE, date) : {};
+  // The board shows this as "no live times since", so it must be the trip-update feed's own
+  // timestamp — not the newest fetch across feeds, which a healthy alerts poll keeps refreshing.
+  const fetchedAt = metraRt.statusOf('tripupdates').fetchedAt;
+  return json({ mode, fetchedAt, trips: selectDepartures(candidates, preds, from, to, afterDate, limit) });
 };

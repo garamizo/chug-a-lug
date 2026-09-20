@@ -49,6 +49,14 @@ open a socket).
   and keeps the previous feed; it never clears one.
 - Filter to BNSF on read, not on store: the recorder writes whole feeds so a recording stays useful if the
   crawl ever moves lines.
+- Predictions are also scoped to the **service date** the caller asked for, matched against the
+  TripDescriptor's `start_date` (Metra sets it on every trip update). Trip ids repeat weekly, so without
+  this a Saturday's live updates would be pinned onto the next Saturday's timetable and every train would
+  read as long departed.
+- protobufjs serves absent scalars from the prototype, so an omitted `end` on an alert's active period
+  arrives as `Long(0)` and an omitted `effect` as the first enum value. Presence is checked with
+  `hasOwnProperty` before any such field is interpreted, and `Alert.Effect` is read from the bindings'
+  own enum, which runs 1..11.
 - The token is read only through `serverEnv.metraToken` and never reaches a response body or the browser.
 
 ### 2.2 Merging live onto scheduled
@@ -174,6 +182,9 @@ currentStop(stops, legs, now, override) -> { stop, source: 'override' | 'clock' 
 3. When several stops share a station, the train deadline belongs to the **last** stop at that station —
    the M1 layover model gives only that stop a departure drawn from the day's trains. The board counts
    down to that train from every stop at the station; the walk line names the stop you are actually in.
+   `currentStop` therefore returns an `onwardStop` as well as `nextStop`: the next stop at a *different*
+   station, which is where the train is going. Asking the timetable for a trip from a station to itself
+   returns nothing, so using `nextStop` would read as "no train left today" for the whole layover.
 
 ### 3.3 The correction
 
@@ -278,6 +289,7 @@ has to enable them.
 | No train works at all for the leg | The board says so and points at the itinerary, reusing M1's impossible-leg copy. |
 | Itinerary not locked, or the date is not today | `/live` shows the "no active route" state rather than an empty board. |
 | Alerts endpoint fails | Bubbles disappear; the board is unaffected. Alerts are never a hard dependency. |
+| Alerts feed healthy while tripupdates rots | The board's "no live times since" shows the **trip-update** timestamp, not the newest fetch, so it names when train predictions actually stopped. |
 
 ## 8. Departures from the parent spec
 
