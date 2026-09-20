@@ -31,6 +31,15 @@ export type Stop = RecordModel & {
 
 export type StopPhoto = RecordModel & { stop: string; file: string; source: 'google' | 'user'; attribution: string };
 
+/**
+ * Where someone is. M2 writes only the Conductor's `at_stop` correction from the Departure Board;
+ * M3 opens the same collection to the Crew for Punch and the roster.
+ */
+export type Checkin = RecordModel & {
+  user: string; stop: string; kind: 'at_stop' | 'on_train'; at: string;
+  expand?: { user?: UserRecord };
+};
+
 export type Segment =
   | { kind: 'train'; tripId: string; routeId: string; headsign: string; from: string; to: string; dep: string; arr: string }
   | { kind: 'walk'; minutes: number; from: string; to: string };

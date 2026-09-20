@@ -1440,9 +1440,18 @@ describe('checkins', () => {
     expect((await res.json()).items.length).toBeGreaterThan(0);
   });
 
-  it('refuses an anonymous read', async () => {
+  it('shows an anonymous reader nothing', async () => {
+    // PocketBase list rules filter rather than reject, so the giveaway is an empty page, not a 403.
     const res = await get('/api/collections/checkins/records');
-    expect(res.status).toBe(403);
+    expect(res.status).toBe(200);
+    expect((await res.json()).totalItems).toBe(0);
+  });
+
+  it('refuses an anonymous create', async () => {
+    const res = await post('/api/collections/checkins/records', {
+      user: conductorId, stop: stopId, kind: 'at_stop', at: '2026-12-26 20:10:00.000Z'
+    });
+    expect(res.status).toBe(400);
   });
 });
 ```
