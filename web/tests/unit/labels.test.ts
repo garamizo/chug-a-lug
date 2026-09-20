@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { labels, label } from '../../src/lib/labels';
+import { labels, label, copy } from '../../src/lib/labels';
 
 describe('labels', () => {
   it('maps developer terms to the README glossary', () => {
@@ -14,5 +14,10 @@ describe('labels', () => {
   });
   it('has no empty labels', () => {
     for (const [k, v] of Object.entries(labels)) expect(v, k).not.toBe('');
+  });
+  it('has copy for every stop kind and itinerary status', () => {
+    for (const k of ['kind_bar', 'kind_restaurant', 'kind_other', 'status_draft', 'status_locked', 'status_archived']) {
+      expect((copy as Record<string, string>)[k]).toBeTruthy();
+    }
   });
 });

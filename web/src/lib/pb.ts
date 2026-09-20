@@ -55,3 +55,14 @@ export async function login(name: string, password: string): Promise<void> {
 export function logout(): void {
   pb.authStore.clear();
 }
+
+/** Realtime subscription that refires `onChange` on any create/update/delete matching the filter. */
+export function subscribe(collection: string, filter: string, onChange: () => void): () => void {
+  let unsub: (() => void) | null = null;
+  let active = true;
+  pb.collection(collection)
+    .subscribe('*', () => onChange(), filter ? { filter } : {})
+    .then((u) => { if (active) unsub = u; else u(); })
+    .catch(() => { /* offline: the page still works from its last fetch */ });
+  return () => { active = false; unsub?.(); };
+}
