@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { zipSync, strToU8 } from 'fflate';
-import { parseCsv, parseGtfsTime, buildSchedule, servicesOn, unzipGtfs, ROUTE_IDS } from '../../src/lib/metra/gtfs';
+import { parseCsv, parseGtfsTime, buildSchedule, servicesOn, stationsServedOn, unzipGtfs, ROUTE_IDS } from '../../src/lib/metra/gtfs';
 import { fixtureFiles, fixtureSchedule } from '../fixtures/loadFixture';
 
 describe('parseCsv', () => {
@@ -51,6 +51,17 @@ describe('servicesOn', () => {
     expect([...servicesOn(s, '2026-12-27')]).toEqual([]);
     expect([...servicesOn(s, '2026-12-28')]).toEqual(['A1A']);
     expect([...servicesOn(s, '2027-01-02')]).toEqual([]);
+  });
+});
+
+describe('stationsServedOn', () => {
+  const s = fixtureSchedule();
+  it('lists the stations some trip of the line stops at that day', () => {
+    expect([...stationsServedOn(s, 'BNSF', '2026-12-26')].sort()).toEqual(['CUS', 'LAGRANGE', 'NAPERVILLE']);
+  });
+  it('is empty when no service of the line runs', () => {
+    expect(stationsServedOn(s, 'BNSF', '2026-12-27').size).toBe(0);
+    expect(stationsServedOn(s, 'BNSF', '2026-12-28').size).toBe(0);
   });
 });
 

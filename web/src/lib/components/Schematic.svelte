@@ -1,54 +1,37 @@
 <script lang="ts">
+  // Station picker: the line down the middle, one big button per station on the right, and a
+  // plain select underneath for anyone who prefers a list.
   import { copy } from '$lib/labels';
-  import type { Line, Station } from '$lib/types';
+  import LineMap from './LineMap.svelte';
+  import type { Station } from '$lib/types';
 
-  let { lines, selected, onpick }: { lines: Line[]; selected?: string; onpick: (station: Station) => void } = $props();
+  let { stations, color, selected, onpick }: { stations: Station[]; color: string; selected?: string; onpick: (station: Station) => void } = $props();
 
-  const GAP = 72, ROW = 96, PAD = 28, LABEL = 70;
-  const width = $derived(PAD * 2 + GAP * Math.max(0, ...lines.map((l) => l.stations.length - 1)));
-  const height = $derived(ROW * lines.length + LABEL);
-  const y = (i: number) => PAD + i * ROW;
-  const x = (j: number) => PAD + j * GAP;
-
-  function onkey(event: KeyboardEvent, station: Station) {
-    if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); onpick(station); }
-  }
   function fromSelect(event: Event) {
     const id = (event.target as HTMLSelectElement).value;
-    const station = lines.flatMap((l) => l.stations).find((s) => s.id === id);
+    const station = stations.find((s) => s.id === id);
     if (station) onpick(station);
   }
 </script>
 
-<div class="scroll">
-  <svg {width} {height} viewBox="0 0 {width} {height}" role="group" aria-label={copy.pickStation}>
-    {#each lines as line, i}
-      <line x1={x(0)} y1={y(i)} x2={x(line.stations.length - 1)} y2={y(i)} stroke={line.color} stroke-width="6" stroke-linecap="round" />
-      <text x={x(0)} y={y(i) - 16} fill={line.color} font-size="13" font-weight="700">{line.routeId}</text>
-      {#each line.stations as station, j}
-        <g role="button" tabindex="0" data-testid="station-{station.id}" aria-label={station.name} aria-pressed={selected === station.id}
-           onclick={() => onpick(station)} onkeydown={(e) => onkey(e, station)} style="cursor: pointer">
-          <circle cx={x(j)} cy={y(i)} r="24" fill="transparent" />
-          <circle cx={x(j)} cy={y(i)} r={selected === station.id ? 10 : 7} fill={selected === station.id ? line.color : '#111'} stroke={line.color} stroke-width="3" />
-          <text x={x(j) + 6} y={y(i) + 22} transform="rotate(35 {x(j) + 6} {y(i) + 22})" fill={selected === station.id ? '#fff' : '#bbb'} font-size="11">{station.name}</text>
-        </g>
-      {/each}
-    {/each}
-  </svg>
-</div>
+<LineMap {stations} {color} {selected}>
+  {#snippet right(station, i)}
+    <button type="button" class="station" class:terminal={i === 0 || i === stations.length - 1} data-testid="station-{station.id}"
+      aria-pressed={selected === station.id} disabled={station.served === false} onclick={() => onpick(station)}>{station.name}{#if station.served === false}<span class="off"> · {copy.noTrainsShort}</span>{/if}</button>
+  {/snippet}
+</LineMap>
 <label for="station-select">{copy.stationList}</label>
 <select id="station-select" data-testid="station-select" value={selected ?? ''} onchange={fromSelect}>
   <option value="" disabled>{copy.pickStation}</option>
-  {#each lines as line}
-    <optgroup label={line.routeId}>
-      {#each line.stations as station}<option value={station.id}>{station.name}</option>{/each}
-    </optgroup>
-  {/each}
+  {#each stations as station}<option value={station.id} disabled={station.served === false}>{station.name}{station.served === false ? ` · ${copy.noTrainsShort}` : ''}</option>{/each}
 </select>
 
 <style>
-  .scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; border: 1px solid #333; border-radius: 10px; background: #161616; }
-  svg { display: block; }
-  g:focus-visible { outline: 2px solid #fff; }
+  .station { display: block; width: 100%; margin: 0; padding: 12px 10px; min-height: 48px; text-align: left; background: transparent; color: #ddd; border: 0; border-radius: 10px; font-size: 16px; font-weight: 500; }
+  .station:hover { background: #1c1c1c; }
+  .station.terminal { font-weight: 800; color: #fff; }
+  .station[aria-pressed='true'] { background: #2a2a2a; color: #fff; }
+  .station:disabled { color: #666; opacity: 1; cursor: default; }
+  .off { font-size: 13px; font-weight: 400; }
   select { font: inherit; font-size: 18px; padding: 14px; width: 100%; margin-top: 8px; border-radius: 10px; border: 1px solid #666; background: #202020; color: #fff; }
 </style>

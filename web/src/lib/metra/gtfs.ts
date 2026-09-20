@@ -129,3 +129,18 @@ export function servicesOn(s: Schedule, date: string): Set<string> {
   }
   return out;
 }
+
+/**
+ * Stations at least one trip of `routeId` stops at on `date`. Metra skips some stations on
+ * weekends and holidays (Congress Park, Highlands, LaVergne, Stone Ave and West Hinsdale on the
+ * BNSF), so the planner should not offer them for a crawl that day.
+ */
+export function stationsServedOn(s: Schedule, routeId: string, date: string): Set<string> {
+  const active = servicesOn(s, date);
+  const out = new Set<string>();
+  for (const t of s.trips) {
+    if (t.routeId !== routeId || !active.has(t.serviceId)) continue;
+    for (const st of t.stops) out.add(st.stopId);
+  }
+  return out;
+}
