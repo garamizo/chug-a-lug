@@ -1,60 +1,43 @@
 <script lang="ts">
-  import { goto } from '$app/navigation';
-  import { pb, auth, subscribe } from '$lib/pb';
+  // The draft as the crew sees it: the route, cheers and comments, and the Highball. Changing the
+  // stops happens on the edit screen.
+  import { auth } from '$lib/pb';
   import { copy } from '$lib/labels';
+  import { loadDraft, watchDraft, type Draft } from '$lib/draft';
   import ItineraryView from '$lib/components/ItineraryView.svelte';
   import Votes from '$lib/components/Votes.svelte';
   import Comments from '$lib/components/Comments.svelte';
   import ApprovalPanel from '$lib/components/ApprovalPanel.svelte';
-  import type { Itinerary, Leg, Stop } from '$lib/types';
 
   let { data } = $props();
-  let itinerary = $state<Itinerary | null>(null);
-  let stops = $state<Stop[]>([]);
-  let legs = $state<Leg[]>([]);
+  let draft = $state<Draft | null>(null);
   let error = $state('');
 
   async function load() {
-    try {
-      const filter = pb.filter('itinerary = {:id}', { id: data.id });
-      const [it, st, lg] = await Promise.all([
-        pb.collection('itineraries').getOne<Itinerary>(data.id),
-        pb.collection('stops').getFullList<Stop>({ filter, sort: 'order,created' }),
-        pb.collection('legs').getFullList<Leg>({ filter })
-      ]);
-      itinerary = it; stops = st; legs = lg;
-    } catch { error = copy.loadError; }
+    try { draft = await loadDraft(data.id); } catch { error = copy.loadError; }
   }
   $effect(() => {
-    // Clear the previous itinerary first, like the stop card does, so navigating between drafts
-    // never shows the old one's stops and legs while the new one loads.
-    itinerary = null; stops = []; legs = []; error = '';
+    // Clear the previous itinerary first so navigating between drafts never shows the old one's
+    // stops and legs while the new one loads.
+    draft = null; error = '';
     void load();
-    const filter = pb.filter('itinerary = {:id}', { id: data.id });
-    const unsubs = [subscribe('stops', filter, load), subscribe('legs', filter, load), subscribe('itineraries', pb.filter('id = {:id}', { id: data.id }), load)];
-    return () => unsubs.forEach((u) => u());
+    return watchDraft(data.id, load);
   });
 
   const isAdmin = $derived(!!$auth.user?.is_admin);
-  const editable = $derived(!!itinerary && (itinerary.status === 'draft' || isAdmin));
-  // The creator manages their own draft; once it is locked or archived only the admin still can
-  // (the PocketBase hook rejects a non-admin's edit of a non-draft itinerary).
-  const canManage = $derived(!!itinerary && (isAdmin || (itinerary.created_by === $auth.user?.id && itinerary.status === 'draft')));
-
-  async function deleteDraft() {
-    if (!itinerary || !confirm(copy.deleteDraftConfirm)) return;
-    try { await pb.collection('itineraries').delete(itinerary.id); await goto('/plan'); } catch (err) { error = (err as Error).message; }
-  }
+  const canEdit = $derived(!!draft && (draft.itinerary.status === 'draft' || isAdmin));
 </script>
 
 <p><a href="/plan">← {copy.backToPlanner}</a></p>
 {#if error}<p class="error" role="alert">{error}</p>{/if}
-{#if itinerary}
-  <ItineraryView {itinerary} {stops} {legs} {editable} {canManage} onerror={(m) => (error = m)} />
-  <Votes targetCollection="itineraries" targetId={itinerary.id} />
-  <Comments targetCollection="itineraries" targetId={itinerary.id} />
-  <ApprovalPanel {itinerary} />
-  {#if canManage && itinerary.status === 'draft'}
-    <button type="button" class="secondary" onclick={deleteDraft} data-testid="delete-draft">{copy.deleteDraft}</button>
-  {/if}
+{#if draft}
+  {#if canEdit}<p><a class="button" href="/plan/{draft.itinerary.id}/edit" data-testid="edit-draft">{copy.editDraft}</a></p>{/if}
+  <ItineraryView itinerary={draft.itinerary} stops={draft.stops} legs={draft.legs} editable={false} canManage={false} />
+  <Votes targetCollection="itineraries" targetId={draft.itinerary.id} />
+  <Comments targetCollection="itineraries" targetId={draft.itinerary.id} />
+  <ApprovalPanel itinerary={draft.itinerary} />
 {/if}
+
+<style>
+  a.button { display: block; text-align: center; background: transparent; color: #ffce5c; border: 1px solid #555; font-weight: 700; padding: 12px; border-radius: 10px; text-decoration: none; min-height: 48px; }
+</style>

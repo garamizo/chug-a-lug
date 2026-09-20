@@ -3,14 +3,18 @@
   import { fmtTime } from '$lib/time';
   import type { Leg } from '$lib/types';
 
-  let { leg, index, names }: { leg: Leg | undefined; index: number; names: Record<string, string> } = $props();
+  let { leg, index, names, reason }: {
+    leg: Leg | undefined; index: number; names: Record<string, string>;
+    /** Why an impossible leg is impossible, when the caller knows (a station with no trains that day). */
+    reason?: string;
+  } = $props();
   const name = (id: string) => names[id] ?? id;
 </script>
 
 {#if !leg}
   <p class="leg muted" data-testid="leg-{index}">{copy.computing}</p>
 {:else if leg.kind === 'impossible'}
-  <p class="leg bad" data-testid="leg-{index}">{copy.noTrain}</p>
+  <p class="leg bad" data-testid="leg-{index}">{reason ?? copy.noTrain}</p>
 {:else if leg.kind === 'walk'}
   {@const minutes = leg.segments[0]?.kind === 'walk' ? leg.segments[0].minutes : 0}
   <p class="leg" data-testid="leg-{index}">{minutes ? `${copy.walk} ${minutes} ${copy.minutes}` : copy.sameStation}</p>

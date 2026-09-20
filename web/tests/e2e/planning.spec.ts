@@ -2,9 +2,10 @@ import { test, expect, type Page } from '@playwright/test';
 
 const ADMIN = process.env.ADMIN_PASSWORD ?? 'admin-test-password';
 
+// Both venues are about 100 m from their BNSF station (a 2-minute walk).
 const venuesFor: Record<string, unknown[]> = {
-  ELMHURST: [{ source: 'osm', id: 'node/1', name: 'Test Tavern', kind: 'bar', lat: 41.9012, lon: -87.9412, distanceM: 120, address: '1 York St' }],
-  WHEATON: [{ source: 'osm', id: 'node/2', name: 'Wheaton Wine Bar', kind: 'bar', lat: 41.864, lon: -88.106, distanceM: 90 }]
+  LAGRANGE: [{ source: 'google', id: 'p1', name: 'Test Tavern', kind: 'bar', lat: 41.8155, lon: -87.8694, distanceM: 118, address: '1 Burlington Ave', rating: 4.6, ratingCount: 312 }],
+  NAPERVILLE: [{ source: 'osm', id: 'node/2', name: 'Naperville Wine Bar', kind: 'bar', lat: 41.7811, lon: -88.1467, distanceM: 91 }]
 };
 
 async function login(page: Page, name: string, password: string) {
@@ -29,29 +30,60 @@ test('draft with real train times, layover change, card edits, votes, comments, 
   await page.getByTestId('nav-plan').click();
   await page.getByTestId('draft-title').fill('E2E Crawl');
   await page.getByTestId('create-draft').click();
-  await expect(page).toHaveURL(/\/plan\/[a-z0-9]{15}$/);
-  const draftUrl = page.url();
+  // A new draft opens on its edit screen; the view screen is one level up.
+  await expect(page).toHaveURL(/\/plan\/[a-z0-9]{15}\/edit$/);
+  const editUrl = page.url();
+  const draftUrl = editUrl.replace(/\/edit$/, '');
 
-  await page.getByTestId('add-stop').click();
-  await page.getByTestId('station-ELMHURST').click();
-  await page.getByTestId('venue-node-1').click();
-  await expect(page).toHaveURL(draftUrl);
-  await expect(page.getByTestId('stop-row-0')).toContainText('Test Tavern');
+  // Tapping a station circle on the draft opens the picker with that station and direction chosen.
+  await page.getByTestId('station-dot-NAPERVILLE').click();
+  await expect(page).toHaveURL(/\/add\?station=NAPERVILLE&side=left$/);
+  await expect(page.getByTestId('dir-out')).toHaveAttribute('aria-checked', 'true');
+  await page.getByTestId('venue-node-2').click();
+  await expect(page).toHaveURL(editUrl);
+  await expect(page.getByTestId('stop-row-0')).toContainText('Naperville Wine Bar');
   await expect(page.getByTestId('stop-row-0')).toContainText('11:00 AM');
 
-  await page.getByTestId('add-stop').click();
-  await page.getByTestId('station-select').selectOption('WHEATON');
+  // The picker itself offers only the BNSF line, Aurora first and Union Station last.
+  await page.goto(`${draftUrl}/add`);
+  await expect(page.getByTestId('station-ELMHURST')).toHaveCount(0);
+  await expect(page.getByTestId('station-select').locator('option')).toHaveText(['Pick a station', 'Naperville', 'La Grange Road', 'Chicago Union Station']);
+  await page.getByTestId('station-select').selectOption('LAGRANGE');
+  await expect(page.getByTestId('venue-p1')).toContainText('★ 4.6 (312)');
+  await page.getByTestId('venue-p1').click();
+  await expect(page.getByTestId('stop-row-1')).toContainText('Test Tavern');
+  await expect(page.getByTestId('leg-0')).toContainText('BNSF');
+  await expect(page.getByTestId('leg-0')).toContainText('12:05 PM');
+  await expect(page.getByTestId('stop-row-1')).toContainText('12:32 PM');
+  // Both are going stops: left of the line, each in its station's row.
+  await expect(page.getByTestId('map-row-NAPERVILLE').getByTestId('stop-row-0')).toHaveAttribute('data-side', 'left');
+  await expect(page.getByTestId('map-row-LAGRANGE').getByTestId('stop-row-1')).toHaveAttribute('data-side', 'left');
+
+  // A circle tapped on the return pane makes a return stop, slotted after the going stops.
+  await page.getByTestId('side-right').click();
+  await expect(page.getByTestId('side-right')).toHaveAttribute('aria-selected', 'true');
+  await page.getByTestId('station-dot-NAPERVILLE').click();
+  await expect(page).toHaveURL(/side=right$/);
+  await expect(page.getByTestId('dir-back')).toHaveAttribute('aria-checked', 'true');
   await page.getByTestId('venue-node-2').click();
-  await expect(page.getByTestId('stop-row-1')).toContainText('Wheaton Wine Bar');
-  await expect(page.getByTestId('leg-0')).toContainText('UP-W');
-  await expect(page.getByTestId('leg-0')).toContainText('1:10 PM');
-  await expect(page.getByTestId('stop-row-1')).toContainText('1:32 PM');
+  await expect(page.getByTestId('map-row-NAPERVILLE').getByTestId('stop-row-2')).toHaveAttribute('data-side', 'right');
+  await expect(page.getByTestId('stop-row-1')).toContainText('Test Tavern');
+  // And a going stop added afterwards still lands among the going stops, before the return ones.
+  await page.goto(`${draftUrl}/add?station=LAGRANGE&side=left`);
+  await page.getByTestId('venue-p1').click();
+  await expect(page.getByTestId('map-row-LAGRANGE').getByTestId('stop-row-2')).toHaveAttribute('data-side', 'left');
+  await expect(page.getByTestId('map-row-NAPERVILLE').getByTestId('stop-row-3')).toHaveAttribute('data-side', 'right');
+  page.once('dialog', (d) => d.accept());
+  await page.getByTestId('remove-2').click();
+  await expect(page.getByTestId('stop-row-3')).toHaveCount(0);
 
-  await page.getByTestId('dwell-0').fill('150');
-  await page.getByTestId('dwell-0').press('Tab');
-  await expect(page.getByTestId('leg-0')).toContainText('3:05 PM');
+  // The departure is chosen by train: arrive 11:00, 2 min walk, so the 2:05 PM train is a 3 h 3 min layover.
+  await expect(page.getByTestId('dwell-0').locator('option')).toContainText(['1 h layover (current)', '12:05 PM · 1 h 3 min layover', '2:05 PM · 3 h 3 min layover']);
+  await page.getByTestId('dwell-0').selectOption('183');
+  await expect(page.getByTestId('leg-0')).toContainText('2:05 PM');
+  await expect(page.getByTestId('stop-row-0')).toContainText('Leave 2:03 PM');
 
-  await page.getByTestId('stop-link-0').click();
+  await page.getByTestId('stop-link-1').click();
   await expect(page.getByTestId('stop-name')).toHaveText('Test Tavern');
   await expect(page.getByTestId('photos-status')).toContainText('No photos yet');
   await page.getByTestId('retry-photos').click();
@@ -65,7 +97,13 @@ test('draft with real train times, layover change, card edits, votes, comments, 
   await expect(page.getByTestId('notes')).toHaveValue('Ask for Gus');
   await expect(page.getByTestId('confirmed-open')).toBeChecked();
 
-  await page.goto(draftUrl);
+  // The view screen: read-only route, cheers, comments and the Highball; no edit controls.
+  await page.goto(editUrl);
+  await page.getByTestId('done-editing').click();
+  await expect(page).toHaveURL(draftUrl);
+  await expect(page.getByTestId('station-dot-LAGRANGE')).toHaveCount(0);
+  await expect(page.getByTestId('dwell-0')).toHaveCount(0);
+  await expect(page.getByTestId('stop-row-0')).toContainText('3 h 3 min layover');
   await page.getByTestId('vote-up').click();
   await expect(page.getByTestId('vote-up-count')).toHaveText('1');
   await page.getByTestId('comment-input').fill('Nice route');
@@ -80,8 +118,10 @@ test('draft with real train times, layover change, card edits, votes, comments, 
   await page.getByTestId('lock-route').click();
   await expect(page).toHaveURL(/\/route$/);
   await expect(page.getByRole('heading', { name: 'E2E Crawl' })).toBeVisible();
-  await expect(page.getByTestId('stop-row-0')).toContainText('Test Tavern');
-  await expect(page.getByTestId('leg-0')).toContainText('3:05 PM');
+  await expect(page.getByTestId('stop-row-1')).toContainText('Test Tavern');
+  await expect(page.getByTestId('leg-0')).toContainText('2:05 PM');
   await expect(page.getByTestId('locked-on')).toBeVisible();
-  await expect(page.getByTestId('add-stop')).toHaveCount(0);
+  await expect(page.getByTestId('station-dot-LAGRANGE')).toHaveCount(0);
+  await expect(page.getByTestId('remove-0')).toHaveCount(0);
+  await expect(page.getByTestId('dwell-0')).toHaveCount(0);
 });

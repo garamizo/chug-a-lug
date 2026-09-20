@@ -55,6 +55,13 @@ export function fmtHm(minutes: number): string {
   return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
 }
 
+/** "2 h 53 min", "1 h", "45 min". */
+export function fmtDur(minutes: number): string {
+  const h = Math.floor(minutes / 60), m = minutes % 60;
+  if (!h) return `${m} min`;
+  return m ? `${h} h ${m} min` : `${h} h`;
+}
+
 export function fmtTime(iso: string | Date): string {
   return new Intl.DateTimeFormat('en-US', { timeZone: TZ, hour: 'numeric', minute: '2-digit' })
     .format(new Date(iso))
@@ -70,4 +77,10 @@ export function fmtDateTime(iso: string | Date): string {
 export function fmtDate(date: string): string {
   const [y, m, d] = date.split('-').map(Number);
   return new Intl.DateTimeFormat('en-US', { timeZone: 'UTC', weekday: 'short', month: 'short', day: 'numeric' }).format(new Date(Date.UTC(y, m - 1, d)));
+}
+
+/** "2026-12-26" -> "Saturday" (or "Sat"). */
+export function fmtWeekday(date: string, style: 'long' | 'short' = 'long'): string {
+  const [y, m, d] = date.split('-').map(Number);
+  return new Intl.DateTimeFormat('en-US', { timeZone: 'UTC', weekday: style }).format(new Date(Date.UTC(y, m - 1, d)));
 }

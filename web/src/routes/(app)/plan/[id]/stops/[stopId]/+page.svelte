@@ -4,7 +4,7 @@
   import { copy } from '$lib/labels';
   import Votes from '$lib/components/Votes.svelte';
   import Comments from '$lib/components/Comments.svelte';
-  import type { AttachResult, Itinerary, Stop, StopPhoto } from '$lib/types';
+  import type { AttachResult, Itinerary, Place, Stop, StopPhoto } from '$lib/types';
 
   let { data } = $props();
   let itinerary = $state<Itinerary | null>(null);
@@ -27,7 +27,7 @@
       error = '';
       const [it, st, ph] = await Promise.all([
         pb.collection('itineraries').getOne<Itinerary>(data.id),
-        pb.collection('stops').getOne<Stop>(data.stopId),
+        pb.collection('stops').getOne<Stop>(data.stopId, { expand: 'place' }),
         pb.collection('stop_photos').getFullList<StopPhoto>({ filter: pb.filter('stop = {:id}', { id: data.stopId }), sort: 'created' })
       ]);
       itinerary = it; stop = st; photos = ph;
@@ -46,12 +46,24 @@
     ];
     return () => unsubs.forEach((u) => u());
   });
+  // The venue record fills in (details, photos) after the stop is created; follow it once known.
+  $effect(() => {
+    const id = stop?.place;
+    if (!id) return;
+    return subscribe('places', pb.filter('id = {:id}', { id }), load);
+  });
+
+  const place = $derived<Place | undefined>(stop?.expand?.place);
+  // Google photos live on the shared venue record; stop_photos holds what the crew uploads.
+  const gallery = $derived([
+    ...(place?.photos ?? []).map((f, i) => ({ id: `${place!.id}/${f}`, url: pb.files.getURL(place!, f, { thumb: '800x0' }), attribution: place!.photo_attributions?.[i] ? `Photo by ${place!.photo_attributions[i]} via Google` : 'Photo via Google' })),
+    ...photos.map((p) => ({ id: p.id, url: pb.files.getURL(p, p.file, { thumb: '800x0' }), attribution: p.attribution }))
+  ]);
 
   const editable = $derived(!!itinerary && (itinerary.status === 'draft' || !!$auth.user?.is_admin));
   const mapsUrl = $derived(!stop ? '' : stop.place_id
     ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(stop.name)}&query_place_id=${encodeURIComponent(stop.place_id)}`
     : `https://www.google.com/maps/search/?api=1&query=${stop.lat},${stop.lon}`);
-  const photoUrl = (p: StopPhoto) => pb.files.getURL(p, p.file, { thumb: '800x0' });
   // Only link out to a real web address: `website` comes from Google or a hand edit and could be
   // anything, including a javascript: URL.
   const websiteUrl = $derived(stop && /^https?:\/\//i.test(stop.website ?? '') ? stop.website : '');
@@ -86,13 +98,14 @@
   <h1 data-testid="stop-name">{stop.name}</h1>
   <p class="meta">{copy[`kind_${stop.kind ?? 'other'}`]} · {stop.station_name || stop.station_id} · {stop.walk_min} {copy.walkMinutes}</p>
   {#if stop.address}<p class="meta">{stop.address}</p>{/if}
+  {#if place?.rating}<p class="meta" data-testid="rating">★ {place.rating.toFixed(1)}{place.rating_count ? ` (${place.rating_count})` : ''}</p>{/if}
   <p><a href={mapsUrl} target="_blank" rel="noopener" data-testid="maps-link">{copy.openInMaps}</a></p>
 
   <section>
-    {#if photos.length}
+    {#if gallery.length}
       <div class="grid">
-        {#each photos as p, i (p.id)}
-          <figure><img src={photoUrl(p)} alt="" loading="lazy" data-testid="photo-{i}" /><figcaption>{p.attribution}</figcaption></figure>
+        {#each gallery as p, i (p.id)}
+          <figure><img src={p.url} alt="" loading="lazy" data-testid="photo-{i}" /><figcaption>{p.attribution}</figcaption></figure>
         {/each}
       </div>
     {/if}
@@ -100,10 +113,10 @@
       {#if photoError}{photoError}
       {:else if stop.photos_status === 'pending'}{copy.photosPending}
       {:else if stop.photos_status === 'failed'}{copy.photosFailed}
-      {:else if !photos.length}{copy.noPhotos}
+      {:else if !gallery.length}{copy.noPhotos}
       {:else}{copy.googleAttribution}{/if}
     </p>
-    {#if editable && stop.photos_status !== 'pending' && (stop.photos_status !== 'done' || !photos.length)}
+    {#if editable && stop.photos_status !== 'pending' && (stop.photos_status !== 'done' || !gallery.length)}
       <button type="button" class="secondary" onclick={retry} disabled={retrying} data-testid="retry-photos">{copy.retryPhotos}</button>
     {/if}
   </section>

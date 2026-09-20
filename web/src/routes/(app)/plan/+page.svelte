@@ -23,7 +23,7 @@
     busy = true; error = '';
     try {
       const record = await pb.collection('itineraries').create<Itinerary>({ title: title.trim(), created_by: $auth.user?.id });
-      await goto(`/plan/${record.id}`);
+      await goto(`/plan/${record.id}/edit`);
     } catch (err) { error = (err as Error).message || copy.genericError; }
     finally { busy = false; }
   }
