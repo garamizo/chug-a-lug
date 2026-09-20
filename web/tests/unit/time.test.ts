@@ -7,18 +7,33 @@ describe('time', () => {
     expect(localToUtc('2026-07-04', 660).toISOString()).toBe('2026-07-04T16:00:00.000Z');
     expect(localToUtc('2026-12-26', 1510).toISOString()).toBe('2026-12-27T07:10:00.000Z');
   });
-  it('resolves a spring-forward gap forward, staying monotonic', () => {
+  it('clamps a spring-forward gap to the transition instant, staying monotonic', () => {
     // 2026-03-08: Chicago clocks jump from 2:00 AM CST straight to 3:00 AM CDT; 2:00-2:59 AM
-    // local never happened.
-    const before = localToUtc('2026-03-08', 119).getTime(); // 1:59 AM CST, exists
-    expect(new Date(before).toISOString()).toBe('2026-03-08T07:59:00.000Z');
-    const gap120 = localToUtc('2026-03-08', 120).getTime(); // 2:00 AM, does not exist
-    const gap121 = localToUtc('2026-03-08', 121).getTime(); // 2:01 AM, does not exist
-    const after = localToUtc('2026-03-08', 180); // 3:00 AM CDT, exists
-    expect(after.toISOString()).toBe('2026-03-08T08:00:00.000Z');
-    expect(gap120).toBeGreaterThanOrEqual(before);
-    expect(gap120).toBeLessThanOrEqual(after.getTime());
-    expect(gap121).toBeGreaterThanOrEqual(gap120);
+    // local never happened, so every minute in the gap clamps to the transition instant, the
+    // same instant as the first valid post-gap minute (3:00 AM CDT = 08:00Z).
+    expect(localToUtc('2026-03-08', 119).toISOString()).toBe('2026-03-08T07:59:00.000Z');
+    expect(localToUtc('2026-03-08', 120).toISOString()).toBe('2026-03-08T08:00:00.000Z');
+    expect(localToUtc('2026-03-08', 150).toISOString()).toBe('2026-03-08T08:00:00.000Z');
+    expect(localToUtc('2026-03-08', 179).toISOString()).toBe('2026-03-08T08:00:00.000Z');
+    expect(localToUtc('2026-03-08', 180).toISOString()).toBe('2026-03-08T08:00:00.000Z');
+    expect(localToUtc('2026-03-08', 181).toISOString()).toBe('2026-03-08T08:01:00.000Z');
+  });
+  it('stays non-decreasing across full days spanning both DST transitions', () => {
+    for (const date of ['2026-03-08', '2026-11-01']) {
+      let prev = -Infinity;
+      for (let m = 0; m <= 1560; m++) {
+        const t = localToUtc(date, m).getTime();
+        expect(t).toBeGreaterThanOrEqual(prev);
+        prev = t;
+      }
+    }
+  });
+  it('resolves fall-back to the first occurrence of the repeated hour', () => {
+    // 2026-11-01: Chicago clocks fall back from 2:00 AM CDT to 1:00 AM CST; 1:00-1:59 AM local
+    // happens twice, and localToUtc always picks the first (CDT) occurrence.
+    expect(localToUtc('2026-11-01', 60).toISOString()).toBe('2026-11-01T06:00:00.000Z');
+    expect(localToUtc('2026-11-01', 120).toISOString()).toBe('2026-11-01T08:00:00.000Z');
+    expect(localToUtc('2026-11-01', 1500).toISOString()).toBe('2026-11-02T07:00:00.000Z');
   });
   it('inverts back to minutes past the service-day midnight', () => {
     expect(minutesOfDay('2026-12-26', '2026-12-27T07:10:00.000Z')).toBe(1510);

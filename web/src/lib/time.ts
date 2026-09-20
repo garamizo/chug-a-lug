@@ -13,21 +13,26 @@ function offsetMinutes(utcMs: number): number {
 /**
  * Minutes after local midnight of `date` (YYYY-MM-DD) as a UTC instant.
  * Fall-back (a repeated local hour, e.g. the 1 AM hour on 2026-11-01) always resolves to the
- * first occurrence, matching how GTFS treats repeated local times.
+ * first occurrence, matching how GTFS treats repeated local times. Spring-forward (a skipped
+ * local hour, e.g. 2:00-2:59 AM on 2026-03-08) clamps to the transition instant — the first
+ * valid instant after the gap — so minutes keep advancing monotonically.
  */
 export function localToUtc(date: string, minutes: number): Date {
   const [y, mo, d] = date.split('-').map(Number);
   const guess = Date.UTC(y, mo - 1, d) + minutes * 60_000;
-  const off1 = offsetMinutes(guess);
-  const candidate1 = guess - off1 * 60_000;
-  const off2 = offsetMinutes(candidate1);
-  if (off2 === off1) return new Date(candidate1);
-  const candidate2 = guess - off2 * 60_000;
-  const off3 = offsetMinutes(candidate2);
-  if (off3 === off2) return new Date(candidate2);
-  // Neither offset lands back on itself: the local time falls in a spring-forward gap that
-  // never occurred. Resolve it forward (later candidate wins) so minutes keep advancing.
-  return new Date(Math.max(candidate1, candidate2));
+  // Offsets in force a day before and a day after cover any transition near this local time.
+  const offsets = [...new Set([offsetMinutes(guess - 86_400_000), offsetMinutes(guess + 86_400_000)])];
+  const valid = offsets.map((off) => guess - off * 60_000).filter((t, i) => offsetMinutes(t) === offsets[i]);
+  if (valid.length) return new Date(Math.min(...valid)); // fall-back overlap: first occurrence
+  // Skipped local time (spring forward): clamp to the transition instant by bisecting between the candidates.
+  const candidates = offsets.map((off) => guess - off * 60_000);
+  let lo = Math.min(...candidates), hi = Math.max(...candidates);
+  const before = offsetMinutes(lo);
+  while (hi - lo > 60_000) {
+    const mid = lo + Math.floor((hi - lo) / 120_000) * 60_000;
+    if (offsetMinutes(mid) === before) lo = mid; else hi = mid;
+  }
+  return new Date(hi);
 }
 
 /**
