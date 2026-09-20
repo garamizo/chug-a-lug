@@ -52,6 +52,9 @@
     ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(stop.name)}&query_place_id=${encodeURIComponent(stop.place_id)}`
     : `https://www.google.com/maps/search/?api=1&query=${stop.lat},${stop.lon}`);
   const photoUrl = (p: StopPhoto) => pb.files.getURL(p, p.file, { thumb: '800x0' });
+  // Only link out to a real web address: `website` comes from Google or a hand edit and could be
+  // anything, including a javascript: URL.
+  const websiteUrl = $derived(stop && /^https?:\/\//i.test(stop.website ?? '') ? stop.website : '');
 
   async function save() {
     if (!stop || busy) return;
@@ -114,7 +117,7 @@
     {:else}
       <p>{copy.hoursUnknown}</p>
     {/if}
-    {#if stop.website}<p><a href={stop.website} target="_blank" rel="noopener">{copy.website}</a></p>{/if}
+    {#if websiteUrl}<p><a href={websiteUrl} target="_blank" rel="noopener">{copy.website}</a></p>{/if}
   </section>
 
   <section>

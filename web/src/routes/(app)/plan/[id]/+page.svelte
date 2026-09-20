@@ -26,6 +26,9 @@
     } catch { error = copy.loadError; }
   }
   $effect(() => {
+    // Clear the previous itinerary first, like the stop card does, so navigating between drafts
+    // never shows the old one's stops and legs while the new one loads.
+    itinerary = null; stops = []; legs = []; error = '';
     void load();
     const filter = pb.filter('itinerary = {:id}', { id: data.id });
     const unsubs = [subscribe('stops', filter, load), subscribe('legs', filter, load), subscribe('itineraries', pb.filter('id = {:id}', { id: data.id }), load)];
@@ -34,7 +37,9 @@
 
   const isAdmin = $derived(!!$auth.user?.is_admin);
   const editable = $derived(!!itinerary && (itinerary.status === 'draft' || isAdmin));
-  const canManage = $derived(!!itinerary && (isAdmin || itinerary.created_by === $auth.user?.id));
+  // The creator manages their own draft; once it is locked or archived only the admin still can
+  // (the PocketBase hook rejects a non-admin's edit of a non-draft itinerary).
+  const canManage = $derived(!!itinerary && (isAdmin || (itinerary.created_by === $auth.user?.id && itinerary.status === 'draft')));
 
   async function deleteDraft() {
     if (!itinerary || !confirm(copy.deleteDraftConfirm)) return;

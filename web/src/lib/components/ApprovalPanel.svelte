@@ -28,10 +28,12 @@
   const pending = $derived(users.filter((u) => !votes.some((v) => v.user === u.id)).map((u) => u.name));
   const open = $derived(itinerary.status === 'draft' && itinerary.vote_open);
 
-  async function run(fn: () => Promise<unknown>) {
+  // `skipReload` for the lock path: it navigates away, and reloading into an unmounted component
+  // writes to state nobody reads any more (the `derived_inert` warning).
+  async function run(fn: () => Promise<unknown>, skipReload = false) {
     if (busy) return;
     busy = true; error = '';
-    try { await fn(); await load(); } catch (err) { error = (err as Error).message || copy.genericError; }
+    try { await fn(); if (!skipReload) await load(); } catch (err) { error = (err as Error).message || copy.genericError; }
     finally { busy = false; }
   }
   const toggleVote = () => run(() => pb.collection('itineraries').update(itinerary.id, { vote_open: !itinerary.vote_open }));
@@ -40,7 +42,7 @@
     : pb.collection('approval_votes').create({ itinerary: itinerary.id, user: $auth.user?.id, value }));
   const lock = () => {
     if (!confirm(copy.lockConfirm)) return;
-    void run(async () => { await pb.collection('itineraries').update(itinerary.id, { status: 'locked' }); await goto('/route'); });
+    void run(async () => { await pb.collection('itineraries').update(itinerary.id, { status: 'locked' }); await goto('/route'); }, true);
   };
 </script>
 
