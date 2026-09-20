@@ -78,4 +78,10 @@ export type MetraStatus = {
   feeds: Record<'positions' | 'tripupdates' | 'alerts', { fetchedAt: string | null; ageSec: number | null; mode: FeedMode }>;
 };
 
+/** A Metra service alert, trimmed to what the UI shows. `id` is the feed's entity id and is stable. */
+export type Alert = {
+  id: string; effect: string; header: string; body: string;
+  startsAt: string | null; endsAt: string | null; stationIds: string[];
+};
+
 export type AttachResult = { status: 'done' | 'failed'; photos: number; message?: string };
