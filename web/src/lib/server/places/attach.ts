@@ -2,13 +2,17 @@
 // and mirrored into stop_photos so every phone gets the same card.
 import { join } from 'node:path';
 import { readFile } from 'node:fs/promises';
+import { error } from '@sveltejs/kit';
 import { serverEnv } from '$lib/server/env';
 import { adminPb } from '$lib/server/pb';
 import { metra } from '$lib/server/metra';
 import { exists, readJson, writeBytes, writeJson } from './cache';
 import { consumeBudget } from './budget';
 import { photoBytes, placeDetails, searchText, type PlaceMeta } from './google';
-import type { AttachResult, Stop } from '$lib/types';
+import type { AttachResult, Itinerary, Stop } from '$lib/types';
+
+/** Who asked for the attach. Optional so tests (and future server jobs) can skip the check. */
+export type AttachCaller = { is_admin: boolean };
 
 const DETAILS_LIMIT = 800;
 const PHOTOS_LIMIT = 800;
@@ -19,9 +23,9 @@ const PHOTOS_LIMIT = 800;
 // recomputeItinerary in $lib/server/recompute.ts).
 const queues = new Map<string, Promise<AttachResult>>();
 
-export function attachPlace(stopId: string): Promise<AttachResult> {
+export function attachPlace(stopId: string, caller?: AttachCaller): Promise<AttachResult> {
   const prev = queues.get(stopId) ?? Promise.resolve();
-  const run = prev.catch(() => undefined).then(() => doAttachPlace(stopId));
+  const run = prev.catch(() => undefined).then(() => doAttachPlace(stopId, caller));
   queues.set(stopId, run);
   // `run.catch(...)` marks `run` itself as handled; the derived promise never rejects, so the
   // `.finally` bookkeeping cannot surface as an unhandled rejection and kill the Node server.
@@ -31,7 +35,7 @@ export function attachPlace(stopId: string): Promise<AttachResult> {
   return run;
 }
 
-async function doAttachPlace(stopId: string): Promise<AttachResult> {
+async function doAttachPlace(stopId: string, caller?: AttachCaller): Promise<AttachResult> {
   const pb = await adminPb();
   // A well-formed but unknown id is an ordinary 404 from PocketBase: report it as a failed attach
   // rather than rejecting (nothing to mark 'failed' either, since there is no stop record).
@@ -41,6 +45,12 @@ async function doAttachPlace(stopId: string): Promise<AttachResult> {
   } catch (err) {
     console.error('[places] attach: no stop', stopId, err);
     return { status: 'failed', photos: 0, message: (err as Error).message };
+  }
+  // This writes as the superuser, so the stops collection rule (draft, or admin) is re-checked here
+  // instead of being bypassed.
+  if (caller && !caller.is_admin) {
+    const it = await pb.collection('itineraries').getOne<Itinerary>(stop.itinerary).catch(() => null);
+    if (!it || it.status !== 'draft') throw error(403, 'This itinerary is no longer a draft.');
   }
   const fail = async (message: string): Promise<AttachResult> => {
     await pb.collection('stops').update(stop.id, { photos_status: 'failed' });
@@ -61,6 +71,8 @@ async function doAttachPlace(stopId: string): Promise<AttachResult> {
       if (!hit) return fail('Google has no match for this name near the station.');
       placeId = hit.id;
     }
+    // placeId becomes a path segment under data/places/: keep it to the characters Google uses.
+    if (!/^[A-Za-z0-9_-]+$/.test(placeId)) return fail('Unexpected Google place id.');
     const dir = join(serverEnv.dataDir, 'places', placeId);
     let meta = await readJson<PlaceMeta>(join(dir, 'meta.json'));
     if (!meta) {

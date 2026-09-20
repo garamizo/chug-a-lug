@@ -57,7 +57,9 @@ describe('photoBytes', () => {
   it('requests the media endpoint with maxWidthPx and returns bytes', async () => {
     const { calls, fetchImpl } = capture(new Uint8Array([1, 2, 3]));
     const bytes = await photoBytes({ key: 'K', fetchImpl }, 'places/abc/photos/p1');
-    expect(calls[0].url).toBe('https://places.googleapis.com/v1/places/abc/photos/p1/media?maxWidthPx=800&key=K');
+    expect(calls[0].url).toBe('https://places.googleapis.com/v1/places/abc/photos/p1/media?maxWidthPx=800');
+    // The key belongs in the header only: a query-string copy would leak into logs and redirects.
+    expect(new Headers(calls[0].init.headers).get('x-goog-api-key')).toBe('K');
     expect([...bytes]).toEqual([1, 2, 3]);
   });
 });

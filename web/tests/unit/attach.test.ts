@@ -10,6 +10,7 @@ import { searchText, placeDetails, photoBytes } from '$lib/server/places/google'
 // before the imports, and the returned object is the same reference used in this file's tests).
 const envState = vi.hoisted(() => ({ dataDir: '', googleKey: 'K' }));
 const pbState = vi.hoisted(() => ({
+  itineraries: new Map<string, Record<string, unknown>>(),
   stops: new Map<string, Record<string, unknown>>(),
   stopPhotos: [] as { id: string; stop: string; source: string; attribution: string }[],
   createCalls: [] as { stop: string; attribution: string }[],
@@ -51,6 +52,15 @@ vi.mock('$lib/server/pb', () => ({
           }
         };
       }
+      if (name === 'itineraries') {
+        return {
+          getOne: async (id: string) => {
+            const it = pbState.itineraries.get(id);
+            if (!it) throw new Error(`itinerary ${id} not found`);
+            return { ...it };
+          }
+        };
+      }
       if (name === 'stop_photos') {
         return {
           getFullList: async (opts: { filter: string }) =>
@@ -81,7 +91,7 @@ vi.mock('$lib/server/places/google', () => ({
 
 function seedStop(id: string, overrides: Record<string, unknown> = {}) {
   pbState.stops.set(id, {
-    id, place_id: '', station_id: 'ELMHURST', station_name: 'Elmhurst', name: 'Test Bar',
+    id, itinerary: 'draftit', place_id: '', station_id: 'ELMHURST', station_name: 'Elmhurst', name: 'Test Bar',
     lat: 0, lon: 0, address: '', phone: '', website: '', hours: null, photos_status: 'none',
     ...overrides
   });
@@ -97,6 +107,9 @@ function meta(photoCount: number) {
 }
 
 beforeEach(() => {
+  pbState.itineraries.clear();
+  pbState.itineraries.set('draftit', { id: 'draftit', status: 'draft' });
+  pbState.itineraries.set('lockedit', { id: 'lockedit', status: 'locked' });
   pbState.stops.clear();
   pbState.stopPhotos.length = 0;
   pbState.createCalls.length = 0;
@@ -133,6 +146,34 @@ describe('attachPlace', () => {
     expect(result.message).toBeTruthy();
     expect(searchText).not.toHaveBeenCalled();
     errors.mockRestore();
+  });
+
+  it('refuses a non-admin caller once the itinerary has left draft, and writes nothing', async () => {
+    seedStop('stop4', { itinerary: 'lockedit' });
+
+    await expect(attachPlace('stop4', { is_admin: false })).rejects.toMatchObject({ status: 403 });
+
+    expect((pbState.stops.get('stop4') as { photos_status: string }).photos_status).toBe('none');
+    expect(searchText).not.toHaveBeenCalled();
+    expect(pbState.stopPhotos).toHaveLength(0);
+  });
+
+  it('lets the crew attach on a draft and the admin attach on a locked itinerary', async () => {
+    seedStop('stop5');
+    seedStop('stop6', { itinerary: 'lockedit' });
+
+    expect((await attachPlace('stop5', { is_admin: false })).status).toBe('done');
+    expect((await attachPlace('stop6', { is_admin: true })).status).toBe('done');
+  });
+
+  it('refuses a place_id that is not a plain Google id before it becomes a path segment', async () => {
+    seedStop('stop7', { place_id: '../../../etc/passwd' });
+
+    const result = await attachPlace('stop7');
+
+    expect(result).toMatchObject({ status: 'failed', photos: 0, message: 'Unexpected Google place id.' });
+    expect(placeDetails).not.toHaveBeenCalled();
+    expect(photoBytes).not.toHaveBeenCalled();
   });
 
   it('serializes two concurrent attaches for the same stop so photos are created once', async () => {

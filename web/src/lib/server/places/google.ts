@@ -56,6 +56,8 @@ export async function placeDetails(cfg: GoogleConfig, placeId: string): Promise<
 }
 
 export async function photoBytes(cfg: GoogleConfig, photoName: string, maxWidthPx = 800): Promise<Uint8Array> {
-  const res = await call(cfg, `${BASE}/${photoName}/media?maxWidthPx=${maxWidthPx}&key=${encodeURIComponent(cfg.key)}`, { method: 'GET' });
+  // The key travels in the X-Goog-Api-Key header that call() sets; repeating it in the query string
+  // only leaks it into logs and redirects.
+  const res = await call(cfg, `${BASE}/${photoName}/media?maxWidthPx=${maxWidthPx}`, { method: 'GET' });
   return new Uint8Array(await res.arrayBuffer());
 }
