@@ -4,7 +4,18 @@ import { readJson, writeJson } from './cache';
 
 type Budget = { month: string; details: number; photos: number };
 
-export async function consumeBudget(dataDir: string, kind: 'details' | 'photos', limit: number): Promise<boolean> {
+// consumeBudget is a non-atomic read-modify-write on budget.json; a single in-process queue
+// serializes every call so concurrent increments cannot interleave and lose counts (single Node
+// server, so no cross-process file locking is needed).
+let queue: Promise<unknown> = Promise.resolve();
+
+export function consumeBudget(dataDir: string, kind: 'details' | 'photos', limit: number): Promise<boolean> {
+  const run = queue.catch(() => undefined).then(() => doConsumeBudget(dataDir, kind, limit));
+  queue = run;
+  return run;
+}
+
+async function doConsumeBudget(dataDir: string, kind: 'details' | 'photos', limit: number): Promise<boolean> {
   const path = join(dataDir, 'places', 'budget.json');
   const month = new Date().toISOString().slice(0, 7);
   let b = await readJson<Budget>(path);

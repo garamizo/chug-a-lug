@@ -13,7 +13,21 @@ import type { AttachResult, Stop } from '$lib/types';
 const DETAILS_LIMIT = 800;
 const PHOTOS_LIMIT = 800;
 
-export async function attachPlace(stopId: string): Promise<AttachResult> {
+// Serialized per stop id so two concurrent attach calls for the same stop cannot both see no
+// existing photos and both create stop_photos records; the second call waits for the first and
+// then re-reads the stop, so it returns 'done' immediately (same promise-queue pattern as
+// recomputeItinerary in $lib/server/recompute.ts).
+const queues = new Map<string, Promise<AttachResult>>();
+
+export function attachPlace(stopId: string): Promise<AttachResult> {
+  const prev = queues.get(stopId) ?? Promise.resolve();
+  const run = prev.catch(() => undefined).then(() => doAttachPlace(stopId));
+  queues.set(stopId, run);
+  run.finally(() => { if (queues.get(stopId) === run) queues.delete(stopId); });
+  return run;
+}
+
+async function doAttachPlace(stopId: string): Promise<AttachResult> {
   const pb = await adminPb();
   const stop = await pb.collection('stops').getOne<Stop>(stopId);
   const fail = async (message: string): Promise<AttachResult> => {
@@ -43,15 +57,23 @@ export async function attachPlace(stopId: string): Promise<AttachResult> {
       await writeJson(join(dir, 'meta.json'), meta);
     }
     const files: { path: string; attribution: string }[] = [];
+    let budgetBlocked = false;
     for (const [i, photo] of meta.photos.entries()) {
       const path = join(dir, `${i + 1}.jpg`);
       if (!(await exists(path))) {
-        if (!(await consumeBudget(serverEnv.dataDir, 'photos', PHOTOS_LIMIT))) break;
+        if (!(await consumeBudget(serverEnv.dataDir, 'photos', PHOTOS_LIMIT))) { budgetBlocked = true; break; }
         await writeBytes(path, await photoBytes(cfg, photo.name));
       }
       files.push({ path, attribution: photo.attribution });
     }
-    if (!existing.length) {
+    // The budget can stop the batch before any photo for this attach was obtained; treat that
+    // like the details-budget case rather than finishing 'done' with zero photos. If at least one
+    // photo made it through before the budget ran out, finishing 'done' with those is fine.
+    if (budgetBlocked && files.length === 0) return fail('Monthly Google budget reached.');
+    // Re-fetch existing immediately before creating records: a second guard against a concurrent
+    // attach for the same stop (the per-stop queue above is the primary guard).
+    const current = await pb.collection('stop_photos').getFullList({ filter: pb.filter('stop = {:id} && source = "google"', { id: stop.id }), fields: 'id' });
+    if (!current.length) {
       for (const [i, f] of files.entries()) {
         const form = new FormData();
         form.set('stop', stop.id);
