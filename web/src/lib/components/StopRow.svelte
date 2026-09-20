@@ -8,8 +8,17 @@
     href: string; onupdate: (patch: Partial<Stop>) => Promise<void>; onmove: (dir: -1 | 1) => void; onremove: () => void;
   } = $props();
 
-  let dwell = $state(stop.dwell_min);
-  $effect(() => { dwell = stop.dwell_min; });
+  // Sentinel-initialized (not read from `stop` directly) so svelte-check doesn't flag
+  // state_referenced_locally; the effect below does the real sync, guarded so an unchanged
+  // reload (e.g. a realtime refresh after someone else's edit) doesn't clobber in-progress typing.
+  let syncedDwell: number | undefined = $state(undefined);
+  let dwell = $state(0);
+  $effect(() => {
+    if (stop.dwell_min !== syncedDwell) {
+      syncedDwell = stop.dwell_min;
+      dwell = stop.dwell_min;
+    }
+  });
   const kind = $derived(copy[`kind_${stop.kind ?? 'other'}`]);
 
   async function commitDwell() {
@@ -49,5 +58,5 @@
   .controls { display: flex; gap: 8px; align-items: center; margin: 10px 0 0 40px; flex-wrap: wrap; }
   .inline { display: flex; align-items: center; gap: 6px; margin: 0; font-size: 14px; }
   .inline input { width: 84px; margin: 0; padding: 8px; font-size: 16px; }
-  .small { width: auto; min-height: 40px; padding: 6px 12px; margin: 0; font-size: 15px; }
+  .small { width: auto; min-height: 48px; padding: 6px 12px; margin: 0; font-size: 15px; }
 </style>

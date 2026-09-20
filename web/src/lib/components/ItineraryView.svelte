@@ -10,9 +10,12 @@
     itinerary: Itinerary; stops: Stop[]; legs: Leg[]; editable: boolean; canManage: boolean; onerror?: (message: string) => void;
   } = $props();
 
-  const DOWNTOWN_NAMES: Record<string, string> = { OTC: 'Ogilvie', CUS: 'Union Station' };
   const sorted = $derived([...stops].sort((a, b) => a.order - b.order || a.created.localeCompare(b.created)));
-  const names = $derived(Object.assign({ ...DOWNTOWN_NAMES }, ...sorted.map((s) => ({ [s.station_id]: s.station_name || s.station_id }))));
+  const names = $derived(Object.assign(
+    {},
+    ...sorted.map((s) => ({ [s.station_id]: s.station_name || s.station_id })),
+    { OTC: copy.stationOTC, CUS: copy.stationCUS }
+  ));
   const legAfter = (i: number) => legs.find((l) => l.from_stop === sorted[i].id && l.to_stop === sorted[i + 1]?.id);
   const arriveAt = (i: number): Date | null => {
     if (i === 0) return localToUtc(itinerary.event_date, parseHm(itinerary.start_time));
@@ -26,8 +29,17 @@
     return a ? new Date(a.getTime() + sorted[i].dwell_min * 60_000) : null;
   };
 
-  let startTime = $state(itinerary.start_time);
-  $effect(() => { startTime = itinerary.start_time; });
+  // Sentinel-initialized (not read from `itinerary` directly) so svelte-check doesn't flag
+  // state_referenced_locally; the effect below does the real sync, guarded so an unchanged
+  // reload doesn't clobber an in-progress edit of the start-time field.
+  let syncedStartTime: string | undefined = $state(undefined);
+  let startTime = $state('');
+  $effect(() => {
+    if (itinerary.start_time !== syncedStartTime) {
+      syncedStartTime = itinerary.start_time;
+      startTime = itinerary.start_time;
+    }
+  });
 
   const fail = (err: unknown) => onerror?.((err as Error).message || copy.genericError);
 

@@ -159,4 +159,6 @@ export const copy = {
   backToPlanner: 'Back to the Route Planner',
   backToDraft: 'Back to the draft',
   loadError: 'Could not load this. Check your connection and try again.',
+  stationOTC: 'Ogilvie',
+  stationCUS: 'Union Station',
 } as const;
