@@ -122,6 +122,19 @@ describe('attachPlace', () => {
     expect(photoBytes).not.toHaveBeenCalled();
   });
 
+  it('reports a failed attach instead of rejecting when the stop does not exist', async () => {
+    // The route validates the id shape only, so a well-formed id for a deleted stop reaches here;
+    // rejecting would escape the queue chain and take the Node server down.
+    const errors = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+
+    const result = await attachPlace('doesnotexist000');
+
+    expect(result).toMatchObject({ status: 'failed', photos: 0 });
+    expect(result.message).toBeTruthy();
+    expect(searchText).not.toHaveBeenCalled();
+    errors.mockRestore();
+  });
+
   it('serializes two concurrent attaches for the same stop so photos are created once', async () => {
     seedStop('stop2');
 

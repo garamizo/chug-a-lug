@@ -23,13 +23,25 @@ export function attachPlace(stopId: string): Promise<AttachResult> {
   const prev = queues.get(stopId) ?? Promise.resolve();
   const run = prev.catch(() => undefined).then(() => doAttachPlace(stopId));
   queues.set(stopId, run);
-  run.finally(() => { if (queues.get(stopId) === run) queues.delete(stopId); });
+  // `run.catch(...)` marks `run` itself as handled; the derived promise never rejects, so the
+  // `.finally` bookkeeping cannot surface as an unhandled rejection and kill the Node server.
+  void run
+    .catch((err) => { console.error('[places] attach', stopId, err); })
+    .finally(() => { if (queues.get(stopId) === run) queues.delete(stopId); });
   return run;
 }
 
 async function doAttachPlace(stopId: string): Promise<AttachResult> {
   const pb = await adminPb();
-  const stop = await pb.collection('stops').getOne<Stop>(stopId);
+  // A well-formed but unknown id is an ordinary 404 from PocketBase: report it as a failed attach
+  // rather than rejecting (nothing to mark 'failed' either, since there is no stop record).
+  let stop: Stop;
+  try {
+    stop = await pb.collection('stops').getOne<Stop>(stopId);
+  } catch (err) {
+    console.error('[places] attach: no stop', stopId, err);
+    return { status: 'failed', photos: 0, message: (err as Error).message };
+  }
   const fail = async (message: string): Promise<AttachResult> => {
     await pb.collection('stops').update(stop.id, { photos_status: 'failed' });
     return { status: 'failed', photos: 0, message };

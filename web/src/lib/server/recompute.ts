@@ -8,18 +8,35 @@ import type { Itinerary, Stop } from '$lib/types';
 
 const queues = new Map<string, Promise<unknown>>();
 
+/**
+ * Queues a recompute for one itinerary. The returned promise settles with the counts, but callers
+ * may ignore it: the chain always carries its own catch, so a failure logs instead of surfacing as
+ * an unhandled rejection (which would take the Node server down).
+ */
 export function recomputeItinerary(itineraryId: string): Promise<{ legs: number; impossible: number }> {
   const prev = queues.get(itineraryId) ?? Promise.resolve();
   const run = prev.catch(() => undefined).then(() => doRecompute(itineraryId));
   queues.set(itineraryId, run);
-  run.finally(() => { if (queues.get(itineraryId) === run) queues.delete(itineraryId); });
+  // `run.catch(...)` marks `run` itself as handled, so a fire-and-forget caller is safe too; the
+  // derived promise never rejects, so `.finally` cannot produce an unhandled rejection either.
+  void run
+    .catch((err) => { console.error('[recompute]', itineraryId, err); })
+    .finally(() => { if (queues.get(itineraryId) === run) queues.delete(itineraryId); });
   return run;
 }
 
 async function doRecompute(itineraryId: string) {
   const pb = await adminPb();
+  // A deleted draft still fires the stops after-delete hook for each cascaded stop, so a missing
+  // itinerary is normal: resolve as a no-op instead of rejecting.
+  let it: Itinerary;
+  try {
+    it = await pb.collection('itineraries').getOne<Itinerary>(itineraryId);
+  } catch (err) {
+    if ((err as { status?: number }).status === 404) return { legs: 0, impossible: 0 };
+    throw err;
+  }
   const schedule = await metra.getSchedule();
-  const it = await pb.collection('itineraries').getOne<Itinerary>(itineraryId);
   const stops = await pb.collection('stops').getFullList<Stop>({ filter: pb.filter('itinerary = {:id}', { id: itineraryId }), sort: 'order,created' });
   const computed = recomputeLegs(schedule, { date: it.event_date, startMin: parseHm(it.start_time) }, stops.map((s) => ({
     id: s.id, order: s.order, station_id: s.station_id, dwell_min: s.dwell_min ?? 60, walk_min: s.walk_min ?? 5
