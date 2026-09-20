@@ -13,6 +13,9 @@ export type LegPlan = { kind: 'train' | 'walk' | 'impossible'; segments: PlanSeg
 export type StopInput = { id: string; order: number; station_id: string; dwell_min: number; walk_min: number };
 export type ComputedLeg = { fromStopId: string; toStopId: string; kind: LegPlan['kind']; readyMin: number; departMin: number; arriveMin: number; segments: PlanSegment[] };
 
+/** Where the crawl actually is, and when it got there: the tail of the day is planned from here. */
+export type Anchor = { stopId: string; atMin: number };
+
 export const DOWNTOWN_WALK_MIN = 6;
 
 /** Trips serving `from` then `to` (in that order) departing at or after `afterMin` on `date`. */
@@ -104,13 +107,23 @@ export function planLeg(s: Schedule, from: string, to: string, atStationMin: num
   return best ?? { kind: 'impossible', segments: [], departMin: atStationMin, arriveMin: atStationMin };
 }
 
-/** Walk the itinerary: at stop 1 at startMin, dwell, walk to the station, ride, walk to the next venue. */
-export function recomputeLegs(s: Schedule, opts: { date: string; startMin: number }, stops: StopInput[]): ComputedLeg[] {
+/**
+ * Walk the itinerary: at stop 1 at startMin, dwell, walk to the station, ride, walk to the next
+ * venue. With an `anchor`, the anchored stop's arrival is the anchor minute instead of whatever the
+ * incoming leg produced, so a crawl that is running late re-plans from where it is. Legs before the
+ * anchor keep the times they always had: they are history, not a forecast.
+ */
+export function recomputeLegs(
+  s: Schedule,
+  opts: { date: string; startMin: number; anchor?: Anchor | null },
+  stops: StopInput[]
+): ComputedLeg[] {
   const sorted = [...stops].sort((a, b) => a.order - b.order);
   const legs: ComputedLeg[] = [];
   let arrival = opts.startMin;
   for (let i = 0; i + 1 < sorted.length; i++) {
     const a = sorted[i], b = sorted[i + 1];
+    if (opts.anchor && a.id === opts.anchor.stopId) arrival = opts.anchor.atMin;
     const readyMin = arrival + a.dwell_min;
     const atStation = readyMin + a.walk_min;
     const plan = planLeg(s, a.station_id, b.station_id, atStation, opts.date);

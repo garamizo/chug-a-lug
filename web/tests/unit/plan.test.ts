@@ -111,3 +111,44 @@ describe('recomputeLegs', () => {
     expect(recomputeLegs(s, { date: D, startMin: 660 }, [{ id: 'a', order: 1, station_id: 'OTC', dwell_min: 60, walk_min: 1 }])).toEqual([]);
   });
 });
+
+describe('recomputeLegs with an anchor', () => {
+  // NAPERVILLE -> LAGRANGE -> CUS, the crawl starting at 11:00.
+  const stops = [
+    { id: 's1', order: 1, station_id: 'NAPERVILLE', dwell_min: 30, walk_min: 5 },
+    { id: 's2', order: 2, station_id: 'LAGRANGE', dwell_min: 60, walk_min: 5 },
+    { id: 's3', order: 3, station_id: 'CUS', dwell_min: 60, walk_min: 4 }
+  ];
+
+  it('plans from the start time when there is no anchor', () => {
+    const legs = recomputeLegs(s, { date: D, startMin: 660 }, stops);
+    // leg 1 catches BN2 out of Naperville at 12:05, reaching La Grange at 12:30 plus a 5 min walk.
+    expect(legs[0]).toMatchObject({ kind: 'train', readyMin: 690, departMin: 725, arriveMin: 755 });
+    // leg 2 is then too late for BN2 at La Grange (12:30) and waits for BN4 at 14:30.
+    expect(legs[1]).toMatchObject({ kind: 'train', readyMin: 815, departMin: 870, arriveMin: 899 });
+  });
+
+  it('starts the anchored stop from the anchor minute and leaves earlier legs alone', () => {
+    const legs = recomputeLegs(s, { date: D, startMin: 660, anchor: { stopId: 's2', atMin: 660 } }, stops);
+    expect(legs[0]).toMatchObject({ departMin: 725, arriveMin: 755 });
+    // Anchored at 11:00 the crawl is ready at 12:00, on the platform at 12:05, and catches BN2 at
+    // 12:30 into Union Station at 12:55 plus the 4 min walk.
+    expect(legs[1]).toMatchObject({ kind: 'train', readyMin: 720, departMin: 750, arriveMin: 779 });
+  });
+
+  it('marks the leg impossible when the anchor is too late for the last train', () => {
+    const legs = recomputeLegs(s, { date: D, startMin: 660, anchor: { stopId: 's2', atMin: 840 } }, stops);
+    expect(legs[1]).toMatchObject({ kind: 'impossible', readyMin: 900 });
+  });
+
+  it('anchors the first stop too', () => {
+    const legs = recomputeLegs(s, { date: D, startMin: 660, anchor: { stopId: 's1', atMin: 600 } }, stops);
+    expect(legs[0]).toMatchObject({ readyMin: 630, departMin: 725 });
+  });
+
+  it('ignores an anchor whose stop is not in the plan', () => {
+    const plain = recomputeLegs(s, { date: D, startMin: 660 }, stops);
+    const ghost = recomputeLegs(s, { date: D, startMin: 660, anchor: { stopId: 'gone', atMin: 900 } }, stops);
+    expect(ghost).toEqual(plain);
+  });
+});
