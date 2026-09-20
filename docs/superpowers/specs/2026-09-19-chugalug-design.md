@@ -94,7 +94,7 @@ America/Chicago. Access rules in brackets: A = admin only, U = any authenticated
 | `stops` | `itinerary` rel, `order` int, `name`, `kind` enum bar/restaurant/other, `station_id`, `station_name`, `place_id`, `osm_id`, `address`, `lat`, `lon`, `hours` json, `phone`, `website`, `confirmed_open` bool, `dwell_min` int, `walk_min` int, `notes`, `meet_point` text, `photos_status` enum none/pending/done/failed | view U, create/update U while itinerary draft; A always |
 | `stop_photos` | `stop` rel, `file` file, `source` enum google/user, `attribution` text | view U, create U (user source) or hook (google) |
 | `votes` | `user` rel, `target_collection` text, `target_id` text, `value` enum up/down | view U, create/update/delete O; unique (user, target) |
-| `comments` | `user` rel, `target_collection`, `target_id`, `body` | view U, create U, update/delete O |
+| `comments` | `user` rel, `target_collection`, `target_id`, `body` | view U, create U, update O, delete O or A |
 | `approval_votes` | `itinerary` rel, `user` rel, `value` enum go/nogo | view U, create/update O while itinerary `vote_open` |
 | `legs` | `itinerary` rel, `from_stop` rel, `to_stop` rel, `kind` enum train/walk/impossible, `ready_at`, `depart_at`, `arrive_at`, `segments` json, `computed_at` | view U, write server only |
 | `checkins` | `user` rel, `stop` rel nullable, `kind` enum at_stop/on_train, `at` datetime | view U, create O |
@@ -192,10 +192,13 @@ on the SvelteKit server (shared secret header). Recompute (`recomputeLegs`, pure
 1. Sort stops by `order`, starting from `itineraries.start_time` at the first stop. For each consecutive
    pair A → B: `ready_at` = A's arrival + A's `dwell_min` (leave the venue); `depart_at`-eligible time =
    `ready_at` + A's `walk_min` (at A's station).
-2. Plan the station-to-station hop from that time (`planLeg`): same station → a 0-minute walk; both
-   stations are the downtown pair (OTC/CUS) → a 6-minute walk; otherwise the first direct trip after that
-   time, or if none exists, the fastest pair of trips via a downtown transfer (OTC↔CUS, 6 min walk between
-   them); if neither exists, `kind: impossible`.
+2. Plan the station-to-station hop from that time (`planLeg`). Same station → a 0-minute walk; both
+   stations are the downtown pair (OTC/CUS) → a 6-minute walk. Otherwise the earliest arrival among four
+   shapes, with the simpler one winning a tie: (a) a direct trip; (b) *train then walk* — the destination
+   is downtown but no train reaches it, so ride to the other terminal and walk the 6 minutes across;
+   (c) *walk then train* — the origin is downtown and the line leaves from the other terminal, so walk
+   across first and ride out (`depart_at` is then when the walk starts, not the train's departure);
+   (d) *train, downtown walk, train* — a transfer between two lines. If none exists, `kind: impossible`.
 3. `arrive_at` = the hop's arrival (or the eligible time, for `impossible`) + B's `walk_min` (walk from B's
    station to the venue). Write `legs` with `kind`, `ready_at`, `depart_at`, `arrive_at`, `segments` (json:
    one or two `train` segments and any `walk` segment), `computed_at`; append `event_log {kind: recompute,

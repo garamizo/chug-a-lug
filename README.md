@@ -35,7 +35,7 @@ with an album and a scoreboard to argue about at dinner.
 - **Private.** One shared crew password from the admin, plus your name so likes and comments are yours.
   No sign-up, no recovery, no per-person accounts; the session lives in a cookie for a year.
 - **Lines:** UP-W (Ogilvie), MD-W (Union Station, turns at Elgin on weekends), BNSF (Union Station).
-  Ogilvie and Union are a 5 min walk apart, so the plan can switch lines downtown.
+  Ogilvie and Union are a 6 min walk apart, so the plan can switch lines downtown.
 - **Runs on the admin's own computer.** One machine at home holds the database, the media, and the API
   keys, published to the internet through a Cloudflare Tunnel at chugalug.app. No cloud accounts to manage.
 - **Simulation is a first-class feature.** The whole live experience must be rehearsable at home with a fake
