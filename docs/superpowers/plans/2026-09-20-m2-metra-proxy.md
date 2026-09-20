@@ -1570,12 +1570,13 @@ describe('currentStop', () => {
   });
 
   it('ignores a correction older than that arrival, so it cannot drag the crawl backwards', () => {
-    // The clock says C (arrived 21:20); a correction made at 19:30 is stale.
+    // The clock says C (arrived 21:20); a correction made at 19:30 is stale and must not win.
     const r = currentStop(stops, legs, new Date('2026-12-26T22:00:00.000Z'), {
       startAt, override: { stopId: 'A', at: '2026-12-26T19:30:00.000Z' }
     });
     expect(r.stop?.id).toBe('C');
-    expect(r.source).toBe('clock');
+    // C is the last stop and has no onward leg, so the crawl counts as finished there.
+    expect(r.source).toBe('after');
   });
 
   it('ignores a correction naming a stop that is not on the itinerary', () => {
