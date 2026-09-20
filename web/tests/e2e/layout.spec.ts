@@ -18,23 +18,37 @@ test('desktop viewports get a wider column, still capped for readability', async
   expect(box?.width).toBeLessThan(1000);
 });
 
-test('the header with icon, title and logout stays pinned while scrolling', async ({ page }) => {
+test('the header with icon, title and menu stays pinned while scrolling', async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 300 });
   await login(page);
   const header = page.getByRole('banner');
   await expect(header.locator('img')).toBeVisible();
   await expect(header.getByText('Chug-a-Lug Choo-Choo')).toBeVisible();
-  await expect(header.getByTestId('logout')).toBeVisible();
+  await expect(header.getByTestId('menu')).toBeVisible();
 
   await page.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight));
   expect(await page.evaluate(() => window.scrollY)).toBeGreaterThan(0);
   const box = await header.boundingBox();
   expect(box?.y).toBe(0);
-  await expect(header.getByTestId('logout')).toBeInViewport();
+  await expect(header.getByTestId('menu')).toBeInViewport();
 });
 
-test('logout is not offered before signing in', async ({ page }) => {
+test('the header carries no date: the phone already shows one', async ({ page }) => {
+  await login(page);
+  await expect(page.getByRole('banner')).not.toContainText(/Sat|Sun|Mon|Dec/);
+});
+
+test('the menu holds logout, and the M3 items are visible but disabled', async ({ page }) => {
+  await login(page);
+  await page.getByTestId('menu').click();
+  await expect(page.getByTestId('logout')).toBeVisible();
+  await expect(page.getByRole('button', { name: /Drink scoreboard/ })).toBeDisabled();
+  await expect(page.getByRole('button', { name: /Crew Board/ })).toBeDisabled();
+});
+
+test('the menu is not offered before signing in', async ({ page }) => {
   await page.goto('/login');
   await expect(page.getByRole('banner').getByText('Chug-a-Lug Choo-Choo')).toBeVisible();
+  await expect(page.getByTestId('menu')).toHaveCount(0);
   await expect(page.getByTestId('logout')).toHaveCount(0);
 });

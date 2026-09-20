@@ -51,6 +51,26 @@ dev (the PocketBase hook calls the SvelteKit server with that secret and URL aft
 - A stop whose photos failed shows "Try again" on its card. Setting `place_id` on the stop in the PocketBase admin UI
   (and clearing its `place` relation) then retrying fixes wrong matches.
 - The Metra feed is checked every 10 minutes; the app keeps the last good copy if Metra is down.
+
+## Realtime (M2)
+- `METRA_API_TOKEN` in `.env` is the bearer token for
+  `https://gtfspublic.metrarr.com/gtfs/public/{positions,tripupdates,alerts}`. Empty means the app runs on
+  the static timetable and every screen says "Timetable only". The old `gtfsapi.metrarail.com` host was
+  shut off 2025-11-01; anything using it is dead.
+- The poller starts on the first request that needs it and refetches every 30 s. Metra asks that nobody
+  poll faster. `GET /api/metra/status` reports `mode` (`live`, `stale`, `schedule_only`), `rtAgeSec` and a
+  per-feed breakdown; anything over 120 s counts as stale and the app falls back to the timetable.
+- **Freshness is per feed.** `/api/metra/next` trusts trip predictions only while the *tripupdates* feed
+  itself is fresh, and `/api/metra/alerts` likewise for alerts. A healthy positions feed never vouches for
+  stale departures. If the board says "Timetable only" while `/status` looks fine, read `feeds.tripupdates`.
+- A fetch failure keeps the last good feed and logs one line per feed. It never clears one.
+- `just record <name>` writes raw feed snapshots to `data/recordings/<name>/` until Ctrl-C, one file per
+  feed per change in `header.timestamp`. Run it on a Saturday for M4's replay. The folder is git-ignored
+  and bind-mounted, so it survives `docker compose up`. The script lives at `web/scripts/record.mjs`
+  because the repo root has no `package.json` for Node to resolve the protobuf bindings from.
+- Where the crawl is on the live day comes from the clock, not GPS. The Conductor can correct it from the
+  Departure Board; that writes a `checkins` record and everyone's board follows within seconds.
+
 - If venue photos fail with `Google 403`, enable **Places API (New)** for the project in the Google Cloud
   console (APIs & Services → Library → Places API (New)); the key itself is fine.
 

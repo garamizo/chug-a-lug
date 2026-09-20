@@ -141,9 +141,10 @@ Goal: nobody misses a train, nobody is lost, and the plan can change without cha
 - Next-train logic works from the static schedule when the live feed is missing or stale, and says so.
 - **Check-in**: two big buttons, "At the bar" and "On the train". The roster shows who is where and who
   hasn't checked in since the last leg. Straggler alert to the admin.
-- **Location sharing** using the browser's location permission prompt, foreground-only, with screen wake
-  lock during train legs. Each user has a "share my position" toggle; the admin's is on by default.
-  Shown as "last seen N min ago".
+- **Where the crawl is** comes from the clock over the locked itinerary, with a one-tap Conductor
+  correction on the Departure Board. No GPS: browsers cannot track location with the screen off, and a
+  clock is something anyone can check. Location sharing, if it ever lands, is foreground-only with a wake
+  lock during train legs. See the M2 design doc, section 3.
 - **Plan edits** by the admin: reroute, extend a stop, cancel a stop, add a stop. Downstream legs recompute;
   every screen updates within seconds; a broadcast message is pinned until each person taps "Got it".
   Everything lands in the event log.
@@ -228,7 +229,7 @@ re-reads the feed rather than hard-coding it.
 |---|---|---|
 | M0 Skeleton | early Oct | Repo skeleton, PocketBase + SvelteKit running locally, shared-password login, Cloudflare Tunnel live at chugalug.app |
 | M1 Planning | end Oct | Diagram, stop picker, venue cards with Google photos, drafts with real train times, votes, comments, approval vote — done 2026-09-19 (see docs/superpowers/plans/2026-09-19-m1-planning.md) |
-| M2 Metra proxy | mid Nov | Proxy live and recording, departure banner with both alerts, schedule fallback |
+| M2 Metra proxy | mid Nov | BNSF realtime proxy with recording, Departure Board with Last Call and All Aboard, service alerts and the header menu, schedule fallback — done 2026-09-20 (see docs/superpowers/plans/2026-09-20-m2-metra-proxy.md) |
 | M3 Live | end Nov | Check-in, roster, plan edits, broadcasts, drink log, media upload, offline cache |
 | M4 Simulation | Sat Dec 5 | Sim clock, replay, scripted GPS; full sim run at home |
 | M5 Wrap-up | Dec 12 | Album, scoreboard, awards, downloads |

@@ -23,6 +23,7 @@ test('crew login by name and shared password persists in a cookie, then logs out
   await page.reload();
   await expect(page.getByTestId('name')).toHaveText('E2E Rider');
 
+  await page.getByTestId('menu').click();
   await page.getByTestId('logout').click();
   await expect(page).toHaveURL(/\/login$/);
   expect((await context.cookies()).find((c) => c.name === 'pb_auth')).toBeUndefined();
