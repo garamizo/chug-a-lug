@@ -18,16 +18,23 @@
   let photoError = $state('');
   let error = $state('');
   let busy = $state(false);
+  let retrying = $state(false);
+  let dirty = $state(false);
+
+  function markDirty() { dirty = true; }
 
   async function load() {
     try {
+      error = '';
       const [it, st, ph] = await Promise.all([
         pb.collection('itineraries').getOne<Itinerary>(data.id),
         pb.collection('stops').getOne<Stop>(data.stopId),
         pb.collection('stop_photos').getFullList<StopPhoto>({ filter: pb.filter('stop = {:id}', { id: data.stopId }), sort: 'created' })
       ]);
       itinerary = it; stop = st; photos = ph;
-      notes = st.notes ?? ''; phone = st.phone ?? ''; confirmedOpen = !!st.confirmed_open;
+      if (!dirty) {
+        notes = st.notes ?? ''; phone = st.phone ?? ''; confirmedOpen = !!st.confirmed_open;
+      }
     } catch { error = copy.loadError; }
   }
   onMount(() => {
@@ -50,19 +57,22 @@
     busy = true; saveStatus = ''; error = '';
     try {
       await pb.collection('stops').update(stop.id, { notes, phone, confirmed_open: confirmedOpen });
+      dirty = false;
       saveStatus = copy.saved;
     } catch (err) { error = (err as Error).message || copy.genericError; }
     finally { busy = false; }
   }
 
   async function retry() {
-    if (!stop) return;
+    if (!stop || retrying) return;
+    retrying = true;
     photoError = '';
     try {
       const result = await api<AttachResult>('/api/places/attach', { method: 'POST', json: { stopId: stop.id } });
       if (result.status === 'failed') photoError = result.message ?? copy.photosFailed;
       await load();
     } catch (err) { photoError = (err as Error).message; }
+    finally { retrying = false; }
   }
 </script>
 
@@ -90,7 +100,7 @@
       {:else}{copy.googleAttribution}{/if}
     </p>
     {#if editable && stop.photos_status !== 'pending' && (stop.photos_status !== 'done' || !photos.length)}
-      <button type="button" class="secondary" onclick={retry} data-testid="retry-photos">{copy.retryPhotos}</button>
+      <button type="button" class="secondary" onclick={retry} disabled={retrying} data-testid="retry-photos">{copy.retryPhotos}</button>
     {/if}
   </section>
 
@@ -109,11 +119,11 @@
   <section>
     <h2>{copy.notes}</h2>
     <label for="notes" class="sr">{copy.notes}</label>
-    <textarea id="notes" rows="3" bind:value={notes} placeholder={copy.notesPlaceholder} disabled={!editable} data-testid="notes"></textarea>
-    <label class="check"><input type="checkbox" bind:checked={confirmedOpen} disabled={!editable} data-testid="confirmed-open" /> {copy.confirmedOpen}</label>
+    <textarea id="notes" rows="3" bind:value={notes} oninput={markDirty} placeholder={copy.notesPlaceholder} disabled={!editable} data-testid="notes"></textarea>
+    <label class="check"><input type="checkbox" bind:checked={confirmedOpen} onchange={markDirty} disabled={!editable} data-testid="confirmed-open" /> {copy.confirmedOpen}</label>
     <label for="phone">{copy.confirmPhone}</label>
-    <input id="phone" type="tel" bind:value={phone} disabled={!editable} data-testid="confirm-phone" />
-    {#if stop.phone}<p class="meta"><a href="tel:{stop.phone}">{stop.phone}</a></p>{/if}
+    <input id="phone" type="tel" bind:value={phone} oninput={markDirty} disabled={!editable} data-testid="confirm-phone" />
+    {#if stop.phone}<p class="meta"><a href="tel:{stop.phone.replace(/\s+/g, '')}">{stop.phone}</a></p>{/if}
     {#if editable}<button type="button" onclick={save} disabled={busy} data-testid="save-stop">{busy ? copy.working : copy.save}</button>{/if}
     {#if saveStatus}<p class="meta" data-testid="save-status">{saveStatus}</p>{/if}
   </section>
