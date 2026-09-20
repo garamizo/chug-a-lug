@@ -4,6 +4,8 @@
   import { pb, auth, subscribe } from '$lib/pb';
   import { copy } from '$lib/labels';
   import ItineraryView from '$lib/components/ItineraryView.svelte';
+  import Votes from '$lib/components/Votes.svelte';
+  import Comments from '$lib/components/Comments.svelte';
   import type { Itinerary, Leg, Stop } from '$lib/types';
 
   let { data } = $props();
@@ -44,7 +46,8 @@
 {#if error}<p class="error" role="alert">{error}</p>{/if}
 {#if itinerary}
   <ItineraryView {itinerary} {stops} {legs} {editable} {canManage} onerror={(m) => (error = m)} />
-  <!-- social -->
+  <Votes targetCollection="itineraries" targetId={itinerary.id} />
+  <Comments targetCollection="itineraries" targetId={itinerary.id} />
   <!-- approval -->
   {#if canManage && itinerary.status === 'draft'}
     <button type="button" class="secondary" onclick={deleteDraft} data-testid="delete-draft">{copy.deleteDraft}</button>

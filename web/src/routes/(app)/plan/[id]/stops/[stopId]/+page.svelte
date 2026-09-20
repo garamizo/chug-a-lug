@@ -3,6 +3,8 @@
   import { pb, auth, subscribe } from '$lib/pb';
   import { api } from '$lib/api';
   import { copy } from '$lib/labels';
+  import Votes from '$lib/components/Votes.svelte';
+  import Comments from '$lib/components/Comments.svelte';
   import type { AttachResult, Itinerary, Stop, StopPhoto } from '$lib/types';
 
   let { data } = $props();
@@ -116,7 +118,8 @@
     {#if saveStatus}<p class="meta" data-testid="save-status">{saveStatus}</p>{/if}
   </section>
 
-  <!-- social -->
+  <Votes targetCollection="stops" targetId={stop.id} />
+  <Comments targetCollection="stops" targetId={stop.id} />
 {/if}
 
 <style>
