@@ -57,9 +57,14 @@ export type Venue = {
   placeRef?: string;
 };
 
+/** `live*` equal the scheduled times when no TripUpdate covers the trip: Metra means on time. */
 export type NextTrip = {
   tripId: string; routeId: string; headsign: string; schedDepart: string; schedArrive: string;
-  liveDepart: null; liveArrive: null; delayMin: null; status: 'scheduled';
+  liveDepart: string | null; liveArrive: string | null; delayMin: number | null;
+  status: 'scheduled' | 'live';
 };
+
+/** How much the server trusts its train times right now. */
+export type FeedMode = 'live' | 'stale' | 'schedule_only';
 
 export type AttachResult = { status: 'done' | 'failed'; photos: number; message?: string };
