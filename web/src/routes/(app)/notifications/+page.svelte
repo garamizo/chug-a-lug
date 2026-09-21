@@ -5,6 +5,7 @@
   import { fmtTime } from '$lib/time';
   import { fetchAlerts } from '$lib/live/feed';
   import { markSeen, readSeen } from '$lib/live/seen';
+  import { liveDay } from '$lib/live/day.svelte';
   import type { Alert } from '$lib/types';
 
   let alerts = $state<Alert[]>([]);
@@ -40,7 +41,15 @@
 {/each}
 
 <h2>{copy.bulletins}</h2>
-<p>{copy.bulletinsLater}</p>
+{#if liveDay.bulletins.length === 0}<p>{copy.bulletinsLater}</p>{/if}
+<div data-testid="bulletin-list">
+  {#each liveDay.bulletins as bulletin (bulletin.id)}
+    <article class="notice">
+      <div class="row"><span class="title">{copy.fromTheConductor}</span><span class="when">{fmtTime(bulletin.created)}</span></div>
+      <p class="body">{bulletin.body}</p>
+    </article>
+  {/each}
+</div>
 
 <style>
   h2 { margin: 24px 0 8px; font-size: 12px; letter-spacing: .09em; text-transform: uppercase; color: #9a9a9a; font-weight: 700; }

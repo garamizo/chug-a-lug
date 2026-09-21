@@ -17,6 +17,10 @@ export class LiveDay {
   alerts = $state<Alert[]>([]);
   bulletins = $state<Broadcast[]>([]);
   ackedIds = $state<string[]>([]);
+  // One flag, one owner: the root layout (which has no live day of its own) sets this from the
+  // menu, and the `(app)` layout — the only place with a route to post to — reads it to render the
+  // compose sheet. No prop drilling through a layout that has nothing else to do with a Bulletin.
+  composing = $state(false);
   mode = $state<FeedMode>('schedule_only');
   rtFetchedAt = $state<string | null>(null);
   now = $state(new Date());

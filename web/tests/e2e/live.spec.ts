@@ -142,6 +142,7 @@ test('a Conductor-saved position change refreshes the board train immediately, n
   await page.getByTestId('set-here-1').click();
   await page.getByTestId('dwell-0').selectOption('0');
   await page.getByTestId('save-plan').click();
+  await page.getByTestId('bulletin-skip').click();
   // Save's own goto() is a client-side navigation: the same liveDay instance (and its
   // subscriptions) carries on into this next screen, which is what actually being tested.
   await expect(page).toHaveURL(new RegExp(`/plan/${seeded.itineraryId}$`));

@@ -1,9 +1,12 @@
 <script lang="ts">
   import { goto } from '$app/navigation';
   import { page } from '$app/state';
-  import { auth } from '$lib/pb';
+  import { pb, auth } from '$lib/pb';
   import { liveDay } from '$lib/live/day.svelte';
   import DepartureBoard from '$lib/components/DepartureBoard.svelte';
+  import PinnedBulletin from '$lib/components/PinnedBulletin.svelte';
+  import BulletinSheet from '$lib/components/BulletinSheet.svelte';
+  import { newRecordId } from '$lib/live/staged';
   let { children } = $props();
   $effect(() => { if (!$auth.user) goto('/login'); });
   // One owner for the live day: every screen reads this instance, so there is a single poller.
@@ -35,6 +38,23 @@
     lastKey = key;
     void liveDay.loadTrains();
   });
+
+  async function ack(broadcastId: string) {
+    if (!$auth.user) return;
+    try {
+      await pb.collection('broadcast_acks').create({ broadcast: broadcastId, user: $auth.user.id });
+    } catch { /* already acked on another tab, or no signal: the card simply stays */ }
+    await liveDay.loadBulletins();
+  }
+
+  async function postBulletin(body: string) {
+    liveDay.composing = false;
+    if (!liveDay.itinerary || !$auth.user || !body) return;
+    try {
+      await pb.collection('broadcasts').create({ id: newRecordId(), itinerary: liveDay.itinerary.id, kind: 'message', body, created_by: $auth.user.id });
+      await liveDay.loadBulletins();
+    } catch { /* no signal: nothing was said, and the Conductor can see that */ }
+  }
 </script>
 
 {#if $auth.user}
@@ -48,7 +68,13 @@
         mode={liveDay.mode} rtFetchedAt={liveDay.rtFetchedAt} />
     </a>
   {/if}
+  {#if liveDay.pinnedBulletin}
+    <PinnedBulletin bulletin={liveDay.pinnedBulletin} onack={() => void ack(liveDay.pinnedBulletin!.id)} />
+  {/if}
   {@render children()}
+  {#if liveDay.composing}
+    <BulletinSheet text="" onsend={(body) => void postBulletin(body)} onskip={() => (liveDay.composing = false)} />
+  {/if}
 {/if}
 
 <style>

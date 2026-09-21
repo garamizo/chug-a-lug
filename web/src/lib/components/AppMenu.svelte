@@ -3,9 +3,9 @@
   // so the shape of the finished app is visible and M3 only has to enable them.
   import { goto } from '$app/navigation';
   import { copy, labels } from '$lib/labels';
-  import { logout } from '$lib/pb';
+  import { logout, auth } from '$lib/pb';
 
-  let { open, unread, onclose }: { open: boolean; unread: number; onclose: () => void } = $props();
+  let { open, unread, onclose, oncompose }: { open: boolean; unread: number; onclose: () => void; oncompose: () => void } = $props();
 
   const go = (href: string) => { onclose(); void goto(href); };
 </script>
@@ -23,6 +23,11 @@
     <button type="button" class="item" onclick={() => go('/route')}>
       <span class="label">{copy.theRoute}</span>
     </button>
+    {#if $auth.user?.is_admin}
+      <button type="button" class="item" onclick={() => { onclose(); oncompose(); }} data-testid="menu-bulletin">
+        <span class="label">{copy.postBulletin}</span>
+      </button>
+    {/if}
     <button type="button" class="item" disabled>
       <span class="label">{labels.userRoster}</span><span class="soon">{copy.comingInM3}</span>
     </button>

@@ -5,17 +5,21 @@
   import AppMenu from '$lib/components/AppMenu.svelte';
   import { fetchAlerts } from '$lib/live/feed';
   import { readSeen, unseenCount } from '$lib/live/seen';
+  import { liveDay } from '$lib/live/day.svelte';
   let { children } = $props();
 
   let menuOpen = $state(false);
-  let unread = $state(0);
+  // Kept apart from the Bulletin count so a failed alerts read only zeroes its own half of the
+  // dot: `unread` below stays live off `liveDay`'s own state either way.
+  let alertsUnread = $state(0);
+  const unread = $derived(alertsUnread + liveDay.bulletins.filter((b) => !liveDay.ackedIds.includes(b.id)).length);
 
-  // The dot is best-effort: a failed alerts read simply leaves it off.
+  // The dot is best-effort: a failed alerts read simply leaves that half off.
   $effect(() => {
-    if (!$auth.user) { unread = 0; return; }
+    if (!$auth.user) { alertsUnread = 0; return; }
     const check = () => void fetchAlerts()
-      .then((r) => { unread = unseenCount(r.alerts, readSeen()); })
-      .catch(() => { unread = 0; });
+      .then((r) => { alertsUnread = unseenCount(r.alerts, readSeen()); })
+      .catch(() => { alertsUnread = 0; });
     check();
     const timer = setInterval(check, 60_000);
     return () => clearInterval(timer);
@@ -49,7 +53,7 @@
     {/if}
   </div>
 </header>
-<AppMenu open={menuOpen} {unread} onclose={() => (menuOpen = false)} />
+<AppMenu open={menuOpen} {unread} onclose={() => (menuOpen = false)} oncompose={() => (liveDay.composing = true)} />
 <main class="col">{@render children()}</main>
 <footer class="col">{copy.footer}</footer>
 

@@ -7,13 +7,14 @@
   import { copy } from '$lib/labels';
   import { loadDraft, watchDraft, type Draft } from '$lib/draft';
   import { recordActions, type PlanActions } from '$lib/planActions';
-  import { addStop, commitPayload, moveStop, removeStop, setAnchor, setDwell, stagePlan, type StagedPlan, type StagedStop } from '$lib/live/staged';
+  import { addStop, commitPayload, moveStop, newRecordId, removeStop, setAnchor, setDwell, stagePlan, type StagedPlan, type StagedStop } from '$lib/live/staged';
   import { insertionIndex, plannerStations } from '$lib/lineMap';
-  import type { PlanSnapshot } from '$lib/live/diff';
+  import { bulletinKind, bulletinText, planDiff, type BulletinKind, type PlanSnapshot } from '$lib/live/diff';
   import { previewPlan } from '$lib/live/preview';
   import { cohesionBlockers } from '$lib/live/cohesion';
   import { liveDay } from '$lib/live/day.svelte';
   import ItineraryView from '$lib/components/ItineraryView.svelte';
+  import BulletinSheet from '$lib/components/BulletinSheet.svelte';
   import type { Leg, Line } from '$lib/types';
 
   let { data } = $props();
@@ -31,6 +32,9 @@
   let previewPending = $state(false);
   let previewFailed = $state(false);
   let saving = $state(false);
+  // The Bulletin drafted from `before` vs. the staged plan, waiting on the sheet: sent as-is,
+  // edited, or skipped. Its id is minted once here so a retried save cannot post it twice.
+  let pending = $state<{ id: string; text: string; kind: BulletinKind } | null>(null);
 
   const snapshot = (p: StagedPlan): PlanSnapshot => ({
     anchorStopId: p.anchorStopId,
@@ -172,11 +176,23 @@
       .catch(() => { plan = addStop(current, stop, current.stops.length); });
   });
 
-  async function save() {
-    if (!plan || blockers.length || previewPending || previewFailed || saving) return;
-    saving = true; error = '';
+  /** The Save button: drafts the Bulletin from what actually changed and opens the sheet. The
+   *  commit itself waits for the sheet's answer (sent, edited, or skipped) in `commit()`. */
+  function askToTell() {
+    if (!plan || !before || blockers.length || previewPending || previewFailed || saving) return;
+    const departAt = (stopId: string) => previewLegs.find((l) => l.from_stop === stopId)?.depart_at ?? null;
+    const changes = planDiff(before, snapshot(plan), departAt);
+    // The id is minted here, once, so a retried save cannot post the same Bulletin twice.
+    pending = { id: newRecordId(), text: bulletinText(changes), kind: bulletinKind(changes) };
+  }
+
+  async function commit(bulletin: { id: string; kind: BulletinKind; body: string } | null) {
+    if (!plan) return;
+    pending = null; saving = true; error = '';
     try {
-      const res = await api<{ ok: boolean; impossible: number }>('/api/plan/commit', { method: 'POST', json: commitPayload(plan, data.id) });
+      const res = await api<{ ok: boolean; impossible: number }>('/api/plan/commit', {
+        method: 'POST', json: { ...commitPayload(plan, data.id), bulletin }
+      });
       // The write landed either way: a leftover park from an abandoned trip to the picker has no
       // reason to survive a save that superseded it.
       clearParked();
@@ -235,10 +251,15 @@
             {#each blockers as blocker (blocker.message)}<li>{blocker.message}</li>{/each}
           </ul>
         {/if}
-        <button type="button" onclick={save} disabled={!!blockers.length || previewPending || previewFailed || saving} data-testid="save-plan">
+        <button type="button" onclick={askToTell} disabled={!!blockers.length || previewPending || previewFailed || saving} data-testid="save-plan">
           {saving ? copy.saving : copy.savePlan}
         </button>
       </div>
+      {#if pending}
+        <BulletinSheet text={pending.text}
+          onsend={(body) => commit({ id: pending!.id, kind: pending!.kind, body })}
+          onskip={() => commit(null)} />
+      {/if}
     {:else if canManage && draft.itinerary.status === 'draft'}
       <button type="button" class="secondary" onclick={deleteDraft} data-testid="delete-draft">{copy.deleteDraft}</button>
     {/if}

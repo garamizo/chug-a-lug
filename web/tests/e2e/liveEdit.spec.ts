@@ -35,6 +35,7 @@ test('Save waits until the Conductor says where the crew is', async ({ page }) =
   await expect(page.getByTestId('save-blockers')).toBeHidden();
 
   await save.click();
+  await page.getByTestId('bulletin-skip').click();
   await expect(page).toHaveURL(new RegExp(`/plan/${seeded.itineraryId}$`));
 
   const anchor = await latestAnchor();
@@ -59,6 +60,7 @@ test('a staged change reaches the crew only when it is saved', async ({ page, co
   await expect(crewPage.getByText('The Second Round')).toBeVisible();
 
   await page.getByTestId('save-plan').click();
+  await page.getByTestId('bulletin-skip').click();
   await expect(page).toHaveURL(new RegExp(`/plan/${seeded.itineraryId}$`));
   await crewPage.reload();
   await expect(crewPage.getByText('The Second Round')).toBeHidden();
@@ -92,6 +94,7 @@ test('a 409 stale after someone else edits The Route survives a reload without r
   // endpoint's reconcile step exists to catch. Written directly so the app never sees it coming.
   await deleteStopDirect(seeded.secondStopId);
   await page.getByTestId('save-plan').click();
+  await page.getByTestId('bulletin-skip').click();
   await expect(page.getByRole('alert')).toContainText('Reload and make the change again');
 
   // Reload, exactly as the message says to. A plan parked earlier in this session must not come
@@ -125,6 +128,7 @@ test('edits made before adding a stop survive the trip to the venue picker', asy
   await expect(page.getByTestId('save-plan')).toBeEnabled(); // the position survived too
 
   await page.getByTestId('save-plan').click();
+  await page.getByTestId('bulletin-skip').click();
   await expect(page).toHaveURL(new RegExp(`/plan/${seeded.itineraryId}$`));
   await expect(page.getByText('Prairie Path Tap')).toBeVisible();
   await expect(page.getByText('The Second Round')).toBeHidden();

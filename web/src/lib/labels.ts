@@ -210,6 +210,13 @@ export const copy = {
   bulletinExtra: 'Extra stop:',
   bulletinReroute: 'Rerouted:',
   bulletinBefore: 'before',
+  tellTheCrew: 'Tell the crew?',
+  bulletinHint: 'This is pinned on everyone’s screen until they tap Got it.',
+  sendBulletin: 'Send it',
+  skipBulletin: 'Save without telling them',
+  gotIt: 'Got it',
+  fromTheConductor: 'From the Conductor',
+  postBulletin: 'Post a Bulletin',
   // Menu and notifications
   menu: 'Menu',
   close: 'Close the menu',
