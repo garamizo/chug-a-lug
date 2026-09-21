@@ -111,7 +111,8 @@ eventNow = min(windowEnd, epochStart + max(0, w - wallStart) * rate)
 
 A zero rate pauses. Reaching the window end reports an ended/paused effective clock and never loops.
 Rate changes first materialize eventNow using the old state, then re-anchor both epochs; changing
-speed must not jump the clock. Pause remembers the last nonzero rate. Resume uses that rate.
+speed must not jump the clock. Pause remembers the last nonzero rate. Resume uses that rate. Selecting a rate while paused
+updates the remembered resume rate without starting playback.
 Seeking is allowed only while paused, at or after eventNow, within the configured window. Negative
 rates, backwards seeks, invalid dates, nonfinite numbers and unsupported rates return 400.
 

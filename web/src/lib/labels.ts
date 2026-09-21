@@ -48,6 +48,13 @@ export function label(key: LabelKey): string {
 
 // UI copy lives alongside the glossary so it can be changed in one place.
 export const copy = {
+  simDisabled: 'Shakedown Run is not enabled here.',
+  simUnavailable: 'Railroad Time is unavailable. Check the rehearsal setup and try again.',
+  simInvalidControl: 'Choose a supported speed or a valid forward time while paused.',
+  simClockConflict: 'Railroad Time changed. Check the current clock and try again.',
+  simClockBusy: 'The Route is being saved or recomputed. Try the clock control again shortly.',
+  simAdminOnly: 'Only the Conductor can change Railroad Time.',
+
   appTitle: 'Chug-a-Lug Choo-Choo',
   appSubtitle: 'Your next stop starts here.',
   loginTitle: 'Welcome aboard',

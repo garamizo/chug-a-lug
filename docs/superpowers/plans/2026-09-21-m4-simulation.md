@@ -13,7 +13,7 @@ Design authority: [M4 simulation without GPS](../specs/2026-09-21-m4-simulation-
 - Continue in the M4 worktree; the spec, this plan, code and tests stay on the same branch.
 - Write each behavior's tests first, demonstrate the intended failure, then implement it.
 - Do not infer completion from unchecked or checked boxes in this file. Record commands/results and
-  any deviations in a final completion note. These tasks have not been executed.
+  any deviations in a final completion note. Execution progress is recorded at the end of this document.
 - Run `npm install` in `web/` before testing. Scripts importing npm dependencies live under `web/`.
 - Read applicable repo instructions at implementation time. Never use ports 3000/8090 for a test or
   rehearsal and never run `just up` to start simulation. One test suite at a time across worktrees.
@@ -64,7 +64,7 @@ timetable scenario until recording support is complete. No separate agents are r
 
 **Create:**
 - `pocketbase/pb_migrations/1758800000_simulation.js`
-- `web/src/lib/server/sim/clock.ts`
+- `web/src/lib/server/sim/clock.ts`, `web/src/lib/server/sim/service.ts`
 - `web/src/routes/api/sim/clock/+server.ts`
 - `web/tests/unit/simClockApi.test.ts`, `web/tests/hooks/simulation.test.ts`
 
@@ -392,8 +392,8 @@ Bulletin and offline state for the review; no screenshots containing production 
 
 ## Plan preparation note
 
-This document was prepared by inspecting the M3 source and tests at `72a32a5`. It does not claim any
-M4 code, migration, command, fixture or test listed as Create already exists. The baseline's last
+This document was prepared by inspecting the M3 source and tests at `72a32a5`. At preparation time, none of the
+M4 code, migrations, commands, fixtures or tests listed as Create existed; see execution progress below. The baseline's last
 verified gate was 312 unit tests, 42 e2e tests, 37 hook tests and a clean Svelte/type check. Preparing
 these Markdown documents does not rerun or substitute for M4's future implementation checks.
 
@@ -403,3 +403,17 @@ The review identified equal-time anchor and Undo ambiguity while paused, plus an
 autonomous-recompute publication boundary. Spec §5 now defines transactional action ordering and
 reference-counted publication leases; tasks 2, 7 and 9 include the corresponding implementation and
 regression tests. Those future consumers must be wired before M4 can be called complete.
+
+## Execution progress (2026-09-21)
+
+Tasks 1 and 2 are implemented: the pure clock model and shared vectors, private persisted singleton,
+lazy normal-mode bypass, authenticated controls, revision conflicts, and reference-counted event-write
+leases. Service and storage behavior have dedicated unit suites in addition to the planned API tests.
+Tests were written and observed failing before implementation.
+
+Task 3 (isolated timetable launcher and seed) is next. Tasks 3–11 remain pending. In particular,
+action ordering and live-path write-lease integration are specified but still belong to task 7;
+this clock foundation does not yet change event timestamps, enable replay, or expose rehearsal UI.
+
+Validation for this foundation: 379 unit tests, 42 browser e2e tests and 42 PocketBase hook tests
+passed; Svelte/type check reported zero errors and zero warnings. No phone rehearsal has run.

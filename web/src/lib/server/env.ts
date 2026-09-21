@@ -3,6 +3,9 @@ import { env } from '$env/dynamic/private';
 import { resolve } from 'node:path';
 
 export const serverEnv = {
+  get simEnabled() { return env.SIM === '1'; },
+  get simRunId() { return env.SIM_RUN_ID || ''; },
+  get simRecordingsDir() { return env.SIM_RECORDINGS_DIR || ''; },
   get pbUrl() { return env.PB_URL || 'http://127.0.0.1:8090'; },
   get pbAdminEmail() { return env.PB_ADMIN_EMAIL || ''; },
   get pbAdminPassword() { return env.PB_ADMIN_PASSWORD || ''; },
