@@ -48,6 +48,14 @@ describe('editing', () => {
     expect(moveStop(base(), 'c', -1).stops.map((s) => s.id)).toEqual(['a', 'b', 'c']);
   });
 
+  it('refuses a swap at the same station but opposite directions', () => {
+    const plan = stagePlan([
+      record('a', 1, 'The Hop Haus'),
+      { ...record('b', 2, 'The Second Round'), direction: 'back' } as Stop
+    ], 'a');
+    expect(moveStop(plan, 'b', -1).stops.map((s) => s.id)).toEqual(['a', 'b']);
+  });
+
   it('removes a stop, remembers its id and renumbers', () => {
     const plan = removeStop(base(), 'b');
     expect(plan.stops.map((s) => s.id)).toEqual(['a', 'c']);

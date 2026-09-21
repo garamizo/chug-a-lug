@@ -92,7 +92,7 @@
     side={placement.side[i]} leg={legAfter(i)} legReason={legReason(i)} {names} nextStationId={sorted[i + 1]?.station_id} date={itinerary.event_date}
     canUp={sameStation(i, i - 1)} canDown={sameStation(i, i + 1)}
     href="/plan/{itinerary.id}/stops/{stop.id}"
-    onupdate={(patch) => patch.dwell_min !== undefined && actions.setDwell(stop.id, patch.dwell_min)}
+    onupdate={(patch) => { if (patch.dwell_min !== undefined) return actions.setDwell(stop.id, patch.dwell_min); }}
     onmove={(dir) => actions.move(stop.id, dir)} onremove={() => actions.remove(stop.id)} />
   {#if actions.setAnchor}
     <div class="under">

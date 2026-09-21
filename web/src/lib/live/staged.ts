@@ -58,7 +58,7 @@ export function moveStop(plan: StagedPlan, stopId: string, dir: -1 | 1): StagedP
   const stops = sorted(plan.stops);
   const i = stops.findIndex((s) => s.id === stopId);
   const j = i + dir;
-  if (i < 0 || j < 0 || j >= stops.length || stops[i].station_id !== stops[j].station_id) return plan;
+  if (i < 0 || j < 0 || j >= stops.length || stops[i].station_id !== stops[j].station_id || stops[i].direction !== stops[j].direction) return plan;
   const next = [...stops];
   [next[i], next[j]] = [next[j], next[i]];
   return { ...plan, stops: renumber(next) };

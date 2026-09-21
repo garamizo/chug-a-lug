@@ -18,7 +18,7 @@
     nextStationId?: string; date: string;
     /** Whether the previous / next stop is at the same station (the only moves allowed). */
     canUp?: boolean; canDown?: boolean;
-    onupdate: (patch: Partial<Stop>) => unknown; onmove?: (dir: -1 | 1) => void; onremove: () => void;
+    onupdate: (patch: Partial<Stop>) => void | Promise<void>; onmove?: (dir: -1 | 1) => void; onremove: () => void;
   } = $props();
 
   const kind = $derived(copy[`kind_${stop.kind ?? 'other'}`]);

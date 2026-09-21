@@ -32,6 +32,20 @@ describe('recordActions', () => {
     expect(calls.update).toEqual([['b', { order: 1 }], ['a', { order: 2 }]]);
   });
 
+  it('refuses to swap two stops at the same station but opposite directions', async () => {
+    const pb = await import('$lib/pb');
+    vi.spyOn(pb.pb, 'collection').mockReturnValue({
+      update: async (...args: unknown[]) => { calls.update.push(args); },
+      getFullList: async () => [
+        { id: 'a', order: 1, station_id: 'LAGRANGE', direction: 'out' },
+        { id: 'b', order: 2, station_id: 'LAGRANGE', direction: 'back' }
+      ]
+    } as never);
+    await recordActions('itinerary000001', () => {}).move('b', -1);
+    expect(calls.update).toEqual([]);
+    vi.restoreAllMocks();
+  });
+
   it('deletes a stop', async () => {
     await recordActions('itinerary000001', () => {}).remove('a');
     expect(calls.remove).toEqual(['a']);

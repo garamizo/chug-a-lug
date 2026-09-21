@@ -3,6 +3,7 @@
 // which one it is driving.
 import { goto } from '$app/navigation';
 import { pb } from '$lib/pb';
+import { copy } from '$lib/labels';
 import type { Stop } from '$lib/types';
 
 export type PlanActions = {
@@ -18,7 +19,7 @@ export type PlanActions = {
 
 /** The draft behaviour: every change is a write, and the recompute hook follows it. */
 export function recordActions(itineraryId: string, onerror: (message: string) => void): PlanActions {
-  const fail = (err: unknown) => onerror((err as Error).message || 'Something went wrong. Please try again.');
+  const fail = (err: unknown) => onerror((err as Error).message || copy.genericError);
   return {
     async setStartTime(hm) {
       try { await pb.collection('itineraries').update(itineraryId, { start_time: hm }); } catch (err) { fail(err); }
@@ -33,7 +34,7 @@ export function recordActions(itineraryId: string, onerror: (message: string) =>
         });
         const i = stops.findIndex((s) => s.id === stopId);
         const j = i + dir;
-        if (i < 0 || j < 0 || j >= stops.length || stops[i].station_id !== stops[j].station_id) return;
+        if (i < 0 || j < 0 || j >= stops.length || stops[i].station_id !== stops[j].station_id || stops[i].direction !== stops[j].direction) return;
         const next = [...stops];
         [next[i], next[j]] = [next[j], next[i]];
         for (const [idx, s] of next.entries()) {
