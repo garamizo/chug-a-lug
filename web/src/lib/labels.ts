@@ -189,6 +189,12 @@ export const copy = {
   timetableOnlyNoTime: 'Timetable only — no live times yet.',
   setOurStop: 'Not here? Set our stop',
   setOurStopTitle: 'Where is the crawl?',
+  // The live editor
+  blockNoPosition: 'Set where the crew is before saving.',
+  blockAnchorMissing: 'The crew is at a stop you removed. Move the crew first, or put the stop back.',
+  blockNoTrain: 'No train from',
+  blockTo: 'to',
+  blockHint: 'Shorten a layover, annul a stop, or move the crew.',
   // Menu and notifications
   menu: 'Menu',
   close: 'Close the menu',
