@@ -270,3 +270,28 @@ export const copy = {
   crewIsHere: 'The crew is here',
   crewIsHereSet: 'Move the crew here',
 } as const;
+
+// Operator-facing rehearsal setup messages; these never include passwords or tokens.
+export const simSetup = {
+  invalid: (field: string) => `Invalid rehearsal configuration: ${field}.`,
+  runMismatch: 'This run has different saved settings. Use its original settings or choose a new run name.',
+  unsafePath: 'Rehearsal storage must be a real directory inside this checkout, without symlinks.',
+  occupiedPort: 'A rehearsal port is already in use. Stop its owner or choose different rehearsal ports.',
+  locked: 'Another setup operation owns this run. If it crashed, inspect the run before removing its operation lock.',
+  interruptedSeed: 'This run has an incomplete seed. Its data was preserved; inspect it and use a new run name to start fresh.',
+  partialStack: 'Only part of this rehearsal is running. Stop this run before starting it again.',
+  missingRun: 'This rehearsal does not exist.',
+  invalidCredentials: 'The run credentials are missing or invalid. No credentials will be inherited from production.',
+  notEmpty: 'The rehearsal database already contains records. Refusing to overwrite it.',
+  clockMismatch: 'The persisted clock does not belong to this rehearsal.',
+  requestFailed: (status: number) => `Rehearsal request failed (HTTP ${status}).`,
+  commandFailed: 'The rehearsal Docker command failed. Run data has been preserved.',
+  timeout: 'The rehearsal did not become ready in time. Run data has been preserved.',
+  invalidLegs: 'The planner did not persist a complete, feasible fixture route.',
+  usage: 'Usage: node web/scripts/sim.mjs start RUN fixture | status RUN | stop RUN',
+  ready: 'Rehearsal ready. The live clock and UI integration are still pending.',
+  credentials: 'Test passwords are in the private credentials.env file under this run directory.',
+  identities: 'Test identities: Rehearsal Conductor and Rehearsal Crew.',
+  stopped: 'Rehearsal stopped. Its data is preserved.',
+  lanNote: 'LAN HTTP supports functional checks; phone PWA/offline checks require dedicated HTTPS origins.',
+} as const;

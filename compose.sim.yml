@@ -1,0 +1,65 @@
+# Standalone: the launcher always specifies this file, a run project, and a clean environment.
+services:
+  pocketbase:
+    build: ./pocketbase
+    user: "${SIM_UID:?}:${SIM_GID:?}"
+    environment:
+      SIM: "1"
+      SIM_RUN_ID: ${SIM_RUN_ID:?}
+      PB_ADMIN_EMAIL: ${PB_ADMIN_EMAIL:?}
+      PB_ADMIN_PASSWORD: ${PB_ADMIN_PASSWORD:?}
+      CREW_PASSWORD: ${CREW_PASSWORD:?}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:?}
+      INTERNAL_SECRET: ${INTERNAL_SECRET:?}
+      WEB_INTERNAL_URL: http://web:3000
+    command:
+      - /bin/sh
+      - -ec
+      - |
+        /pb/pocketbase superuser upsert "$$PB_ADMIN_EMAIL" "$$PB_ADMIN_PASSWORD" --dir=/pb/pb_data --migrationsDir=/pb/pb_migrations >/dev/null
+        exec /pb/pocketbase serve --http=0.0.0.0:8090 --dir=/pb/pb_data --hooksDir=/pb/pb_hooks --migrationsDir=/pb/pb_migrations
+    volumes:
+      - ${SIM_RUN_DIR:?}/pb:/pb/pb_data
+      - ./pocketbase/pb_hooks:/pb/pb_hooks:ro
+      - ./pocketbase/pb_migrations:/pb/pb_migrations:ro
+    ports:
+      - "${SIM_BIND_HOST:?}:${SIM_PB_PORT:?}:8090"
+    healthcheck:
+      interval: 2s
+      timeout: 2s
+      retries: 30
+
+  web:
+    build:
+      context: ./web
+      args:
+        PUBLIC_PB_URL: ${SIM_PB_ORIGIN:?}
+        PUBLIC_SIM: "1"
+    user: "${SIM_UID:?}:${SIM_GID:?}"
+    environment:
+      SIM: "1"
+      PUBLIC_SIM: "1"
+      SIM_RUN_ID: ${SIM_RUN_ID:?}
+      SIM_RECORDINGS_DIR: /fixtures
+      ORIGIN: ${SIM_WEB_ORIGIN:?}
+      PUBLIC_PB_URL: ${SIM_PB_ORIGIN:?}
+      PB_URL: http://pocketbase:8090
+      PB_ADMIN_EMAIL: ${PB_ADMIN_EMAIL:?}
+      PB_ADMIN_PASSWORD: ${PB_ADMIN_PASSWORD:?}
+      INTERNAL_SECRET: ${INTERNAL_SECRET:?}
+      DATA_DIR: /data
+      GTFS_URL: file:///fixtures/gtfs.zip
+      GTFS_PUBLISHED_URL: ""
+      METRA_API_TOKEN: ""
+      GOOGLE_PLACES_KEY: ""
+      OVERPASS_URL: http://127.0.0.1:9
+    volumes:
+      - ${SIM_RUN_DIR:?}/cache:/data
+      - ${SIM_RUN_DIR:?}/fixtures:/fixtures:ro
+    depends_on:
+      pocketbase:
+        condition: service_healthy
+    ports:
+      - "${SIM_BIND_HOST:?}:${SIM_WEB_PORT:?}:3000"
+networks:
+  default: {}

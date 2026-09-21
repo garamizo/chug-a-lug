@@ -4,6 +4,8 @@ COPY package*.json ./
 RUN npm ci --ignore-scripts
 COPY . .
 ARG PUBLIC_PB_URL
+ARG PUBLIC_SIM=0
+ENV PUBLIC_SIM=$PUBLIC_SIM
 ENV PUBLIC_PB_URL=$PUBLIC_PB_URL
 RUN npm run check && npm run build
 

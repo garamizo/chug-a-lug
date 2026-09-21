@@ -1,0 +1,13 @@
+{
+  "serviceDate": "2026-12-26",
+  "startTime": "10:00",
+  "epochStart": "2026-12-26T16:00:00Z",
+  "windowStart": "2026-12-26T16:00:00Z",
+  "windowEnd": "2026-12-27T05:00:00Z",
+  "title": "Shakedown Run",
+  "stops": [
+    { "name": "Rehearsal Meet Point", "station_id": "OTC", "station_name": "Chicago OTC", "kind": "other", "dwell_min": 30, "walk_min": 0 },
+    { "name": "Rehearsal Elmhurst", "station_id": "ELMHURST", "station_name": "Elmhurst", "kind": "bar", "dwell_min": 45, "walk_min": 5 },
+    { "name": "Rehearsal Geneva", "station_id": "GENEVA", "station_name": "Geneva", "kind": "bar", "dwell_min": 60, "walk_min": 5 }
+  ]
+}

@@ -204,8 +204,41 @@ Sim mode has to exist before the live phase is considered done, because the real
 - **Shared position**: rehearse the same clock-derived stop and Conductor anchor as the live day. No GPS, waypoint player or per-person tracking.
 - **Schedule-only fallback**: use scheduled departures when no recording exists; do not invent vehicle positions.
 - **Isolation**: a rehearsal uses its own database and origin. Replay uses the recording's original service date and archived GTFS; operational timeouts and cache ages remain on wall time.
-- M4 is specified but not yet implemented: see the [design](docs/superpowers/specs/2026-09-21-m4-simulation-design.md) and [implementation plan](docs/superpowers/plans/2026-09-21-m4-simulation.md).
+- M4 is in progress: the server clock and isolated timetable launcher are implemented; replay, live-clock integration and UI controls are still pending. See the [design](docs/superpowers/specs/2026-09-21-m4-simulation-design.md) and [implementation plan](docs/superpowers/plans/2026-09-21-m4-simulation.md).
 - A real dry run on a December Saturday with two or three phones, before the freeze.
+
+### Isolated timetable rehearsal (M4 in progress)
+
+Requires Docker Compose and Node 22.18+ on the host. From the M4 worktree:
+
+```bash
+just sim practice fixture
+just sim-status practice
+just sim-stop practice
+```
+
+The default origins are `http://127.0.0.1:15174` (web) and `http://127.0.0.1:18094`
+(PocketBase). The launcher creates `.simulations/practice/`, generates private credentials, and seeds
+Rehearsal Conductor / Rehearsal Crew plus a locked December 26 route. Read the matching
+`ADMIN_PASSWORD` or `CREW_PASSWORD` from that run's `credentials.env` to sign in; passwords are never
+printed. Its clock starts paused at 10:00 Chicago time. **The live screens still use wall time until
+M4's event-clock integration lands**, so this is a setup/planning check, not a full live rehearsal.
+
+A stopped run keeps its data. Starting the same name resumes it without reseeding; source, fixture,
+date and port changes are rejected. Choose a new name for a fresh run. Only `fixture` is supported
+at this stage. Interrupted seeding preserves the database and refuses automatic repair; inspect it,
+stop that run, and use a new name. An interrupted launcher may leave `.operation-lock`; remove only
+that empty directory after confirming no setup process is still using the run.
+
+The launcher discards inherited production settings and uses its own Compose project and network.
+External tokens are empty, the timetable is a local fixture, and the venue lookup URL is disabled.
+Stop this rehearsal before running the repository's test suites.
+
+To change ports or expose a run for phone checks, copy `.env.sim.example` to `.env.sim` and set its
+five allowlisted settings before the first start. LAN access requires an explicit bind address and
+both reachable origins. LAN HTTP supports functional checks; phone PWA/offline checks require
+separate HTTPS origins and an independently configured reverse proxy. The launcher supplies no
+production tunnel configuration.
 
 ---
 
@@ -250,7 +283,7 @@ re-reads the feed rather than hard-coding it.
 | M1 Planning | end Oct | Diagram, stop picker, venue cards with Google photos, drafts with real train times, votes, comments, approval vote — done 2026-09-19 (see docs/superpowers/plans/2026-09-19-m1-planning.md) |
 | M2 Metra proxy | mid Nov | BNSF realtime proxy with recording, Departure Board with Last Call and All Aboard, service alerts and the header menu, schedule fallback — done 2026-09-20 (see docs/superpowers/plans/2026-09-20-m2-metra-proxy.md) |
 | M3 Live | end Nov | Clock-derived position with Conductor anchor, Crew Board, staged route edits, Bulletins, Tab, Freight, offline route mirror — done 2026-09-20 (see [plan](docs/superpowers/plans/2026-09-20-m3-live.md)) |
-| M4 Simulation | Sat Dec 5 | Shared sim clock, feed replay and timetable fallback, Conductor anchor; full rehearsal at home — [spec and plan](docs/superpowers/plans/2026-09-21-m4-simulation.md) prepared, implementation pending |
+| M4 Simulation | Sat Dec 5 | Shared sim clock, feed replay and timetable fallback, Conductor anchor; full rehearsal at home — [spec and plan](docs/superpowers/plans/2026-09-21-m4-simulation.md) in progress (clock authority and isolated launcher implemented) |
 | M5 Wrap-up | Dec 12 | Album, scoreboard, awards, downloads |
 | Freeze + field test | Sat Dec 12 or 19 | Real train ride with 2-3 phones; bug fixes only after this |
 | Launch | Sat Dec 26 | Crawl |

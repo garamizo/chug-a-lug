@@ -42,3 +42,13 @@ backup:
 
 record NAME:
     node web/scripts/record.mjs "{{NAME}}"
+
+# sim.mjs discards inherited dotenv values; only .env.sim's allowlisted settings are read.
+sim RUN SOURCE="fixture":
+    node web/scripts/sim.mjs start {{quote(RUN)}} {{quote(SOURCE)}}
+
+sim-status RUN:
+    node web/scripts/sim.mjs status {{quote(RUN)}}
+
+sim-stop RUN:
+    node web/scripts/sim.mjs stop {{quote(RUN)}}

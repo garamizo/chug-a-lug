@@ -411,9 +411,38 @@ lazy normal-mode bypass, authenticated controls, revision conflicts, and referen
 leases. Service and storage behavior have dedicated unit suites in addition to the planned API tests.
 Tests were written and observed failing before implementation.
 
-Task 3 (isolated timetable launcher and seed) is next. Tasks 3–11 remain pending. In particular,
+Task 3 is also implemented: isolated Compose launcher/status/stop commands, private run credentials,
+strict ownership/config checks, and a clock-first timetable seed. Tasks 4–11 remain pending. In particular,
 action ordering and live-path write-lease integration are specified but still belong to task 7;
 this clock foundation does not yet change event timestamps, enable replay, or expose rehearsal UI.
 
 Validation for this foundation: 379 unit tests, 42 browser e2e tests and 42 PocketBase hook tests
 passed; Svelte/type check reported zero errors and zero warnings. No phone rehearsal has run.
+
+### Task 3 implementation and smoke evidence
+
+The launcher uses `.simulations/<RUN>/` and an explicit environment allowlist; it discards the root
+justfile's inherited dotenv settings. `.env.sim` accepts only ports, bind address and public origins.
+Each run has a private ownership marker and credentials file. Starting a populated, incomplete or
+mismatched run never clears or reseeds it. Stop uses only the saved project's name and preserves data.
+
+Additional implementation files beyond the initial list are `server/sim/setup.ts`, `server/sim/seed.ts`,
+and their unit suites. `web/Dockerfile` accepts `PUBLIC_SIM` with a production default of 0.
+`allowImportingTsExtensions` lets the Node 22.18+ launcher reuse the validated TypeScript helpers.
+The Compose network is a dedicated bridge: this Docker daemon does not publish ports on an internal
+network. External tokens are empty, GTFS uses the local fixture, and venue lookup targets loopback.
+
+The one-instance Docker smoke test used 15174/18094 and passed:
+- Fresh clock created before the two test identities, draft route and three stops; lock by update.
+- Final planner output persisted two feasible train legs, departing at 16:40Z and 19:10Z.
+- Unauthenticated clock reads rejected, Crew controls rejected, Conductor forward seek accepted.
+- Starting an already-running instance and stop/start both preserved record IDs and paused clock state.
+- Shutdown removed only the rehearsal containers/network; the run data remains for inspection.
+
+The smoke instance is stopped. No GPS or phone rehearsal was introduced. Task 4 (recording metadata
+and reproducible fixture builder) is next; the full live-clock/replay/UI rehearsal remains pending.
+
+Task 3 final gate: 436 unit tests, 42 browser e2e tests and 42 hook tests passed;
+Svelte/type check reported zero errors and zero warnings. Compose production build and the
+start/status/stop/resume smoke checks passed. `just` argument quoting was checked with a shell
+metacharacter in the run name; it remains a literal argument for validation.
