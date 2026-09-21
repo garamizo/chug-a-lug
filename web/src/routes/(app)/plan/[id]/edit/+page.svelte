@@ -12,8 +12,9 @@
   import type { PlanSnapshot } from '$lib/live/diff';
   import { previewPlan } from '$lib/live/preview';
   import { cohesionBlockers } from '$lib/live/cohesion';
+  import { liveDay } from '$lib/live/day.svelte';
   import ItineraryView from '$lib/components/ItineraryView.svelte';
-  import type { Checkin, Leg, Line } from '$lib/types';
+  import type { Leg, Line } from '$lib/types';
 
   let { data } = $props();
   let draft = $state<Draft | null>(null);
@@ -51,7 +52,11 @@
         const parked = readParked();
         if (parked) { plan = parked.plan; before = parked.before; }
         else {
-          plan = stagePlan(draft.stops, await loadAnchor());
+          // The shared live day owns the "newest check-in belonging to an admin" rule; force a
+          // fresh read so the staged plan starts from where the Conductor actually is, not from
+          // whatever `liveDay` happened to have loaded first.
+          await liveDay.loadAnchor();
+          plan = stagePlan(draft.stops, liveDay.anchor?.stopId ?? null);
           before = snapshot(plan);
         }
       }
@@ -88,14 +93,6 @@
   }
   function clearParked() {
     try { sessionStorage.removeItem(PARK_KEY); } catch { /* private mode */ }
-  }
-
-  /** The newest Conductor position, which is where the staged plan starts from. */
-  async function loadAnchor(): Promise<string | null> {
-    try {
-      const rows = await pb.collection('checkins').getList<Checkin>(1, 20, { filter: pb.filter('kind = "at_stop"'), sort: '-at', expand: 'user' });
-      return rows.items.find((c) => c.expand?.user?.is_admin && c.stop)?.stop ?? null;
-    } catch { return null; }
   }
 
   $effect(() => {

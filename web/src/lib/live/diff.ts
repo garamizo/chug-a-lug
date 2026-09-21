@@ -2,6 +2,8 @@
 // they go out, so this only has to be right enough to save typing in a loud bar.
 import { copy } from '$lib/labels';
 import { fmtTime } from '$lib/time';
+import type { BulletinKind } from '$lib/types';
+export type { BulletinKind };
 
 export type DiffStop = { id: string; name: string; order: number; station_name: string; dwell_min: number };
 export type PlanSnapshot = { anchorStopId: string | null; stops: DiffStop[] };
@@ -11,7 +13,6 @@ export type Change =
   | { kind: 'annul'; stopName: string }
   | { kind: 'extra'; stopName: string; stationName: string }
   | { kind: 'reroute'; stopName: string; beforeName: string };
-export type BulletinKind = 'reroute' | 'extra' | 'annul' | 'hold' | 'message';
 
 /**
  * `departAt` answers "when does the crawl leave this stop under the new plan", so a Hold can name

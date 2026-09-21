@@ -4,14 +4,14 @@
   import { copy } from '$lib/labels';
   import { fmtTime } from '$lib/time';
   import { boardState } from '$lib/live/board';
-  import { boardTone, leadLine } from '$lib/live/present';
+  import { boardTone, compactLine, leadLine } from '$lib/live/present';
   import type { FeedMode, NextTrip } from '$lib/types';
 
-  let { station, stopName, nextStation, trip, walkMin, now, mode, rtFetchedAt, canCorrect, oncorrect }: {
+  let { station, stopName, nextStation, trip, walkMin, now, mode, rtFetchedAt, compact = false }: {
     station: string; stopName: string; nextStation: string;
     trip: NextTrip | null; walkMin: number; now: Date;
     mode: FeedMode; rtFetchedAt: string | null;
-    canCorrect: boolean; oncorrect: () => void;
+    compact?: boolean;
   } = $props();
 
   const stale = $derived(mode !== 'live');
@@ -23,6 +23,12 @@
 </script>
 
 <div class="wrap">
+  {#if compact}
+    <div class="strip {tone}" data-testid="board-compact">
+      <span class="line">{compactLine(stopName, walkMin, trip, now)}</span>
+      {#if trip && departIso}<span class="at">{fmtTime(departIso)}</span>{/if}
+    </div>
+  {:else}
   <div class="card {tone}" data-testid="departure-board">
     {#if trip && board && departIso && arriveIso}
       <div class="head">
@@ -60,10 +66,8 @@
       <h2 class="station">{station}</h2>
       <p class="lead"><span class="big">{copy.noTrainLeft}</span></p>
     {/if}
-    {#if canCorrect}
-      <button type="button" class="correct" onclick={oncorrect} data-testid="set-our-stop">{copy.setOurStop}</button>
-    {/if}
   </div>
+  {/if}
 </div>
 
 <style>
@@ -88,6 +92,7 @@
   .big { font-size: 24px; font-weight: 800; line-height: 1.1; }
   .aboard .big { font-size: 27px; }
   .sub { font-size: 13px; margin-top: 4px; color: var(--faint); }
-  .correct { font-size: 14px; font-weight: 600; padding: 10px 14px; min-height: 44px; width: 100%;
-    border-radius: 9px; border: 1px solid var(--edge); background: transparent; color: inherit; margin: 0; }
+  .strip { display: flex; align-items: baseline; gap: 10px; padding: 9px 16px; font-size: 14px; font-weight: 650; }
+  .strip .line { flex-grow: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .strip .at { font-variant-numeric: tabular-nums; }
 </style>

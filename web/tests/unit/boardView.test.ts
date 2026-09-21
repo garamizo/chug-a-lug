@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { boardTone, leadLine } from '../../src/lib/live/present';
+import { boardTone, compactLine, leadLine } from '../../src/lib/live/present';
 import { copy } from '../../src/lib/labels';
 
 describe('boardTone', () => {
@@ -21,5 +21,27 @@ describe('leadLine', () => {
   });
   it('says the train is gone when it has been missed', () => {
     expect(leadLine('missed', -3)).toBe(copy.missedTrain);
+  });
+});
+
+describe('compactLine', () => {
+  const trip = (depart: string) => ({
+    tripId: '1244', routeId: 'BNSF', headsign: 'Chicago', schedDepart: depart, schedArrive: depart,
+    liveDepart: depart, liveArrive: depart, delayMin: 0, status: 'live' as const
+  });
+
+  it('names the stop and counts down to the run', () => {
+    expect(compactLine('The Hop Haus', 5, trip('2026-12-26T20:34:00.000Z'), new Date('2026-12-26T20:00:00.000Z')))
+      .toBe('The Hop Haus · Leave in 26 min');
+  });
+
+  it('shouts at All Aboard', () => {
+    expect(compactLine('The Hop Haus', 5, trip('2026-12-26T20:34:00.000Z'), new Date('2026-12-26T20:27:00.000Z')))
+      .toBe('The Hop Haus · All Aboard');
+  });
+
+  it('says so when no train is left', () => {
+    expect(compactLine('The Hop Haus', 5, null, new Date('2026-12-26T23:00:00.000Z')))
+      .toBe(`The Hop Haus · ${copy.noTrainLeft}`);
   });
 });

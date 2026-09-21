@@ -76,18 +76,18 @@ test('an alert shows as a bubble and opens the notifications screen', async ({ p
   await expect(page.getByText('Signal problem at Cicero.')).toBeVisible();
 });
 
-test('only the Conductor sees the correction control', async ({ page }) => {
-  await arrive(page, 'E2E Live Crew', CREW, '2026-12-26T19:00:00.000Z');
+test('the banner rides along on other screens', async ({ page }) => {
+  await arrive(page, 'E2E Banner Skipper', ADMIN, '2026-12-26T19:00:00.000Z');
   await expect(page.getByTestId('departure-board')).toBeVisible();
-  await expect(page.getByTestId('set-our-stop')).toHaveCount(0);
+
+  await page.goto('/plan');
+  await expect(page.getByTestId('board-compact')).toContainText('The Whistle Stop');
+  await expect(page.getByTestId('board-compact')).toContainText('Leave in');
 });
 
-test('the Conductor can move the crawl to another stop', async ({ page }) => {
-  await arrive(page, 'E2E Correcting Skipper', ADMIN, '2026-12-26T19:00:00.000Z');
-  await expect(page.getByTestId('departure-board')).toContainText('La Grange Road');
-  await page.getByTestId('set-our-stop').click();
-  await page.getByRole('button', { name: /Berwyn Beer Hall/ }).click();
-  await expect(page.getByTestId('departure-board')).toContainText('Union Station');
+test('nobody can correct the position from the board any more', async ({ page }) => {
+  await arrive(page, 'E2E Readonly Skipper', ADMIN, '2026-12-26T19:00:00.000Z');
+  await expect(page.getByTestId('set-our-stop')).toHaveCount(0);
 });
 
 test('two venues at one station still show the onward train', async ({ page }) => {

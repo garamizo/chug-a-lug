@@ -184,6 +184,7 @@ export const copy = {
   leaveNowSub: 'Leave now',
   walkFrom: 'min walk from',
   missedTrain: 'That train has gone. Counting down to the next one.',
+  missedTrainShort: 'Train gone',
   noTrainLeft: 'No train left today. Ask the Conductor.',
   timetableOnly: 'Timetable only — no live times since',
   timetableOnlyNoTime: 'Timetable only — no live times yet.',
