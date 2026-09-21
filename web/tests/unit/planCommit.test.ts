@@ -106,11 +106,13 @@ describe('POST /api/plan/commit', () => {
     expect(state.writes).toEqual([]);
   });
 
-  it('refuses an id that belongs to no stop of this route', async () => {
+  it('ignores a removed id that belongs to no persisted stop of this route', async () => {
+    // Whether it never existed, belongs to another itinerary, or a previous attempt already deleted
+    // it, an unpersisted `removed` id is already the state we wanted: the commit converges without
+    // issuing a delete for it and without refusing as stale.
     const res = await call({ ...rideable, removed: ['sFromAnotherItinerary'] });
-    expect(res.status).toBe(409);
-    expect((await res.json()).stale).toBe(true);
-    expect(state.writes).toEqual([]);
+    expect(res.status).toBe(200);
+    expect(state.writes.some((w) => w.op === 'delete')).toBe(false);
   });
 
   it('applies the stops, then anchors the crawl, then recomputes', async () => {
@@ -138,10 +140,13 @@ describe('POST /api/plan/commit', () => {
   });
 
   it('survives a retry after the delete already went through', async () => {
-    state.persisted = ['s2', 's3', 'sX'];
-    state.fail['delete:stops:sX'] = { status: 404, message: "The requested resource wasn't found." };
+    // This is the real retry state: the previous attempt's delete succeeded, so `sX` is already gone
+    // from the database by the time this request's reconcile step reads `persisted`. A payload that
+    // still asks to remove it must converge, not refuse — and must not attempt the delete again.
+    state.persisted = ['s2', 's3'];
     const res = await call({ ...rideable, removed: ['sX'] });
-    expect(res.status).toBe(200); // a stop that is already gone is the state we wanted
+    expect(res.status).toBe(200);
+    expect(state.writes.some((w) => w.op === 'delete' && w.id === 'sX')).toBe(false);
   });
 
   it('survives a retry after the new stop was already created', async () => {
@@ -235,6 +240,15 @@ describe('POST /api/plan/commit', () => {
     const update = state.writes.find((w) => w.op === 'update' && w.id === 's2')!;
     expect(update.body).toMatchObject({ direction: 'inbound' });
     expect(update.body).not.toHaveProperty('place');
+  });
+
+  it('leaves direction alone on an update whose payload does not mention it', async () => {
+    // rideable.stops[0] carries no `direction` key at all — the editor is echoing back a stop it
+    // didn't touch that field on. The update must not overwrite whatever the database already has.
+    const res = await call(rideable);
+    expect(res.status).toBe(200);
+    const update = state.writes.find((w) => w.op === 'update' && w.id === 's2')!;
+    expect(update.body).not.toHaveProperty('direction');
   });
 
   it('refuses a stop with no name or an unrecognised kind, before any write', async () => {

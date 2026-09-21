@@ -27,15 +27,24 @@ const status = (err: unknown) => (err as { status?: number }).status;
 // carries them. `direction` is not a venue field — it steers which side of the line the planner draws
 // the stop on, and the editor can change it on an existing stop — so it belongs in both. If the editor
 // ever grows the power to re-point a stop's venue, this is the line to change.
+//
+// `direction` is written only when the payload actually sent it: `CommitStop.direction` is optional,
+// so an editor that echoes back only the fields it changed can omit it, and defaulting a missing key
+// to `''` would silently clear a value nothing asked to clear. An explicit `''` from the client still
+// means "clear it" and is written as sent.
 const fields = (s: CommitStop) => ({
   order: s.order, name: s.name, kind: s.kind, station_id: s.station_id, station_name: s.station_name,
-  dwell_min: s.dwell_min, walk_min: s.walk_min, direction: s.direction ?? ''
+  dwell_min: s.dwell_min, walk_min: s.walk_min,
+  ...(s.direction === undefined ? {} : { direction: s.direction })
 });
 
 // The only write path for a locked route: reconcile, validate, apply, anchor, recompute, tell the
 // crew, log. PocketBase has no cross-request transaction, so instead of pretending this is atomic
-// every write is keyed by an id the editor generated and is safe to repeat: the same payload sent
-// again after a failure converges on the same route, with no duplicate stop and no second Bulletin.
+// every stop and Bulletin write is keyed by an id the editor generated and is safe to repeat: the
+// same payload sent again after a failure at any step converges on the same route, with no
+// duplicate stop and no second Bulletin. (The `checkins` anchor row and the `event_log` entry are
+// not deduplicated the same way — a retry adds another row of each — but a duplicate anchor at the
+// same stop and moment, or a duplicate Train Sheet line, changes nothing the Crew or Conductor act on.)
 export const POST: RequestHandler = async ({ request }) => {
   const user = await requireUser(request);
   if (!user.is_admin) throw error(403, 'Only the Conductor can change The Route.');
@@ -64,21 +73,28 @@ export const POST: RequestHandler = async ({ request }) => {
   //    created but the anchor write or the recompute then failed) sees that stop in `persisted` but
   //    not in `accounted`, and refuses forever as "stale" even though the identical payload is what
   //    the editor is trying, correctly, to converge on.
+  //
+  //    Staleness is exactly one thing: a stop the database has that this payload neither keeps nor
+  //    removes — that is the only shape of "the route moved on without the editor." A `removed` id
+  //    that is *not* persisted is not stale, it is already-satisfied (this is the delete's half of
+  //    the same retry story as the create side above): its own delete is skipped below rather than
+  //    rejected here, which is also why a `removed` id belonging to another itinerary is merely
+  //    ignored — never deleted — instead of refused.
   const persisted = new Set((await pb.collection('stops').getFullList({
     filter: pb.filter('itinerary = {:id}', { id }), fields: 'id'
   })).map((s) => s.id));
   const stopIds = stops.map((s) => s.id);
-  const kept = stops.filter((s) => !s.isNew).map((s) => s.id);
   const accounted = new Set([...stopIds, ...removed]);
   const stale =
-    kept.some((stopId) => !persisted.has(stopId)) ||
-    removed.some((stopId) => !persisted.has(stopId)) ||
     [...persisted].some((stopId) => !accounted.has(stopId)) ||
     // An id repeated inside `stops`, or shared between `stops` and `removed`, collapses into one
     // entry in the Set above: catch that here rather than deleting a stop and then updating the
     // now-missing record, which is a 404 the Conductor cannot recover from by retrying.
     stopIds.length + removed.length !== accounted.size;
   if (stale) return json({ ok: false, stale: true, message: copy.routeMovedOn }, { status: 409 });
+  // Only a delete already reflected in the database is skipped; everything else in `removed` is a
+  // real delete this request has to make.
+  const toRemove = removed.filter((stopId) => persisted.has(stopId));
 
   // 2. Validate.
   const at = new Date().toISOString();
@@ -99,11 +115,13 @@ export const POST: RequestHandler = async ({ request }) => {
   //    `isNew` flag: the flag describes the editor's intent when it staged the stop, but only the
   //    database knows whether a previous, partially-failed attempt already created the row. That is
   //    what makes this split idempotent across a retry.
-  for (const stopId of removed) {
+  for (const stopId of toRemove) {
     try {
       await pb.collection('stops').delete(stopId);
     } catch (err) {
-      // Already gone is the state we were asking for: a retry must not stop here.
+      // `toRemove` was filtered to ids `persisted` held at reconcile time, so a 404 here means the
+      // row vanished between that read and this write, not that the retry story above was wrong.
+      // Already gone is the state we were asking for either way: a retry must not stop here.
       if (status(err) !== 404) throw err;
     }
   }
