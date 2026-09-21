@@ -1,5 +1,6 @@
 // The one path from stops to leg times, shared by recompute, the preview endpoint and the commit
 // endpoint: whatever the editor previews is exactly what a save writes.
+import { error } from '@sveltejs/kit';
 import type PocketBase from 'pocketbase';
 import { metra } from './metra';
 import { recomputeLegs } from '$lib/metra/plan';
@@ -11,6 +12,36 @@ export type PlannedLeg = {
   fromStopId: string; toStopId: string; kind: 'train' | 'walk' | 'impossible';
   readyAt: string; departAt: string; arriveAt: string; segments: Segment[];
 };
+
+const VENUE_KINDS = new Set(['bar', 'restaurant', 'other']);
+
+/**
+ * The stop shape the planner needs, validated so a malformed editor state cannot reach the planner.
+ * Shared by the preview endpoint (a dry run) and the commit endpoint (the real write).
+ *
+ * `checkVenueFields` additionally requires `name` and `kind` — fields the planner itself never reads,
+ * but which the commit endpoint must persist. Checked here, before commit does anything else, so a
+ * malformed stop is rejected before the first delete runs rather than partway through the write.
+ */
+export function readStops(value: unknown, opts?: { checkVenueFields?: boolean }): PlanStop[] {
+  if (!Array.isArray(value) || value.length === 0) throw error(400, 'Send the stops to plan.');
+  return value.map((raw) => {
+    const s = raw as Record<string, unknown>;
+    const num = (v: unknown) => (typeof v === 'number' && Number.isFinite(v) ? v : NaN);
+    const stop = {
+      id: String(s.id ?? ''), order: num(s.order), station_id: String(s.station_id ?? ''),
+      dwell_min: num(s.dwell_min), walk_min: num(s.walk_min)
+    };
+    if (!stop.id || !stop.station_id || Number.isNaN(stop.order) || Number.isNaN(stop.dwell_min) || Number.isNaN(stop.walk_min)) {
+      throw error(400, 'Each stop needs an id, a station and its minutes.');
+    }
+    if (opts?.checkVenueFields) {
+      if (!String(s.name ?? '').trim()) throw error(400, 'Each stop needs a name.');
+      if (!VENUE_KINDS.has(String(s.kind ?? ''))) throw error(400, 'Each stop needs a kind of bar, restaurant, or other.');
+    }
+    return stop;
+  });
+}
 
 /**
  * The anchor: the newest check-in written by a Conductor for this itinerary. The Crew never writes

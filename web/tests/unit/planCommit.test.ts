@@ -10,7 +10,10 @@ const state = vi.hoisted(() => ({
   writes: [] as { op: string; collection: string; id?: string; body?: Record<string, unknown> }[],
   /** `${op}:${collection}:${id}` -> the error to throw once, so a retry can be simulated. */
   fail: {} as Record<string, { status: number; message: string }>,
-  found: ['s2', 's3'] as string[]
+  /** Ids `getOne` will find and report as belonging to *this* itinerary. */
+  found: ['s2', 's3'] as string[],
+  /** Ids `getOne` will find, but report as belonging to some other itinerary entirely. */
+  foreign: [] as string[]
 }));
 
 vi.mock('$lib/server/pb', () => ({
@@ -20,7 +23,8 @@ vi.mock('$lib/server/pb', () => ({
     collection: (collection: string) => ({
       getOne: async (id: string) => {
         if (collection === 'itineraries') return state.itinerary;
-        if (state.found.includes(id)) return { id };
+        if (state.foreign.includes(id)) return { id, itinerary: 'zzzforeignitin0' };
+        if (state.found.includes(id)) return { id, itinerary: state.itinerary.id as string };
         throw Object.assign(new Error('not found'), { status: 404 });
       },
       getFullList: async () => (collection === 'stops' ? state.persisted.map((id) => ({ id })) : []),
@@ -68,6 +72,7 @@ beforeEach(() => {
   state.itinerary = { id: 'itinerary000001', status: 'locked', event_date: '2026-12-26', start_time: '11:00' };
   state.persisted = ['s2', 's3'];
   state.found = ['s2', 's3'];
+  state.foreign = [];
   state.writes = [];
   state.fail = {};
   vi.mocked(recomputeItinerary).mockClear().mockResolvedValue({ legs: 1, impossible: 0 });
@@ -140,6 +145,9 @@ describe('POST /api/plan/commit', () => {
   });
 
   it('survives a retry after the new stop was already created', async () => {
+    // The previous attempt got far enough to create the stop: it is in the database now, so a
+    // retry of the identical payload must find it there, not refuse as stale.
+    state.persisted = ['s2', 's3', newStop.id];
     state.fail[`create:stops:${newStop.id}`] = { status: 400, message: 'Failed to create record.' };
     state.found = ['s2', 's3', newStop.id]; // the previous attempt got that far
     const res = await call({ ...rideable, stops: [...rideable.stops, newStop] });
@@ -152,6 +160,30 @@ describe('POST /api/plan/commit', () => {
   it('gives up when the create failed for a reason other than already existing', async () => {
     state.fail[`create:stops:${newStop.id}`] = { status: 500, message: 'PocketBase is down' };
     await expect(call({ ...rideable, stops: [...rideable.stops, newStop] })).rejects.toThrow();
+  });
+
+  it('refuses to adopt a stop id that collides with another itinerary\'s record', async () => {
+    // The id is a 15-character random string, so a real collision with someone else's crawl would
+    // be astronomically unlikely — but the admin client can see every itinerary, so the check has
+    // to be there regardless. This must never resolve as "my previous attempt got this far".
+    state.fail[`create:stops:${newStop.id}`] = { status: 400, message: 'Failed to create record.' };
+    state.foreign = [newStop.id];
+    await expect(call({ ...rideable, stops: [...rideable.stops, newStop] })).rejects.toThrow();
+    expect(state.writes.some((w) => w.op === 'update' && w.id === newStop.id)).toBe(false);
+  });
+
+  it('refuses a payload that both keeps and removes the same stop', async () => {
+    const res = await call({ ...rideable, removed: ['s3'] }); // s3 also appears in stops
+    expect(res.status).toBe(409);
+    expect((await res.json()).stale).toBe(true);
+    expect(state.writes).toEqual([]);
+  });
+
+  it('refuses a payload with a stop id repeated inside stops', async () => {
+    const res = await call({ ...rideable, stops: [...rideable.stops, { ...rideable.stops[0] }] });
+    expect(res.status).toBe(409);
+    expect((await res.json()).stale).toBe(true);
+    expect(state.writes).toEqual([]);
   });
 
   it('posts the Bulletin under the id the editor gave it, once', async () => {
@@ -167,6 +199,13 @@ describe('POST /api/plan/commit', () => {
     expect(state.writes.some((w) => w.collection === 'broadcasts')).toBe(false); // not said twice
   });
 
+  it('refuses to adopt a broadcast id that collides with another itinerary\'s record', async () => {
+    const bulletin = { id: 'bulletin0000001', kind: 'hold' as const, body: 'Holding at The Hop Haus.' };
+    state.fail[`create:broadcasts:${bulletin.id}`] = { status: 400, message: 'Failed to create record.' };
+    state.foreign = [bulletin.id];
+    await expect(call({ ...rideable, bulletin })).rejects.toThrow();
+  });
+
   it('skips the Bulletin when the Conductor skipped it', async () => {
     const res = await call(rideable);
     expect((await res.json()).broadcast).toBeNull();
@@ -178,5 +217,33 @@ describe('POST /api/plan/commit', () => {
     const res = await call(rideable);
     expect(res.status).toBe(200);
     expect(await res.json()).toMatchObject({ ok: true, impossible: 1 });
+  });
+
+  it('writes the checkins row at the same instant the response reports as the anchor', async () => {
+    const res = await call(rideable);
+    const body = await res.json();
+    const checkin = state.writes.find((w) => w.collection === 'checkins')!;
+    expect(checkin.body).toMatchObject({ at: body.anchorAt });
+  });
+
+  it('carries direction on an update, but never re-points an existing stop at a new venue', async () => {
+    const res = await call({
+      ...rideable,
+      stops: [{ ...rideable.stops[0], direction: 'inbound' }, rideable.stops[1]]
+    });
+    expect(res.status).toBe(200);
+    const update = state.writes.find((w) => w.op === 'update' && w.id === 's2')!;
+    expect(update.body).toMatchObject({ direction: 'inbound' });
+    expect(update.body).not.toHaveProperty('place');
+  });
+
+  it('refuses a stop with no name or an unrecognised kind, before any write', async () => {
+    await expect(call({ ...rideable, stops: [{ ...rideable.stops[0], name: '' }, rideable.stops[1]] }))
+      .rejects.toMatchObject({ status: 400 });
+    expect(state.writes).toEqual([]);
+
+    await expect(call({ ...rideable, stops: [{ ...rideable.stops[0], kind: 'nightclub' }, rideable.stops[1]] }))
+      .rejects.toMatchObject({ status: 400 });
+    expect(state.writes).toEqual([]);
   });
 });
