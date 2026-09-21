@@ -110,20 +110,23 @@
   // unrideable stops being savable. `previewLegs` is cleared the moment `plan` changes (not left
   // holding the previous plan's legs until the new response lands): `blockers` reads legs to find
   // an impossible one, and a removed stop's leg is simply absent from a stale list, so a stale
-  // list under-reports blockers rather than over-reporting them. `previewPending`/`previewFailed`
-  // gate Save directly, for the same reason: an in-flight or failed check must not be read as "no
-  // blockers found".
+  // list under-reports blockers rather than over-reporting them. `previewPending` gates Save for
+  // the same reason, but only for that first, unverified check of a given plan: the periodic
+  // re-check exists to catch a plan quietly going bad while the Conductor sits still, not to grey
+  // out Save once a minute while they are actively editing. It keeps showing the last good legs
+  // and only replaces them — or sets `previewFailed`, which still gates Save — once it returns.
   $effect(() => {
     const current = plan;
     previewLegs = [];
     if (!current || !draft) { previewPending = false; previewFailed = false; return; }
     let alive = true;
+    let first = true;
     const run = () => {
-      previewPending = true;
+      if (first) previewPending = true;
       void previewPlan(current, data.id)
         .then((legs) => { if (!alive) return; previewLegs = legs; previewFailed = false; })
-        .catch(() => { if (!alive) return; previewLegs = []; previewFailed = true; })
-        .finally(() => { if (alive) previewPending = false; });
+        .catch(() => { if (!alive) return; previewFailed = true; if (first) previewLegs = []; })
+        .finally(() => { if (!alive) return; previewPending = false; first = false; });
     };
     run();
     const timer = setInterval(run, 60_000);

@@ -195,5 +195,7 @@ export const POST: RequestHandler = async ({ request }) => {
     payload: { stops: stops.length, added: stops.filter((s) => s.isNew).length, removed: toRemove.length, anchor: anchorStopId, broadcast, impossible: recomputed.impossible }
   });
 
-  return json({ ok: true, anchorAt: at, legs: recomputed.legs, impossible: recomputed.impossible, broadcast });
+  // The client's `impossible` is anchor-filtered, not the raw total: a leg behind the crew is
+  // history and the Conductor cannot fix it, so counting it here would tell them to on every save.
+  return json({ ok: true, anchorAt: at, legs: recomputed.legs, impossible: recomputed.impossibleFromAnchor, broadcast });
 };

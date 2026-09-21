@@ -17,10 +17,6 @@ async function openEditor(page: import('@playwright/test').Page, name: string, p
   return seeded;
 }
 
-// The e2e login endpoint rate-limits by IP (20 attempts / 15 min, shared across the whole suite
-// since every test runs from the same loopback address), so tests below are consolidated onto as
-// few logins as the properties they check allow, rather than one `test()` per property.
-
 test('Save waits until the Conductor says where the crew is', async ({ page }) => {
   const seeded = await openEditor(page, 'E2E Editor Conductor', ADMIN);
 
@@ -68,8 +64,8 @@ test('a staged change reaches the crew only when it is saved', async ({ page, co
   await expect(crewPage.getByText('The Second Round')).toBeHidden();
 });
 
-test('Save is disabled while the staged plan is checked, and a 409 stale after reload never resurrects the old plan', async ({ page }) => {
-  const seeded = await openEditor(page, 'E2E Pending Stale Conductor', ADMIN);
+test('Save is disabled while the staged plan is checked, not just when it is broken', async ({ page }) => {
+  await openEditor(page, 'E2E Pending Conductor', ADMIN);
   await page.getByTestId('set-here-0').click();
   await expect(page.getByTestId('save-plan')).toBeEnabled();
 
@@ -85,7 +81,12 @@ test('Save is disabled while the staged plan is checked, and a 409 stale after r
   await expect(page.getByTestId('preview-status')).toContainText('Checking the route');
   release?.();
   await expect(page.getByTestId('save-plan')).toBeEnabled();
-  await page.unroute('**/api/plan/preview');
+});
+
+test('a 409 stale after someone else edits The Route survives a reload without resurrecting the old plan', async ({ page }) => {
+  const seeded = await openEditor(page, 'E2E Stale Conductor', ADMIN);
+  await page.getByTestId('set-here-0').click();
+  await expect(page.getByTestId('save-plan')).toBeEnabled();
 
   // Someone else's edit lands while this editor is open — the exact situation the commit
   // endpoint's reconcile step exists to catch. Written directly so the app never sees it coming.

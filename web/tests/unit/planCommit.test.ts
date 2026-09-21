@@ -47,7 +47,7 @@ vi.mock('$lib/server/pb', () => ({
   }))
 }));
 vi.mock('$lib/server/metra', () => ({ metra: { getSchedule: vi.fn(async () => fixtureSchedule()) } }));
-vi.mock('$lib/server/recompute', () => ({ recomputeItinerary: vi.fn(async () => ({ legs: 1, impossible: 0 })) }));
+vi.mock('$lib/server/recompute', () => ({ recomputeItinerary: vi.fn(async () => ({ legs: 1, impossible: 0, impossibleFromAnchor: 0 })) }));
 
 const { POST } = await import('../../src/routes/api/plan/commit/+server');
 const { recomputeItinerary } = await import('$lib/server/recompute');
@@ -75,7 +75,7 @@ beforeEach(() => {
   state.foreign = [];
   state.writes = [];
   state.fail = {};
-  vi.mocked(recomputeItinerary).mockClear().mockResolvedValue({ legs: 1, impossible: 0 });
+  vi.mocked(recomputeItinerary).mockClear().mockResolvedValue({ legs: 1, impossible: 0, impossibleFromAnchor: 0 });
   vi.setSystemTime(new Date('2026-12-26T18:00:00.000Z'));
 });
 
@@ -229,8 +229,10 @@ describe('POST /api/plan/commit', () => {
     expect(state.writes.some((w) => w.collection === 'broadcasts')).toBe(false);
   });
 
-  it('reports a leg the recompute could not ride, even though the save stands', async () => {
-    vi.mocked(recomputeItinerary).mockResolvedValue({ legs: 2, impossible: 1 });
+  it('reports the anchor-filtered count, not the raw total, when the recompute finds a leg it could not ride', async () => {
+    // Deliberately different: a leg behind the crew (counted in the total) must not be what the
+    // response's `impossible` reports, or the Conductor is told to fix a train that already left.
+    vi.mocked(recomputeItinerary).mockResolvedValue({ legs: 2, impossible: 2, impossibleFromAnchor: 1 });
     const res = await call(rideable);
     expect(res.status).toBe(200);
     expect(await res.json()).toMatchObject({ ok: true, impossible: 1 });

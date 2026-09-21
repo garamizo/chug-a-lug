@@ -16,6 +16,10 @@ process.env.INTERNAL_SECRET = 'e2e-secret';
 process.env.WEB_INTERNAL_URL = 'http://127.0.0.1:15173';
 process.env.GOOGLE_PLACES_KEY = '';
 process.env.OVERPASS_URL = 'http://127.0.0.1:9/';
+// The whole suite runs from one loopback address and shares the login endpoint's per-IP rate
+// limit (20/15min by default, sized for one shared crew password in production). Raised here only
+// — nowhere else sets this — so the production default stays untouched everywhere but this harness.
+process.env.LOGIN_RATE_LIMIT = '500';
 
 export default defineConfig({
   testDir: 'tests/e2e',

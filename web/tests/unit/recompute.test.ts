@@ -44,7 +44,7 @@ describe('recomputeItinerary', () => {
   it('resolves as a no-op when the itinerary is gone (cascade delete of a draft)', async () => {
     state.itineraryError = { status: 404, message: "The requested resource wasn't found." };
 
-    await expect(recomputeItinerary('aaaaaaaaaaaaaaa')).resolves.toEqual({ legs: 0, impossible: 0 });
+    await expect(recomputeItinerary('aaaaaaaaaaaaaaa')).resolves.toEqual({ legs: 0, impossible: 0, impossibleFromAnchor: 0 });
     expect(metra.getSchedule).not.toHaveBeenCalled();
   });
 
@@ -86,7 +86,35 @@ describe('recomputeItinerary with an anchor', () => {
     const result = await recomputeItinerary('ddddddddddddddd');
 
     expect(result.impossible).toBe(1); // 14:00 local is past BN4's 14:30 departure once the layover runs
+    expect(result.impossibleFromAnchor).toBe(1); // the crawl's one leg is also its only leg from the anchor on
     const leg = state.created.find((c) => c.collection === 'legs');
     expect(leg?.body).toMatchObject({ kind: 'impossible', from_stop: 's2', to_stop: 's3' });
+  });
+
+  // The gap fix round 2 closes: `cohesionBlockers` (and so Save) never counts a leg before the
+  // anchor, because it is history and the Conductor cannot fix a train that already left. Before
+  // this fix, `recomputeItinerary`'s `impossible` counted it anyway, so a save could land clean by
+  // the gate's own rule and still come back reporting itself broken — on a leg nobody can act on.
+  it('does not count an impossible leg behind the crew, only one from the anchor onward', async () => {
+    state.stops = [
+      // A fake station id, absent from every trip in the fixture: no train ever connects it to
+      // anything, so this leg is impossible regardless of the schedule's fine detail — and it sits
+      // entirely before the anchor, run from the itinerary's plain start time, same as any leg
+      // that already happened.
+      { id: 's1', order: 1, station_id: 'NOWHERE', dwell_min: 10, walk_min: 5 },
+      { id: 's2', order: 2, station_id: 'LAGRANGE', dwell_min: 60, walk_min: 5 },
+      { id: 's3', order: 3, station_id: 'CUS', dwell_min: 60, walk_min: 4 }
+    ];
+    state.checkins = [{ stop: 's2', at: '2026-12-26T20:00:00.000Z', expand: { user: { is_admin: true } } }];
+    state.created = [];
+    vi.mocked(metra.getSchedule).mockResolvedValue(fixtureSchedule());
+
+    const result = await recomputeItinerary('eeeeeeeeeeeeeee');
+
+    expect(result.impossible).toBe(2); // s1→s2 (behind the crew) and s2→s3 (ahead of it)
+    expect(result.impossibleFromAnchor).toBe(1); // only s2→s3, the one the Conductor can still fix
+    const legs = state.created.filter((c) => c.collection === 'legs');
+    expect(legs.find((l) => l.body.from_stop === 's1')).toMatchObject({ body: { kind: 'impossible', to_stop: 's2' } });
+    expect(legs.find((l) => l.body.from_stop === 's2')).toMatchObject({ body: { kind: 'impossible', to_stop: 's3' } });
   });
 });

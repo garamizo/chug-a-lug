@@ -3,6 +3,7 @@
 import { adminPb } from './pb';
 import { parseHm } from '$lib/time';
 import { computeLegs, findAnchor } from './plan';
+import { impossibleFromAnchor } from '$lib/live/cohesion';
 import type { Itinerary, Stop } from '$lib/types';
 
 const queues = new Map<string, Promise<unknown>>();
@@ -12,7 +13,7 @@ const queues = new Map<string, Promise<unknown>>();
  * may ignore it: the chain always carries its own catch, so a failure logs instead of surfacing as
  * an unhandled rejection (which would take the Node server down).
  */
-export function recomputeItinerary(itineraryId: string): Promise<{ legs: number; impossible: number }> {
+export function recomputeItinerary(itineraryId: string): Promise<{ legs: number; impossible: number; impossibleFromAnchor: number }> {
   const prev = queues.get(itineraryId) ?? Promise.resolve();
   const run = prev.catch(() => undefined).then(() => doRecompute(itineraryId));
   queues.set(itineraryId, run);
@@ -32,7 +33,7 @@ async function doRecompute(itineraryId: string) {
   try {
     it = await pb.collection('itineraries').getOne<Itinerary>(itineraryId);
   } catch (err) {
-    if ((err as { status?: number }).status === 404) return { legs: 0, impossible: 0 };
+    if ((err as { status?: number }).status === 404) return { legs: 0, impossible: 0, impossibleFromAnchor: 0 };
     throw err;
   }
   const stops = await pb.collection('stops').getFullList<Stop>({ filter: pb.filter('itinerary = {:id}', { id: itineraryId }), sort: 'order,created' });
@@ -53,6 +54,18 @@ async function doRecompute(itineraryId: string) {
     });
   }
   const impossible = computed.filter((l) => l.kind === 'impossible').length;
+  // A leg before the anchor is history and can look as broken as it likes (`$lib/live/cohesion`'s
+  // own rule, shared here): a Conductor cannot fix a train that already left, and telling them to
+  // — on every subsequent save, forever — is worse than not mentioning it. `impossible` above stays
+  // the true total for logging; only the anchor-filtered count is what a save reports as "broken".
+  // A draft has no anchor at all — nothing is "history" yet, so every impossible leg still counts.
+  const filtered = anchor
+    ? impossibleFromAnchor({
+        stops: stops.map((s) => ({ id: s.id, order: s.order, name: s.name })),
+        legs: computed.map((l) => ({ fromStopId: l.fromStopId, toStopId: l.toStopId, kind: l.kind })),
+        anchorStopId: anchor.stopId
+      }).length
+    : impossible;
   await pb.collection('event_log').create({ itinerary: itineraryId, kind: 'recompute', payload: { legs: computed.length, impossible, anchored: !!anchor }, at: now });
-  return { legs: computed.length, impossible };
+  return { legs: computed.length, impossible, impossibleFromAnchor: filtered };
 }
