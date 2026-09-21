@@ -41,7 +41,7 @@ with an album and a scoreboard to argue about at dinner.
 - **Runs on the admin's own computer.** One machine at home holds the database, the media, and the API
   keys, published to the internet through a Cloudflare Tunnel at chugalug.app. No cloud accounts to manage.
 - **Simulation is a first-class feature.** The whole live experience must be rehearsable at home with a fake
-  clock, a replayed train feed, and scripted GPS.
+  clock, a replayed train feed, and the Conductor's shared position anchor. No GPS.
 - **Metra data is proxied through our server** (their license requires it) and displayed with
   "not affiliated with Metra" and a last-updated time.
 
@@ -201,8 +201,10 @@ Sim mode has to exist before the live phase is considered done, because the real
 - **Recorded train feed**: a recorder polls Metra's positions, trip updates, and alerts every 30 s into
   timestamped protobuf snapshots. The proxy replays the snapshot nearest the sim clock.
   Record on a **Saturday in December**, since Dec 26 runs the Saturday timetable.
-- **Scripted GPS**: a waypoint list with speeds and pauses drives a fake `navigator.geolocation` behind a `?sim=1` flag.
-- **Schedule-only fallback**: synthesize train positions from the static timetable when no recording exists.
+- **Shared position**: rehearse the same clock-derived stop and Conductor anchor as the live day. No GPS, waypoint player or per-person tracking.
+- **Schedule-only fallback**: use scheduled departures when no recording exists; do not invent vehicle positions.
+- **Isolation**: a rehearsal uses its own database and origin. Replay uses the recording's original service date and archived GTFS; operational timeouts and cache ages remain on wall time.
+- M4 is specified but not yet implemented: see the [design](docs/superpowers/specs/2026-09-21-m4-simulation-design.md) and [implementation plan](docs/superpowers/plans/2026-09-21-m4-simulation.md).
 - A real dry run on a December Saturday with two or three phones, before the freeze.
 
 ---
@@ -248,7 +250,7 @@ re-reads the feed rather than hard-coding it.
 | M1 Planning | end Oct | Diagram, stop picker, venue cards with Google photos, drafts with real train times, votes, comments, approval vote — done 2026-09-19 (see docs/superpowers/plans/2026-09-19-m1-planning.md) |
 | M2 Metra proxy | mid Nov | BNSF realtime proxy with recording, Departure Board with Last Call and All Aboard, service alerts and the header menu, schedule fallback — done 2026-09-20 (see docs/superpowers/plans/2026-09-20-m2-metra-proxy.md) |
 | M3 Live | end Nov | Clock-derived position with Conductor anchor, Crew Board, staged route edits, Bulletins, Tab, Freight, offline route mirror — done 2026-09-20 (see [plan](docs/superpowers/plans/2026-09-20-m3-live.md)) |
-| M4 Simulation | Sat Dec 5 | Sim clock, replay, scripted GPS; full sim run at home |
+| M4 Simulation | Sat Dec 5 | Shared sim clock, feed replay and timetable fallback, Conductor anchor; full rehearsal at home — [spec and plan](docs/superpowers/plans/2026-09-21-m4-simulation.md) prepared, implementation pending |
 | M5 Wrap-up | Dec 12 | Album, scoreboard, awards, downloads |
 | Freeze + field test | Sat Dec 12 or 19 | Real train ride with 2-3 phones; bug fixes only after this |
 | Launch | Sat Dec 26 | Crawl |
@@ -299,4 +301,4 @@ Numbered to match the earlier review; each is reversible.
 ## Open questions
 
 - Start and end stations, which drives the "last train home" logic.
-- Which phones are Android vs iPhone, for the GPS and push testing matrix.
+- Which phones are Android vs iPhone, for the PWA, offline and upload testing matrix.
