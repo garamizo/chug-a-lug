@@ -61,6 +61,10 @@
 
 <svelte:head><title>{copy.live}</title></svelte:head>
 
+{#if liveDay.fromMirror && liveDay.mirrorSavedAt}
+  <p class="stale" data-testid="mirror-notice">{copy.showingMirror} {fmtTime(liveDay.mirrorSavedAt)}.</p>
+{/if}
+
 {#if !liveDay.itinerary || !liveDay.isToday}
   <p data-testid="no-active-route">{copy.noActiveRoute} <a href="/plan">{copy.backToPlanner}</a></p>
 {:else if here?.stop}
@@ -100,6 +104,7 @@
 {/if}
 
 <style>
+  .stale { margin: 12px 20px; padding: 10px 12px; border: 1px solid #555; border-radius: 9px; font-size: 13px; color: #cfcfcf; }
   .rest, .tabclosed { padding: 18px 20px; }
   h2 { margin: 0 0 10px; font-size: 13px; letter-spacing: .09em; text-transform: uppercase; color: #9a9a9a; font-weight: 700; }
   .row { display: flex; align-items: baseline; gap: 12px; padding: 11px 0; border-bottom: 1px solid #2a2a2a; }

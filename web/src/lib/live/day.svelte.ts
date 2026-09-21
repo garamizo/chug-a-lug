@@ -3,6 +3,7 @@
 // else here changes.
 import { pb, subscribe } from '$lib/pb';
 import { localToUtc, parseHm, todayInTz } from '$lib/time';
+import { mirrorPayload, readMirror, saveMirror } from '$lib/offline';
 import { currentStop, type Current } from './current';
 import { pickTrip } from './board';
 import { fetchAlerts, fetchNext, fetchStatus } from './feed';
@@ -12,6 +13,8 @@ export class LiveDay {
   itinerary = $state<Itinerary | null>(null);
   stops = $state<Stop[]>([]);
   legs = $state<Leg[]>([]);
+  fromMirror = $state(false);
+  mirrorSavedAt = $state<string | null>(null);
   anchor = $state<{ stopId: string; at: string } | null>(null);
   trips = $state<NextTrip[]>([]);
   alerts = $state<Alert[]>([]);
@@ -47,15 +50,36 @@ export class LiveDay {
   }
 
   async loadRoute() {
-    const list = await pb.collection('itineraries').getFullList<Itinerary>({ filter: pb.filter('status = "locked"'), sort: '-locked_at' });
-    this.itinerary = list[0] ?? null;
-    if (!this.itinerary) { this.stops = []; this.legs = []; return; }
-    const filter = pb.filter('itinerary = {:id}', { id: this.itinerary.id });
-    [this.stops, this.legs] = await Promise.all([
-      pb.collection('stops').getFullList<Stop>({ filter, sort: 'order,created' }),
-      pb.collection('legs').getFullList<Leg>({ filter })
-    ]);
-    await this.loadAnchor();
+    try {
+      // Workbox also respects no-store: a cached HTTP success must not re-date an old plan.
+      const list = await pb.collection('itineraries').getFullList<Itinerary>({ filter: pb.filter('status = "locked"'), sort: '-locked_at', cache: 'no-store' });
+      const itinerary = list[0] ?? null;
+      if (!itinerary) {
+        this.itinerary = null; this.stops = []; this.legs = []; this.anchor = null;
+        this.fromMirror = false; this.mirrorSavedAt = null;
+        return;
+      }
+      const filter = pb.filter('itinerary = {:id}', { id: itinerary.id });
+      const [stops, legs] = await Promise.all([
+        pb.collection('stops').getFullList<Stop>({ filter, sort: 'order,created', cache: 'no-store' }),
+        pb.collection('legs').getFullList<Leg>({ filter, cache: 'no-store' })
+      ]);
+      // Keep the raw responses for IndexedDB: reading them back through $state gives proxies,
+      // which structured cloning rejects. Publish only after all three reads succeed.
+      void saveMirror(mirrorPayload(itinerary, stops, legs, new Date()));
+      this.itinerary = itinerary; this.stops = stops; this.legs = legs;
+      this.fromMirror = false; this.mirrorSavedAt = null;
+      await this.loadAnchor();
+    } catch {
+      // No signal: the last known plan is better than an empty screen, as long as it says so.
+      const mirror = await readMirror();
+      if (!mirror) throw new Error('offline and no mirror');
+      this.itinerary = mirror.itinerary;
+      this.stops = mirror.stops;
+      this.legs = mirror.legs;
+      this.mirrorSavedAt = mirror.savedAt;
+      this.fromMirror = true;
+    }
   }
 
   async loadAnchor() {
@@ -114,14 +138,16 @@ export class LiveDay {
 
   /** Starts the pollers and subscriptions. Returns the teardown; safe to call once per layout. */
   start(): () => void {
+    const refreshRoute = () => void this.loadRoute().catch(() => {});
     void this.loadRoute().then(() => { void this.loadBulletins(); void this.loadTrains(); void this.loadDrinks(); void this.loadMedia(); }).catch(() => {});
     void this.loadAlerts();
     void fetchStatus().then((s) => { this.rtFetchedAt = s.feeds?.tripupdates?.fetchedAt ?? null; this.mode = s.mode; }).catch(() => {});
     const tick = setInterval(() => { this.now = new Date(); }, 15_000);
-    const poll = setInterval(() => { void this.loadTrains(); void this.loadAlerts(); void this.loadDrinks(); void this.loadMedia(); }, 30_000);
+    const poll = setInterval(() => { refreshRoute(); void this.loadTrains(); void this.loadAlerts(); void this.loadDrinks(); void this.loadMedia(); }, 30_000);
     const unsubs = [
-      subscribe('stops', '', () => void this.loadRoute()),
-      subscribe('legs', '', () => void this.loadRoute()),
+      subscribe('itineraries', '', refreshRoute),
+      subscribe('stops', '', refreshRoute),
+      subscribe('legs', '', refreshRoute),
       subscribe('checkins', '', () => void this.loadAnchor()),
       subscribe('broadcasts', '', () => void this.loadBulletins()),
       subscribe('broadcast_acks', '', () => void this.loadBulletins()),

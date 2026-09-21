@@ -2,6 +2,7 @@
 // megabytes of nothing useful on a 400 px strip — and videos go as they are, under the hard ceiling
 // the Cloudflare free plan imposes on the tunnel.
 import { copy } from '$lib/labels';
+import { ClientResponseError } from 'pocketbase';
 
 export const MAX_BYTES = 94_371_840; // 90 MB: the Cloudflare free-plan ceiling on the tunnel.
 
@@ -35,7 +36,7 @@ export async function uploadBatch(
       sent++;
     } catch (err) {
       reasons.add(err instanceof Error && (err.message === copy.uploadTooBig || err.message === copy.uploadUnsupportedType)
-        ? err.message : copy.uploadFailed);
+        ? err.message : err instanceof ClientResponseError && err.status === 0 ? copy.noSignal : copy.uploadFailed);
     }
   }
   await refresh();

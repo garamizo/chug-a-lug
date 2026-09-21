@@ -2,12 +2,14 @@
   import { goto } from '$app/navigation';
   import { page } from '$app/state';
   import { pb, auth } from '$lib/pb';
+  import { copy } from '$lib/labels';
   import { liveDay } from '$lib/live/day.svelte';
   import DepartureBoard from '$lib/components/DepartureBoard.svelte';
   import PinnedBulletin from '$lib/components/PinnedBulletin.svelte';
   import BulletinSheet from '$lib/components/BulletinSheet.svelte';
   import { newRecordId } from '$lib/live/staged';
   let { children } = $props();
+  let error = $state('');
   $effect(() => { if (!$auth.user) goto('/login'); });
   // One owner for the live day: every screen reads this instance, so there is a single poller.
   $effect(() => { if ($auth.user) return liveDay.start(); });
@@ -41,19 +43,23 @@
 
   async function ack(broadcastId: string) {
     if (!$auth.user) return;
+    error = '';
     try {
       await pb.collection('broadcast_acks').create({ broadcast: broadcastId, user: $auth.user.id });
-    } catch { /* already acked on another tab, or no signal: the card simply stays */ }
+    } catch { error = copy.noSignal; }
     await liveDay.loadBulletins();
+    // Another tab may already have acknowledged it; a successful refresh settles that case.
+    if (liveDay.ackedIds.includes(broadcastId)) error = '';
   }
 
   async function postBulletin(body: string) {
+    error = '';
     liveDay.composing = false;
     if (!liveDay.itinerary || !$auth.user || !body) return;
     try {
       await pb.collection('broadcasts').create({ id: newRecordId(), itinerary: liveDay.itinerary.id, kind: 'message', body, created_by: $auth.user.id });
       await liveDay.loadBulletins();
-    } catch { /* no signal: nothing was said, and the Conductor can see that */ }
+    } catch { error = copy.noSignal; }
   }
 </script>
 
@@ -71,6 +77,7 @@
   {#if liveDay.pinnedBulletin}
     <PinnedBulletin bulletin={liveDay.pinnedBulletin} onack={() => void ack(liveDay.pinnedBulletin!.id)} />
   {/if}
+  {#if error}<p role="alert">{error}</p>{/if}
   {@render children()}
   {#if liveDay.composing}
     <BulletinSheet text="" onsend={(body) => void postBulletin(body)} onskip={() => (liveDay.composing = false)} />

@@ -196,6 +196,8 @@ export const copy = {
   openFreightPhoto: 'Open photo',
   openFreightVideo: 'Open video',
   noSignal: 'No signal — try again in a minute.',
+  showingMirror: 'Showing the last known plan, saved',
+  minutesAgo: 'min ago',
   departLabel: 'Depart',
   arriveLabel: 'Arrive',
   run: 'Run',

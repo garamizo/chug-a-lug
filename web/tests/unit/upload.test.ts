@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { MAX_BYTES, prepare, uploadBatch } from '../../src/lib/live/upload';
 import { copy } from '../../src/lib/labels';
+import { ClientResponseError } from 'pocketbase';
 
 const file = (name: string, type: string, size = 10) =>
   Object.assign(new File([new Uint8Array(size)], name, { type, lastModified: Date.parse('2026-12-26T20:00:00.000Z') }));
@@ -39,6 +40,15 @@ describe('prepare', () => {
 });
 
 describe('uploadBatch', () => {
+  it('reports no signal for a failed PocketBase connection without queuing a retry', async () => {
+    const send = vi.fn(async () => { throw new ClientResponseError({ status: 0, originalError: new TypeError('Failed to fetch') }); });
+    const refresh = vi.fn(async () => {});
+    expect(await uploadBatch([file('tunnel.mp4', 'video/mp4')], send, refresh))
+      .toBe(`0 ${copy.uploadSent} 1 ${copy.uploadNotSent} ${copy.noSignal}`);
+    expect(send).toHaveBeenCalledOnce();
+    expect(refresh).toHaveBeenCalledOnce();
+  });
+
   it.each(['server', 'oversized', 'unsupported'])('continues after a middle %s failure and refreshes the landed files', async (failure) => {
     const middle = file('middle', failure === 'unsupported' ? 'application/pdf' : 'video/mp4');
     if (failure === 'oversized') Object.defineProperty(middle, 'size', { value: MAX_BYTES + 1 });
