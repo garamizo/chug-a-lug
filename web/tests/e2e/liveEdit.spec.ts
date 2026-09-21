@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test';
-import { clearLockedCrawls, latestAnchor, login, seedLockedCrawl } from './helpers';
+import { clearLockedCrawls, deleteStopDirect, latestAnchor, login, seedLockedCrawl } from './helpers';
 
 const ADMIN = process.env.ADMIN_PASSWORD ?? 'admin-test-password';
 const CREW = process.env.CREW_PASSWORD ?? 'crew-test-password';
@@ -17,8 +17,18 @@ async function openEditor(page: import('@playwright/test').Page, name: string, p
   return seeded;
 }
 
+// The e2e login endpoint rate-limits by IP (20 attempts / 15 min, shared across the whole suite
+// since every test runs from the same loopback address), so tests below are consolidated onto as
+// few logins as the properties they check allow, rather than one `test()` per property.
+
 test('Save waits until the Conductor says where the crew is', async ({ page }) => {
   const seeded = await openEditor(page, 'E2E Editor Conductor', ADMIN);
+
+  // The editor says up front that this is a live route, before anything is touched.
+  await expect(page.getByTestId('live-route-warning')).toContainText('The Route');
+  // The start time is fixed once the crew is riding it: no live control for it, even for the
+  // Conductor (contrast the draft screen, which does show one).
+  await expect(page.getByTestId('start-time')).toHaveCount(0);
 
   const save = page.getByTestId('save-plan');
   await expect(save).toBeDisabled();
@@ -58,9 +68,35 @@ test('a staged change reaches the crew only when it is saved', async ({ page, co
   await expect(crewPage.getByText('The Second Round')).toBeHidden();
 });
 
-test('the editor says the route is live before anything is touched', async ({ page }) => {
-  await openEditor(page, 'E2E Warned Conductor', ADMIN);
-  await expect(page.getByTestId('live-route-warning')).toContainText('The Route');
+test('Save is disabled while the staged plan is checked, and a 409 stale after reload never resurrects the old plan', async ({ page }) => {
+  const seeded = await openEditor(page, 'E2E Pending Stale Conductor', ADMIN);
+  await page.getByTestId('set-here-0').click();
+  await expect(page.getByTestId('save-plan')).toBeEnabled();
+
+  // Gate the next check so the in-flight window is observable rather than racing past it.
+  let release: (() => void) | undefined;
+  const gate = new Promise<void>((resolve) => { release = resolve; });
+  await page.route('**/api/plan/preview', async (route) => {
+    await gate;
+    await route.continue();
+  });
+  await page.getByTestId('set-here-1').click(); // a harmless second edit, still triggers a fresh check
+  await expect(page.getByTestId('save-plan')).toBeDisabled();
+  await expect(page.getByTestId('preview-status')).toContainText('Checking the route');
+  release?.();
+  await expect(page.getByTestId('save-plan')).toBeEnabled();
+  await page.unroute('**/api/plan/preview');
+
+  // Someone else's edit lands while this editor is open — the exact situation the commit
+  // endpoint's reconcile step exists to catch. Written directly so the app never sees it coming.
+  await deleteStopDirect(seeded.secondStopId);
+  await page.getByTestId('save-plan').click();
+  await expect(page.getByRole('alert')).toContainText('Reload and make the change again');
+
+  // Reload, exactly as the message says to. A plan parked earlier in this session must not come
+  // back — only a fresh plan, read from what the database actually holds now, is safe to show.
+  await page.reload();
+  await expect(page.getByText('Berwyn Beer Hall')).toBeHidden();
 });
 
 test('edits made before adding a stop survive the trip to the venue picker', async ({ page }) => {
@@ -72,9 +108,12 @@ test('edits made before adding a stop survive the trip to the venue picker', asy
   await page.getByTestId('remove-1').click();
   await expect(page.getByText('The Second Round')).toBeHidden();
 
-  // Now go and add a stop, which leaves the editor entirely. Overpass is unreachable in the e2e
-  // environment, so the manual entry form is the reliable way to pick a venue.
-  await page.goto(`/plan/${seeded.itineraryId}/add?station=CUS&side=left&staged=1`);
+  // Now go and add a stop, the way a Conductor actually would: tap a station circle. That is the
+  // one moment the editor parks the staged change (`stagedActions.add`, right before the `goto`);
+  // parking happens nowhere else now, so the trip through the venue picker has to go through this
+  // real control, not a bare `page.goto`, for the earlier edits to have anything to survive on.
+  await page.getByTestId('station-dot-CUS').click();
+  await expect(page).toHaveURL(new RegExp(`/plan/${seeded.itineraryId}/add\\?station=CUS&side=left&staged=1$`));
   await page.getByTestId('manual-name').fill('Prairie Path Tap');
   await page.getByTestId('manual-add').click();
 

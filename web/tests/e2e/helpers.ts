@@ -106,3 +106,13 @@ export async function latestAnchor(): Promise<{ stop: string; at: string } | nul
   const items = (await res.json()).items as { stop: string; at: string }[];
   return items[0] ?? null;
 }
+
+/**
+ * Deletes a stop directly, bypassing the app entirely — simulates another Conductor's edit landing
+ * while this one's editor is open, so a test can force the commit endpoint's `409 stale` path.
+ */
+export async function deleteStopDirect(stopId: string): Promise<void> {
+  const token = await superuserToken();
+  const res = await fetch(`${PB}/api/collections/stops/records/${stopId}`, { method: 'DELETE', headers: { Authorization: token } });
+  if (!res.ok) throw new Error(`Delete stop failed: ${res.status} ${await res.text()}`);
+}

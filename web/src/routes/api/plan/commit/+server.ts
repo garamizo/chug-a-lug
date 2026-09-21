@@ -128,7 +128,9 @@ export const POST: RequestHandler = async ({ request }) => {
     stops: stops.map((s) => ({ id: s.id, order: s.order, name: s.name })),
     legs, anchorStopId: anchorStopId || null
   });
-  if (blockers.length) return json({ ok: false, blockers }, { status: 409 });
+  // `message` is what `api()` on the client surfaces as the caught error's text; without it the
+  // Conductor sees a bare "409 Conflict" instead of the reason (already user-facing copy).
+  if (blockers.length) return json({ ok: false, blockers, message: blockers[0].message }, { status: 409 });
 
   // 3. The stops. Deletes first so a freed `order` cannot collide with an update. Create-versus-update
   //    is decided from `persisted` — what the database actually holds — never from the editor's

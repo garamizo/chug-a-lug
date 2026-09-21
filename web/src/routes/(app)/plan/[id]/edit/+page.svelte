@@ -23,6 +23,12 @@
   // what has to survive the trip to the venue picker along with the staged change itself.
   let before = $state<PlanSnapshot | null>(null);
   let previewLegs = $state<Leg[]>([]);
+  // Whether the currently-staged plan has been checked against the planner yet, and whether that
+  // check came back broken. Both keep Save disabled: rendering `blockers` off a stale or empty
+  // `previewLegs` (mid-flight, or after a failed check) would read a genuinely impossible route as
+  // clean, since an absent leg cannot be flagged "impossible".
+  let previewPending = $state(false);
+  let previewFailed = $state(false);
   let saving = $state(false);
 
   const snapshot = (p: StagedPlan): PlanSnapshot => ({
@@ -53,20 +59,35 @@
   }
 
   const PARK_KEY = $derived(`chugalug.stagedPlan:${data.id}`);
+  const PARK_MAX_AGE_MS = 60 * 60 * 1000;
 
-  /** Park the whole staged change before leaving for the venue picker, and pick it up on return. */
+  /**
+   * Park the whole staged change right before leaving for the venue picker, and only then — not on
+   * every edit. The picker round trip is the one navigation this component cannot survive on its
+   * own, so parking is scoped exactly to it: nothing else should ever read this key back, or a plan
+   * abandoned here (backed out of without saving, or made stale by someone else's edit) would keep
+   * resurrecting itself on a later, unrelated visit — including after a 409 stale, where the
+   * Conductor's only instruction is "reload and make the change again" and a resurrected plan would
+   * just reproduce the same conflict forever.
+   */
   function park() {
     if (!plan || !before) return;
-    try { sessionStorage.setItem(PARK_KEY, JSON.stringify({ plan, before })); } catch { /* private mode */ }
+    try { sessionStorage.setItem(PARK_KEY, JSON.stringify({ plan, before, parkedAt: Date.now() })); } catch { /* private mode */ }
   }
+  /** Consumes the parked copy if there is one fresh enough to trust; an older one is discarded. */
   function readParked(): { plan: StagedPlan; before: PlanSnapshot } | null {
     try {
       const raw = sessionStorage.getItem(PARK_KEY);
       if (!raw) return null;
       sessionStorage.removeItem(PARK_KEY);
-      const parked = JSON.parse(raw) as { plan: StagedPlan; before: PlanSnapshot };
-      return parked.plan?.stops?.length ? parked : null;
+      const parked = JSON.parse(raw) as { plan: StagedPlan; before: PlanSnapshot; parkedAt?: number };
+      if (!parked.plan?.stops?.length) return null;
+      if (typeof parked.parkedAt !== 'number' || Date.now() - parked.parkedAt > PARK_MAX_AGE_MS) return null;
+      return parked;
     } catch { return null; }
+  }
+  function clearParked() {
+    try { sessionStorage.removeItem(PARK_KEY); } catch { /* private mode */ }
   }
 
   /** The newest Conductor position, which is where the staged plan starts from. */
@@ -85,21 +106,25 @@
     return watchDraft(data.id, load);
   });
 
-  // Parked on every change, not only when the "add" action fires: the venue picker is reached by a
-  // real browser navigation (a station circle's href, or a test driving the URL bar directly), which
-  // this component cannot intercept to park just-in-time. The copy in sessionStorage has to already
-  // be current whenever that navigation happens.
-  $effect(() => { if (plan && before) park(); });
-
   // Re-plan whenever the staged plan changes, and once a minute so a plan that has quietly become
-  // unrideable stops being savable.
+  // unrideable stops being savable. `previewLegs` is cleared the moment `plan` changes (not left
+  // holding the previous plan's legs until the new response lands): `blockers` reads legs to find
+  // an impossible one, and a removed stop's leg is simply absent from a stale list, so a stale
+  // list under-reports blockers rather than over-reporting them. `previewPending`/`previewFailed`
+  // gate Save directly, for the same reason: an in-flight or failed check must not be read as "no
+  // blockers found".
   $effect(() => {
     const current = plan;
-    if (!current || !draft) return;
+    previewLegs = [];
+    if (!current || !draft) { previewPending = false; previewFailed = false; return; }
     let alive = true;
-    const run = () => void previewPlan(current, data.id)
-      .then((legs) => { if (alive) previewLegs = legs; })
-      .catch(() => { if (alive) previewLegs = []; });
+    const run = () => {
+      previewPending = true;
+      void previewPlan(current, data.id)
+        .then((legs) => { if (!alive) return; previewLegs = legs; previewFailed = false; })
+        .catch(() => { if (!alive) return; previewLegs = []; previewFailed = true; })
+        .finally(() => { if (alive) previewPending = false; });
+    };
     run();
     const timer = setInterval(run, 60_000);
     return () => { alive = false; clearInterval(timer); };
@@ -114,7 +139,8 @@
     : []);
 
   const stagedActions: PlanActions = {
-    setStartTime: () => {},
+    // No `setStartTime`: The Route's start time is fixed once the crew is riding it, and
+    // `ItineraryView` only renders that control when `actions.setStartTime` is present.
     setDwell: (stopId, dwellMin) => { if (plan) plan = setDwell(plan, stopId, dwellMin); },
     move: (stopId, dir) => { if (plan) plan = moveStop(plan, stopId, dir); },
     remove: (stopId) => { if (plan) plan = removeStop(plan, stopId); },
@@ -147,10 +173,19 @@
   });
 
   async function save() {
-    if (!plan || blockers.length || saving) return;
+    if (!plan || blockers.length || previewPending || previewFailed || saving) return;
     saving = true; error = '';
     try {
-      await api('/api/plan/commit', { method: 'POST', json: commitPayload(plan, data.id) });
+      const res = await api<{ ok: boolean; impossible: number }>('/api/plan/commit', { method: 'POST', json: commitPayload(plan, data.id) });
+      // The write landed either way: a leftover park from an abandoned trip to the picker has no
+      // reason to survive a save that superseded it.
+      clearParked();
+      if (res.impossible > 0) {
+        // Saved, but a later leg has no train: stay on the editor so the Conductor can fix it and
+        // save again, rather than navigating away as though this were a plain success.
+        error = copy.savedButBroken;
+        return;
+      }
       await goto(`/plan/${data.id}`);
     } catch (err) {
       error = (err as Error).message || copy.saveFailed;
@@ -191,12 +226,16 @@
 
     {#if live}
       <div class="savebar">
-        {#if blockers.length}
+        {#if previewPending}
+          <p data-testid="preview-status">{copy.checkingRoute}</p>
+        {:else if previewFailed}
+          <p data-testid="preview-status" class="error">{copy.checkFailed}</p>
+        {:else if blockers.length}
           <ul class="blockers" data-testid="save-blockers">
             {#each blockers as blocker (blocker.message)}<li>{blocker.message}</li>{/each}
           </ul>
         {/if}
-        <button type="button" onclick={save} disabled={!!blockers.length || saving} data-testid="save-plan">
+        <button type="button" onclick={save} disabled={!!blockers.length || previewPending || previewFailed || saving} data-testid="save-plan">
           {saving ? copy.saving : copy.savePlan}
         </button>
       </div>

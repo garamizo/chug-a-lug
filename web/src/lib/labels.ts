@@ -194,6 +194,8 @@ export const copy = {
   savePlan: 'Save and tell the crew',
   saving: 'Saving…',
   saveFailed: 'Saved partly — check The Route and try again.',
+  checkingRoute: 'Checking the route…',
+  checkFailed: 'Could not check the route. Try again.',
   blockNoPosition: 'Set where the crew is before saving.',
   blockAnchorMissing: 'The crew is at a stop you removed. Move the crew first, or put the stop back.',
   blockNoTrain: 'No train from',

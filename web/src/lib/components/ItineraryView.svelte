@@ -111,8 +111,8 @@
 <header class="it">
   <h1>{itinerary.title}</h1>
   <p class="meta">{copy.eventDate}: <strong>{fmtDate(itinerary.event_date)}</strong></p>
-  {#if canManage}
-    <label class="inline">{copy.startTime} <input type="time" bind:value={startTime} onchange={() => { if (/^([01]\d|2[0-3]):[0-5]\d$/.test(startTime) && startTime !== itinerary.start_time) void actions.setStartTime(startTime); }} data-testid="start-time" /></label>
+  {#if canManage && actions.setStartTime}
+    <label class="inline">{copy.startTime} <input type="time" bind:value={startTime} onchange={() => { if (/^([01]\d|2[0-3]):[0-5]\d$/.test(startTime) && startTime !== itinerary.start_time) void actions.setStartTime?.(startTime); }} data-testid="start-time" /></label>
   {:else}
     <p class="meta">{copy.startTime} <strong>{itinerary.start_time}</strong></p>
   {/if}

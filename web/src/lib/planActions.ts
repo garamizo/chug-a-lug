@@ -7,7 +7,8 @@ import { copy } from '$lib/labels';
 import type { Stop } from '$lib/types';
 
 export type PlanActions = {
-  setStartTime: (hm: string) => void | Promise<void>;
+  /** Absent on the live editor: The Route's start time is fixed once the crew is riding it. */
+  setStartTime?: (hm: string) => void | Promise<void>;
   setDwell: (stopId: string, dwellMin: number) => void | Promise<void>;
   move: (stopId: string, dir: -1 | 1) => void | Promise<void>;
   remove: (stopId: string) => void | Promise<void>;
