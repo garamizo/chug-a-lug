@@ -1,6 +1,7 @@
 import { expect, test, type Page } from '@playwright/test';
 import { clearLockedCrawls, login, seedLockedCrawl } from './helpers';
 import { copy } from '../../src/lib/labels';
+import { fmtDateTime } from '../../src/lib/time';
 import type { NextTrip } from '../../src/lib/types';
 
 const ADMIN = process.env.ADMIN_PASSWORD ?? 'admin-test-password';
@@ -77,7 +78,7 @@ test('the route still reads when PocketBase cannot be reached', async ({ page })
   await page.clock.setFixedTime(new Date('2026-12-26T19:44:30.000Z'));
   // Hard navigation discards liveDay: the stop must now come from disk.
   await page.goto('/route');
-  await expect(page.getByTestId('mirror-notice')).toContainText(`${copy.showingMirror} 1:00 PM.`);
+  await expect(page.getByTestId('mirror-notice')).toHaveText(`${copy.showingMirror} 44 ${copy.minutesAgo}.`);
   await expect(page.getByTestId('stop-row-0')).toContainText('The Whistle Stop');
   await expect(page.getByTestId('stop-row-1')).toContainText('Berwyn Beer Hall');
   // The stops hook recomputes over the seeded leg: BN4 arrives at 2:55, then a 4-minute walk.
@@ -85,13 +86,22 @@ test('the route still reads when PocketBase cannot be reached', async ({ page })
   expect(blocked).toBeGreaterThan(0);
 
   await page.goto('/live');
-  await expect(page.getByTestId('mirror-notice')).toContainText(`${copy.showingMirror} 1:00 PM.`);
+  await expect(page.getByTestId('mirror-notice')).toHaveText(`${copy.showingMirror} 44 ${copy.minutesAgo}.`);
   await expect(page.getByTestId('departure-board')).toContainText('min walk from The Whistle Stop');
   await expect(page.getByTestId('departure-board')).toContainText('2:34 PM');
   await page.getByTestId('drink-beer').click();
   await expect(page.getByRole('alert')).toHaveText(copy.noSignal);
   await page.getByTestId('freight-input').setInputFiles({ name: 'tunnel.mp4', mimeType: 'video/mp4', buffer: Buffer.from('offline video') });
   await expect(page.getByRole('alert')).toContainText(copy.noSignal);
+
+  // A days-old mirror must name its saved date. The itinerary remains readable off the live day.
+  await page.clock.setFixedTime(new Date('2026-12-29T19:00:00.000Z'));
+  await page.goto('/route');
+  await expect(page.getByTestId('mirror-notice')).toHaveText(`${copy.showingMirror} ${fmtDateTime(NOW)}.`);
+  await expect(page.getByTestId('stop-row-0')).toContainText('The Whistle Stop');
+  await page.goto('/live');
+  await expect(page.getByTestId('mirror-notice')).toHaveText(`${copy.showingMirror} ${fmtDateTime(NOW)}.`);
+  await expect(page.getByTestId('no-active-route')).toBeVisible();
 
   await page.unroute(isPocketBase);
   await page.goto('/route');

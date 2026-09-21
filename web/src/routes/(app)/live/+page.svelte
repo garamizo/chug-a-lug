@@ -4,6 +4,7 @@
   import { goto } from '$app/navigation';
   import { copy } from '$lib/labels';
   import { fmtTime } from '$lib/time';
+  import { mirrorSavedWhen } from '$lib/offline';
   import { auth, pb } from '$lib/pb';
   import type { DrinkEntry, DrinkKind } from '$lib/types';
   import { liveDay } from '$lib/live/day.svelte';
@@ -62,7 +63,7 @@
 <svelte:head><title>{copy.live}</title></svelte:head>
 
 {#if liveDay.fromMirror && liveDay.mirrorSavedAt}
-  <p class="stale" data-testid="mirror-notice">{copy.showingMirror} {fmtTime(liveDay.mirrorSavedAt)}.</p>
+  <p class="stale" data-testid="mirror-notice">{copy.showingMirror} {mirrorSavedWhen(liveDay.mirrorSavedAt, liveDay.now)}.</p>
 {/if}
 
 {#if !liveDay.itinerary || !liveDay.isToday}

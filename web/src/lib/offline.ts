@@ -1,6 +1,8 @@
 // Only the locked route belongs on disk: enough to answer "where are we going next". Storage
 // is optional, including when a private window exposes IndexedDB but refuses to open it.
 import type { Itinerary, Leg, Stop } from '$lib/types';
+import { copy } from '$lib/labels';
+import { fmtDateTime } from '$lib/time';
 
 const DB = 'chugalug';
 const STORE = 'mirror';
@@ -12,8 +14,15 @@ export function mirrorPayload(itinerary: Itinerary, stops: Stop[], legs: Leg[], 
   return { savedAt: now.toISOString(), itinerary, stops, legs };
 }
 
-export function mirrorAgeMin(mirror: Mirror, now: Date): number {
+export function mirrorAgeMin(mirror: Pick<Mirror, 'savedAt'>, now: Date): number {
   return Math.max(0, Math.floor((now.getTime() - new Date(mirror.savedAt).getTime()) / 60_000));
+}
+
+export function mirrorSavedWhen(savedAt: string, now: Date): string {
+  const age = mirrorAgeMin({ savedAt }, now);
+  // Minutes help during a short tunnel outage. At an hour, show the saved date and time so
+  // an older plan is easy to place and a days-old copy cannot look like it was saved today.
+  return age < 60 ? `${age} ${copy.minutesAgo}` : fmtDateTime(savedAt);
 }
 
 function close(db: IDBDatabase): void {

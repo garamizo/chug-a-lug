@@ -1,6 +1,7 @@
 <script lang="ts">
   import { copy, label } from '$lib/labels';
-  import { fmtDateTime, fmtTime } from '$lib/time';
+  import { fmtDateTime } from '$lib/time';
+  import { mirrorSavedWhen } from '$lib/offline';
   import { liveDay } from '$lib/live/day.svelte';
   import { recordActions } from '$lib/planActions';
   import ItineraryView from '$lib/components/ItineraryView.svelte';
@@ -8,7 +9,7 @@
 
 <p><a href="/">← {copy.appTitle}</a></p>
 {#if liveDay.fromMirror && liveDay.mirrorSavedAt}
-  <p class="stale" data-testid="mirror-notice">{copy.showingMirror} {fmtTime(liveDay.mirrorSavedAt)}.</p>
+  <p class="stale" data-testid="mirror-notice">{copy.showingMirror} {mirrorSavedWhen(liveDay.mirrorSavedAt, liveDay.now)}.</p>
 {/if}
 {#if !liveDay.itinerary}
   <h1>{label('lockedItinerary')}</h1>
