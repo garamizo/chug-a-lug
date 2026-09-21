@@ -1,0 +1,182 @@
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { fixtureSchedule } from '../fixtures/loadFixture';
+import { copy } from '../../src/lib/labels';
+
+const state = vi.hoisted(() => ({
+  user: { id: 'u1', is_admin: true },
+  itinerary: { id: 'itinerary000001', status: 'locked', event_date: '2026-12-26', start_time: '11:00' } as Record<string, unknown>,
+  /** What the database holds for this itinerary right now. */
+  persisted: ['s2', 's3'] as string[],
+  writes: [] as { op: string; collection: string; id?: string; body?: Record<string, unknown> }[],
+  /** `${op}:${collection}:${id}` -> the error to throw once, so a retry can be simulated. */
+  fail: {} as Record<string, { status: number; message: string }>,
+  found: ['s2', 's3'] as string[]
+}));
+
+vi.mock('$lib/server/pb', () => ({
+  requireUser: vi.fn(async () => state.user),
+  adminPb: vi.fn(async () => ({
+    filter: (raw: string) => raw,
+    collection: (collection: string) => ({
+      getOne: async (id: string) => {
+        if (collection === 'itineraries') return state.itinerary;
+        if (state.found.includes(id)) return { id };
+        throw Object.assign(new Error('not found'), { status: 404 });
+      },
+      getFullList: async () => (collection === 'stops' ? state.persisted.map((id) => ({ id })) : []),
+      create: async (body: Record<string, unknown>) => {
+        const key = `create:${collection}:${body.id ?? ''}`;
+        if (state.fail[key]) throw Object.assign(new Error(state.fail[key].message), { status: state.fail[key].status });
+        state.writes.push({ op: 'create', collection, body });
+        return { id: (body.id as string) ?? `${collection}1`, ...body };
+      },
+      update: async (id: string, body: Record<string, unknown>) => {
+        state.writes.push({ op: 'update', collection, id, body });
+        return { id };
+      },
+      delete: async (id: string) => {
+        const key = `delete:${collection}:${id}`;
+        if (state.fail[key]) throw Object.assign(new Error(state.fail[key].message), { status: state.fail[key].status });
+        state.writes.push({ op: 'delete', collection, id });
+      }
+    })
+  }))
+}));
+vi.mock('$lib/server/metra', () => ({ metra: { getSchedule: vi.fn(async () => fixtureSchedule()) } }));
+vi.mock('$lib/server/recompute', () => ({ recomputeItinerary: vi.fn(async () => ({ legs: 1, impossible: 0 })) }));
+
+const { POST } = await import('../../src/routes/api/plan/commit/+server');
+const { recomputeItinerary } = await import('$lib/server/recompute');
+
+// A real PocketBase id is 15 lowercase alphanumerics, and the endpoint validates that shape — so
+// the fixtures use a real-shaped id rather than a friendly stub.
+const call = (body: unknown) =>
+  POST({ request: new Request('http://x/api/plan/commit', { method: 'POST', body: JSON.stringify(body) }) } as never);
+
+// 12:00 local on the crawl day: an anchor at La Grange still catches BN4 at 14:30.
+const rideable = {
+  itinerary: 'itinerary000001', anchorStopId: 's2', removed: [] as string[],
+  stops: [
+    { id: 's2', order: 1, name: 'The Hop Haus', kind: 'bar', station_id: 'LAGRANGE', station_name: 'La Grange Road', dwell_min: 60, walk_min: 5 },
+    { id: 's3', order: 2, name: 'Berwyn Beer Hall', kind: 'bar', station_id: 'CUS', station_name: 'Union Station', dwell_min: 60, walk_min: 4 }
+  ]
+};
+const newStop = { id: 'abcdefghij01234', isNew: true, order: 3, name: 'Prairie Path Tap', kind: 'bar', station_id: 'CUS', station_name: 'Union Station', dwell_min: 45, walk_min: 6 };
+
+beforeEach(() => {
+  state.user = { id: 'u1', is_admin: true };
+  state.itinerary = { id: 'itinerary000001', status: 'locked', event_date: '2026-12-26', start_time: '11:00' };
+  state.persisted = ['s2', 's3'];
+  state.found = ['s2', 's3'];
+  state.writes = [];
+  state.fail = {};
+  vi.mocked(recomputeItinerary).mockClear().mockResolvedValue({ legs: 1, impossible: 0 });
+  vi.setSystemTime(new Date('2026-12-26T18:00:00.000Z'));
+});
+
+describe('POST /api/plan/commit', () => {
+  it('refuses anyone who is not the Conductor', async () => {
+    state.user = { id: 'u2', is_admin: false };
+    await expect(call(rideable)).rejects.toMatchObject({ status: 403 });
+  });
+
+  it('refuses to edit an itinerary that is not locked', async () => {
+    state.itinerary = { id: 'itinerary000001', status: 'draft', event_date: '2026-12-26', start_time: '11:00' };
+    await expect(call(rideable)).rejects.toMatchObject({ status: 409 });
+  });
+
+  it('refuses a plan that cannot be ridden, and writes nothing', async () => {
+    vi.setSystemTime(new Date('2026-12-26T21:00:00.000Z')); // 15:00 local: BN4 has gone
+    const res = await call(rideable);
+    expect(res.status).toBe(409);
+    expect((await res.json()).blockers[0].code).toBe('impossible_leg');
+    expect(state.writes).toEqual([]);
+  });
+
+  it('refuses when the route holds a stop the editor never saw', async () => {
+    state.persisted = ['s2', 's3', 'sOther']; // someone added a stop while this editor was open
+    const res = await call(rideable);
+    expect(res.status).toBe(409);
+    expect(await res.json()).toMatchObject({ ok: false, stale: true, message: copy.routeMovedOn });
+    expect(state.writes).toEqual([]);
+  });
+
+  it('refuses an id that belongs to no stop of this route', async () => {
+    const res = await call({ ...rideable, removed: ['sFromAnotherItinerary'] });
+    expect(res.status).toBe(409);
+    expect((await res.json()).stale).toBe(true);
+    expect(state.writes).toEqual([]);
+  });
+
+  it('applies the stops, then anchors the crawl, then recomputes', async () => {
+    state.persisted = ['s2', 's3', 'sX'];
+    const res = await call({ ...rideable, removed: ['sX'], stops: [...rideable.stops, newStop] });
+    expect(res.status).toBe(200);
+
+    const order = state.writes.map((w) => `${w.op}:${w.collection}`);
+    expect(order.slice(0, 2)).toEqual(['delete:stops', 'update:stops']);
+    expect(order.indexOf('create:checkins')).toBeGreaterThan(order.lastIndexOf('create:stops'));
+    expect(order[order.length - 1]).toBe('create:event_log');
+    expect(recomputeItinerary).toHaveBeenCalledWith('itinerary000001');
+
+    // The new stop is written under the id the editor generated, not one PocketBase invents.
+    expect(state.writes.find((w) => w.op === 'create' && w.collection === 'stops')!.body)
+      .toMatchObject({ id: 'abcdefghij01234', itinerary: 'itinerary000001', name: 'Prairie Path Tap' });
+    expect(state.writes.find((w) => w.collection === 'checkins')!.body)
+      .toMatchObject({ user: 'u1', stop: 's2', kind: 'at_stop', at: '2026-12-26T18:00:00.000Z' });
+  });
+
+  it('anchors on a stop this very commit created', async () => {
+    const res = await call({ ...rideable, anchorStopId: newStop.id, stops: [...rideable.stops, newStop] });
+    expect(res.status).toBe(200);
+    expect(state.writes.find((w) => w.collection === 'checkins')!.body).toMatchObject({ stop: newStop.id });
+  });
+
+  it('survives a retry after the delete already went through', async () => {
+    state.persisted = ['s2', 's3', 'sX'];
+    state.fail['delete:stops:sX'] = { status: 404, message: "The requested resource wasn't found." };
+    const res = await call({ ...rideable, removed: ['sX'] });
+    expect(res.status).toBe(200); // a stop that is already gone is the state we wanted
+  });
+
+  it('survives a retry after the new stop was already created', async () => {
+    state.fail[`create:stops:${newStop.id}`] = { status: 400, message: 'Failed to create record.' };
+    state.found = ['s2', 's3', newStop.id]; // the previous attempt got that far
+    const res = await call({ ...rideable, stops: [...rideable.stops, newStop] });
+    expect(res.status).toBe(200);
+    // No second record: the collision is resolved by bringing the existing one in line.
+    expect(state.writes.filter((w) => w.op === 'create' && w.collection === 'stops')).toHaveLength(0);
+    expect(state.writes.some((w) => w.op === 'update' && w.id === newStop.id)).toBe(true);
+  });
+
+  it('gives up when the create failed for a reason other than already existing', async () => {
+    state.fail[`create:stops:${newStop.id}`] = { status: 500, message: 'PocketBase is down' };
+    await expect(call({ ...rideable, stops: [...rideable.stops, newStop] })).rejects.toThrow();
+  });
+
+  it('posts the Bulletin under the id the editor gave it, once', async () => {
+    const bulletin = { id: 'bulletin0000001', kind: 'hold' as const, body: 'Holding at The Hop Haus.' };
+    const res = await call({ ...rideable, bulletin });
+    expect((await res.json()).broadcast).toBe('bulletin0000001');
+
+    state.writes = [];
+    state.fail['create:broadcasts:bulletin0000001'] = { status: 400, message: 'Failed to create record.' };
+    state.found = ['s2', 's3', 'bulletin0000001'];
+    const again = await call({ ...rideable, bulletin });
+    expect((await again.json()).broadcast).toBe('bulletin0000001');
+    expect(state.writes.some((w) => w.collection === 'broadcasts')).toBe(false); // not said twice
+  });
+
+  it('skips the Bulletin when the Conductor skipped it', async () => {
+    const res = await call(rideable);
+    expect((await res.json()).broadcast).toBeNull();
+    expect(state.writes.some((w) => w.collection === 'broadcasts')).toBe(false);
+  });
+
+  it('reports a leg the recompute could not ride, even though the save stands', async () => {
+    vi.mocked(recomputeItinerary).mockResolvedValue({ legs: 2, impossible: 1 });
+    const res = await call(rideable);
+    expect(res.status).toBe(200);
+    expect(await res.json()).toMatchObject({ ok: true, impossible: 1 });
+  });
+});

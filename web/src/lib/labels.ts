@@ -222,4 +222,6 @@ export const copy = {
   outbound: 'Chicago → Aurora',
   offLine: 'Off the BNSF line',
   direction: 'Direction',
+  routeMovedOn: 'The Route changed while you were editing. Reload and make the change again.',
+  savedButBroken: 'Saved, but a leg after here has no train. Fix it and save again.',
 } as const;
