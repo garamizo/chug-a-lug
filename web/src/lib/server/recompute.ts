@@ -2,7 +2,7 @@
 // two quick edits cannot interleave their delete/create passes.
 import { adminPb } from './pb';
 import { parseHm } from '$lib/time';
-import { computeLegs, findAnchor } from './plan';
+import { activeAnchor, computeLegs, findAnchor } from './plan';
 import { impossibleFromAnchor } from '$lib/live/cohesion';
 import type { Itinerary, Stop } from '$lib/types';
 
@@ -37,8 +37,10 @@ async function doRecompute(itineraryId: string) {
     throw err;
   }
   const stops = await pb.collection('stops').getFullList<Stop>({ filter: pb.filter('itinerary = {:id}', { id: itineraryId }), sort: 'order,created' });
-  // Only the live day has an anchor; a draft has no Conductor position and plans from its start time.
-  const anchor = it.status === 'locked' ? await findAnchor(pb, itineraryId) : null;
+  // Only the live day has an anchor; a draft has no Conductor position and plans from its start
+  // time. `activeAnchor` narrows further: even a locked route plans from its start time, exactly
+  // like a draft, unless the anchor's check-in was actually made on the event's own day.
+  const anchor = it.status === 'locked' ? activeAnchor(it.event_date, await findAnchor(pb, itineraryId)) : null;
   const computed = await computeLegs({
     date: it.event_date, startMin: parseHm(it.start_time), anchor,
     stops: stops.map((s) => ({ id: s.id, order: s.order, station_id: s.station_id, dwell_min: s.dwell_min ?? 60, walk_min: s.walk_min ?? 5 }))

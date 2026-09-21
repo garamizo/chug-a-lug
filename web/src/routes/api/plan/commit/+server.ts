@@ -1,7 +1,7 @@
 import { error, json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import { adminPb, requireUser } from '$lib/server/pb';
-import { computeLegs, readStops } from '$lib/server/plan';
+import { activeAnchor, computeLegs, readStops } from '$lib/server/plan';
 import { recomputeItinerary } from '$lib/server/recompute';
 import { cohesionBlockers } from '$lib/live/cohesion';
 import { copy } from '$lib/labels';
@@ -116,12 +116,17 @@ export const POST: RequestHandler = async ({ request }) => {
   // real delete this request has to make.
   const toRemove = removed.filter((stopId) => persisted.has(stopId));
 
-  // 2. Validate.
+  // 2. Validate. `activeAnchor` only lets the position steer the plan on the event's own day —
+  //    opening The Route early to fix a closed bar must not anchor the train search to a timestamp
+  //    that isn't even the same service day (see `activeAnchor`'s own comment). The Conductor still
+  //    has to have picked a position to save at all, day or not, so `cohesionBlockers` below keeps
+  //    reading the raw `anchorStopId`, not the gated one.
   const at = new Date().toISOString();
+  const anchor = activeAnchor(itinerary.event_date, anchorStopId ? { stopId: anchorStopId, at } : null);
   const legs = await computeLegs({
     date: itinerary.event_date,
     startMin: parseHm(itinerary.start_time),
-    anchor: anchorStopId ? { stopId: anchorStopId, at } : null,
+    anchor,
     stops: planStops
   });
   const blockers = cohesionBlockers({

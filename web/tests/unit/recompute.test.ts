@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { recomputeItinerary } from '$lib/server/recompute';
 import { fixtureSchedule } from '../fixtures/loadFixture';
 
@@ -74,6 +74,11 @@ describe('recomputeItinerary', () => {
 });
 
 describe('recomputeItinerary with an anchor', () => {
+  // The anchor only steers the plan on the event's own day (`activeAnchor`, `$lib/server/plan.ts`):
+  // real "today" has to actually be 2026-12-26 for these check-ins to take effect at all.
+  beforeEach(() => { vi.useFakeTimers(); vi.setSystemTime(new Date('2026-12-26T15:00:00.000Z')); });
+  afterEach(() => { vi.useRealTimers(); });
+
   it('plans the tail of the day from the Conductor position', async () => {
     state.stops = [
       { id: 's2', order: 2, station_id: 'LAGRANGE', dwell_min: 60, walk_min: 5 },

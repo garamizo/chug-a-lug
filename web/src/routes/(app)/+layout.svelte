@@ -13,20 +13,26 @@
   const showBanner = $derived(!!here?.stop && page.url.pathname !== '/live');
   // Re-ask for trains the instant the leg we are counting down changes — a Conductor's correction
   // or a saved route change must not wait out the 30 s poll, since the whole app now reads this
-  // same board. Spelled out as two ids (not `here` itself) so this does not re-fire on every tick
-  // of `now`. The very first time `here` resolves is skipped: `liveDay.start()`'s own initial chain
+  // same board. `here` is a fresh object every time anything about the route reloads (a save
+  // rewrites every leg, not just the one that changed), so the effect compares the two ids it
+  // actually cares about rather than reacting to `here` itself — otherwise a save that leaves the
+  // crawl's position untouched would still re-fire this on every one of those reloads. The very
+  // first time `here` resolves is skipped the same way: `liveDay.start()`'s own initial chain
   // already fetches trains for that first position, and firing here too would race it with a
   // second, redundant request for the same answer.
+  let lastKey: string | null = null;
   let coveredByStart = true;
   $effect(() => {
     const stopId = here?.stop?.id;
-    const onwardId = here?.onwardStop?.id;
+    const key = stopId === undefined ? null : `${stopId}:${here?.onwardStop?.id ?? ''}`;
     if (coveredByStart) {
-      if (stopId === undefined) return;
+      if (key === null) return;
       coveredByStart = false;
+      lastKey = key;
       return;
     }
-    void onwardId;
+    if (key === lastKey) return;
+    lastKey = key;
     void liveDay.loadTrains();
   });
 </script>

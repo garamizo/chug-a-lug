@@ -4,7 +4,7 @@ import { error } from '@sveltejs/kit';
 import type PocketBase from 'pocketbase';
 import { metra } from './metra';
 import { recomputeLegs } from '$lib/metra/plan';
-import { localToUtc, minutesOfDay } from '$lib/time';
+import { localToUtc, minutesOfDay, todayInTz } from '$lib/time';
 import type { Checkin, Segment } from '$lib/types';
 
 export type PlanStop = { id: string; order: number; station_id: string; dwell_min: number; walk_min: number };
@@ -56,6 +56,26 @@ export async function findAnchor(pb: PocketBase, itineraryId: string): Promise<{
   });
   const hit = rows.items.find((c) => c.expand?.user?.is_admin && c.stop);
   return hit ? { stopId: hit.stop, at: hit.at } : null;
+}
+
+/**
+ * The anchor only steers the planner on the event's own day. `at` is a real timestamp — the moment
+ * someone clicked "set here" — and `computeLegs` turns it into minutes since the *event date's*
+ * midnight via `minutesOfDay`. Off-day (a Conductor opening The Route a week early to fix a bar that
+ * closed) that timestamp is nowhere near the event date's midnight, so it comes out as a huge,
+ * meaningless offset, and the schedule search it feeds effectively picks whichever trip happens to
+ * be earliest that day — unrelated to where the check-in was actually made. Off-day an itinerary
+ * plans from `start_time` instead, exactly like a draft: `recomputeItinerary`, `/api/plan/preview`
+ * and `/api/plan/commit` all call this rather than deciding it three separate ways, or a preview
+ * could disagree with what a save then does. The `checkins` row itself is still written either way;
+ * this only decides whether the planner reads it.
+ */
+export function activeAnchor(
+  eventDate: string,
+  anchor: { stopId: string; at: string } | null,
+  now: Date = new Date()
+): { stopId: string; at: string } | null {
+  return anchor && eventDate === todayInTz(now) ? anchor : null;
 }
 
 /** Leg times for a set of stops, in UTC. Pure apart from reading the cached GTFS schedule. */

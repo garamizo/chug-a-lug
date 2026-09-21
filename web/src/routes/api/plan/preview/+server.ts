@@ -1,7 +1,7 @@
 import { error, json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import { adminPb, requireUser } from '$lib/server/pb';
-import { computeLegs, readStops } from '$lib/server/plan';
+import { activeAnchor, computeLegs, readStops } from '$lib/server/plan';
 import { parseHm } from '$lib/time';
 import type { Itinerary } from '$lib/types';
 
@@ -17,13 +17,15 @@ export const POST: RequestHandler = async ({ request }) => {
   const pb = await adminPb();
   const itinerary = await pb.collection('itineraries').getOne<Itinerary>(id);
   // The preview's anchor is "now": the save stamps its own moment, and the editor re-previews as the
-  // clock moves, so a plan that has quietly become unrideable stops being savable.
-  const anchorAt = body.anchorStopId ? new Date().toISOString() : null;
+  // clock moves, so a plan that has quietly become unrideable stops being savable. `activeAnchor`
+  // then only lets it steer the plan on the event's own day, exactly as a save would.
+  const rawAnchor = body.anchorStopId ? { stopId: body.anchorStopId, at: new Date().toISOString() } : null;
+  const anchor = activeAnchor(itinerary.event_date, rawAnchor);
   const legs = await computeLegs({
     date: itinerary.event_date,
     startMin: parseHm(itinerary.start_time),
-    anchor: body.anchorStopId && anchorAt ? { stopId: body.anchorStopId, at: anchorAt } : null,
+    anchor,
     stops
   });
-  return json({ legs, anchorAt });
+  return json({ legs, anchorAt: anchor?.at ?? null });
 };
