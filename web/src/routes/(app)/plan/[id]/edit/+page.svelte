@@ -179,7 +179,7 @@
   /** The Save button: drafts the Bulletin from what actually changed and opens the sheet. The
    *  commit itself waits for the sheet's answer (sent, edited, or skipped) in `commit()`. */
   function askToTell() {
-    if (!plan || !before || blockers.length || previewPending || previewFailed || saving) return;
+    if (!plan || !before || blockers.length || previewPending || previewFailed || saving || pending) return;
     const departAt = (stopId: string) => previewLegs.find((l) => l.from_stop === stopId)?.depart_at ?? null;
     const changes = planDiff(before, snapshot(plan), departAt);
     // The id is minted here, once, so a retried save cannot post the same Bulletin twice.
@@ -251,7 +251,7 @@
             {#each blockers as blocker (blocker.message)}<li>{blocker.message}</li>{/each}
           </ul>
         {/if}
-        <button type="button" onclick={askToTell} disabled={!!blockers.length || previewPending || previewFailed || saving} data-testid="save-plan">
+        <button type="button" onclick={askToTell} disabled={!!blockers.length || previewPending || previewFailed || saving || !!pending} data-testid="save-plan">
           {saving ? copy.saving : copy.savePlan}
         </button>
       </div>

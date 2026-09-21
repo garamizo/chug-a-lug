@@ -62,6 +62,30 @@ test('the Conductor can skip the Bulletin and still save', async ({ page }) => {
   await expect(page.getByTestId('pinned-bulletin')).toHaveCount(0);
 });
 
+test('Save cannot replace the drafted Bulletin while its sheet is still open', async ({ page }) => {
+  page.on('dialog', (d) => d.accept());
+  await login(page, 'E2E Sheet-Lock Conductor', ADMIN);
+  await clearLockedCrawls();
+  const seeded = await seedLockedCrawl({
+    ownerName: 'E2E Sheet-Lock Conductor', eventDate: DATE, startTime: '12:00',
+    departAt: '2026-12-26T20:34:00.000Z', arriveAt: '2026-12-26T20:49:00.000Z', extraVenueAtFirstStation: true
+  });
+
+  await page.goto(`/plan/${seeded.itineraryId}/edit`);
+  await page.getByTestId('set-here-0').click();
+  await page.getByTestId('remove-1').click();
+  await page.getByTestId('save-plan').click();
+
+  const sheet = page.getByTestId('bulletin-sheet');
+  await expect(sheet).toBeVisible();
+  // A second Save while the first draft's sheet is still up — a double-click, or another edit
+  // made behind it — must not be able to mint a fresh draft the Conductor never sees, leaving the
+  // sheet showing stale words under a new id. The control is disabled outright, so the drafted
+  // Bulletin underneath it cannot be replaced.
+  await expect(page.getByTestId('save-plan')).toBeDisabled();
+  await expect(sheet.getByTestId('bulletin-body')).toHaveValue(/The Second Round is annulled\./);
+});
+
 test('the Conductor can post a Bulletin without changing the plan', async ({ page }) => {
   await login(page, 'E2E Plain Conductor', ADMIN);
   await clearLockedCrawls();

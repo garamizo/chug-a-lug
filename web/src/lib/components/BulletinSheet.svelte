@@ -2,7 +2,20 @@
   // The Bulletin the save drafted. The Conductor sends it, edits it, or saves without it.
   import { copy } from '$lib/labels';
   let { text, onsend, onskip }: { text: string; onsend: (body: string) => void; onskip: () => void } = $props();
-  let body = $state(text);
+  // Sentinel-initialized (not read from `text` directly) so svelte-check doesn't flag
+  // state_referenced_locally; the effect below does the real sync. `{#if pending}` in the caller
+  // does not remount this component when one draft replaces another (a truthy object to a new
+  // truthy object), so the component has to notice the prop changing on its own rather than
+  // relying on the caller to keep Save disabled while the sheet is open — a second draft's words
+  // must replace the first's, not sit unseen under the first's still-mounted textarea.
+  let syncedText: string | undefined = $state(undefined);
+  let body = $state('');
+  $effect(() => {
+    if (text !== syncedText) {
+      syncedText = text;
+      body = text;
+    }
+  });
 </script>
 
 <section class="sheet" data-testid="bulletin-sheet">
