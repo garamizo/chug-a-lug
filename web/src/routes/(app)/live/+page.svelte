@@ -7,7 +7,7 @@
   import { auth, pb } from '$lib/pb';
   import type { DrinkEntry, DrinkKind } from '$lib/types';
   import { liveDay } from '$lib/live/day.svelte';
-  import { prepare } from '$lib/live/upload';
+  import { prepare, uploadBatch } from '$lib/live/upload';
   import DepartureBoard from '$lib/components/DepartureBoard.svelte';
   import AlertBubbles from '$lib/components/AlertBubbles.svelte';
   import TabRow from '$lib/components/TabRow.svelte';
@@ -42,9 +42,11 @@
     error = '';
     uploading = true;
     try {
-      const { default: compressImage } = await import('browser-image-compression');
-      for (const file of Array.from(files)) {
-        const prepared = await prepare(file, (f) => compressImage(f, { maxWidthOrHeight: 2000, initialQuality: 0.8, useWebWorker: true }));
+      error = await uploadBatch(Array.from(files), async (file) => {
+        const prepared = await prepare(file, async (f) => {
+          const { default: compressImage } = await import('browser-image-compression');
+          return compressImage(f, { maxWidthOrHeight: 2000, initialQuality: 0.8, useWebWorker: true });
+        });
         const form = new FormData();
         form.set('user', user.id);
         form.set('stop', stop.id);
@@ -52,10 +54,7 @@
         form.set('taken_at', prepared.takenAt);
         form.set('file', prepared.file);
         await pb.collection('media').create(form);
-      }
-      await liveDay.loadMedia();
-    } catch (err) {
-      error = err instanceof Error && err.message === copy.uploadTooBig ? copy.uploadTooBig : copy.uploadFailed;
+      }, () => liveDay.loadMedia());
     } finally { uploading = false; }
   }
 </script>

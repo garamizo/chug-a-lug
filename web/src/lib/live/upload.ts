@@ -8,6 +8,9 @@ export const MAX_BYTES = 94_371_840; // 90 MB: the Cloudflare free-plan ceiling 
 export type Prepared = { file: File; kind: 'image' | 'video'; takenAt: string };
 
 export async function prepare(file: File, compress: (f: File) => Promise<File>): Promise<Prepared> {
+  if (!file.type.startsWith('image/') && !file.type.startsWith('video/')) {
+    throw new Error(copy.uploadUnsupportedType);
+  }
   if (file.size > MAX_BYTES) throw new Error(copy.uploadTooBig);
   const kind: 'image' | 'video' = file.type.startsWith('video/') ? 'video' : 'image';
   const takenAt = new Date(file.lastModified || Date.now()).toISOString();
@@ -18,4 +21,24 @@ export async function prepare(file: File, compress: (f: File) => Promise<File>):
     // A browser that will not give us a canvas is not a reason to lose the photo.
     return { file, kind, takenAt };
   }
+}
+
+// One rejected file must not strand the rest of a phone's selection.
+export async function uploadBatch(
+  files: File[], send: (file: File) => Promise<void>, refresh: () => Promise<void>
+): Promise<string> {
+  let sent = 0;
+  const reasons = new Set<string>();
+  for (const file of files) {
+    try {
+      await send(file);
+      sent++;
+    } catch (err) {
+      reasons.add(err instanceof Error && (err.message === copy.uploadTooBig || err.message === copy.uploadUnsupportedType)
+        ? err.message : copy.uploadFailed);
+    }
+  }
+  await refresh();
+  const failed = files.length - sent;
+  return failed ? `${sent} ${copy.uploadSent} ${failed} ${copy.uploadNotSent} ${[...reasons].join(' ')}` : '';
 }
