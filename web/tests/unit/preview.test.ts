@@ -1,9 +1,9 @@
 import { describe, expect, it, vi } from 'vitest';
 
-const sent = vi.hoisted(() => ({ path: '', body: null as unknown }));
+const sent = vi.hoisted(() => ({ path: '', body: null as unknown, signal: undefined as AbortSignal | undefined }));
 vi.mock('$lib/api', () => ({
-  api: async (path: string, init: { json?: unknown }) => {
-    sent.path = path; sent.body = init.json;
+  api: async (path: string, init: { json?: unknown; signal?: AbortSignal }) => {
+    sent.path = path; sent.body = init.json; sent.signal = init.signal;
     return { anchorAt: '2026-12-26T18:00:00.000Z', legs: [{
       fromStopId: 'a', toStopId: 'b', kind: 'train',
       readyAt: '2026-12-26T18:00:00.000Z', departAt: '2026-12-26T18:30:00.000Z', arriveAt: '2026-12-26T18:59:00.000Z',
@@ -23,6 +23,15 @@ const plan = {
 };
 
 describe('previewPlan', () => {
+  it('bounds a hanging preview with a ten-second abort signal', async () => {
+    const controller = new AbortController();
+    const timeout = vi.spyOn(AbortSignal, 'timeout').mockReturnValue(controller.signal);
+    try {
+      await previewPlan(plan, 'itinerary000001');
+      expect(timeout).toHaveBeenCalledWith(10_000);
+      expect(sent.signal).toBe(controller.signal);
+    } finally { timeout.mockRestore(); }
+  });
   it('sends only what the planner needs', async () => {
     await previewPlan(plan, 'itinerary000001');
     expect(sent.path).toBe('/api/plan/preview');

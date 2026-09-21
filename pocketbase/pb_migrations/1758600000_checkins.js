@@ -1,5 +1,5 @@
-// Where the crawl is. M2 writes only the Conductor's correction from the Departure Board; the rules
-// already allow any user to create their own, so M3's Punch needs no migration.
+// The Conductor's anchor, written in M3 only by the plan commit endpoint. These original rules
+// allow a user's own check-in; Crew Punch and a check-in roster are outside M3's scope.
 migrate((app) => {
   const users = app.findCollectionByNameOrId('users')
   const stops = app.findCollectionByNameOrId('stops')

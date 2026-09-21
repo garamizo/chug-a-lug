@@ -50,6 +50,16 @@ describe('activeAnchor', () => {
   });
 
   it('does not steer the plan when the check-in was made on a different day', async () => {
+    const oldAnchor = { ...anchor, at: '2026-12-19T20:00:00.000Z' };
+    const now = new Date('2026-12-26T15:00:00.000Z');
+    const active = activeAnchor('2026-12-26', oldAnchor, now);
+    expect(active).toBeNull();
+    const anchored = await computeLegs({ date: '2026-12-26', startMin: 660, stops, anchor: active });
+    const unanchored = await computeLegs({ date: '2026-12-26', startMin: 660, stops });
+    expect(anchored).toEqual(unanchored);
+  });
+
+  it('does not steer the plan when read off the event day', async () => {
     // A Conductor opening The Route a week early to fix a bar that closed.
     const now = new Date('2026-12-19T15:00:00.000Z');
     expect(activeAnchor('2026-12-26', anchor, now)).toBeNull();
@@ -61,6 +71,13 @@ describe('activeAnchor', () => {
 
   it('is null when there is no anchor to begin with', () => {
     expect(activeAnchor('2026-12-26', null, new Date('2026-12-26T15:00:00.000Z'))).toBeNull();
+  });
+
+  it('uses the anchor’s Chicago date across UTC midnight', () => {
+    const now = new Date('2026-12-26T20:00:00.000Z');
+    expect(activeAnchor('2026-12-26', { ...anchor, at: '2026-12-26T05:59:00.000Z' }, now)).toBeNull();
+    const lateAnchor = { ...anchor, at: '2026-12-27T05:59:00.000Z' };
+    expect(activeAnchor('2026-12-26', lateAnchor, now)).toEqual(lateAnchor);
   });
 });
 

@@ -35,8 +35,8 @@ export type StopLike = Pick<Stop, 'id' | 'order' | 'name' | 'kind' | 'station_id
 export type StopPhoto = RecordModel & { stop: string; file: string; source: 'google' | 'user'; attribution: string };
 
 /**
- * Where someone is. M2 writes only the Conductor's `at_stop` correction from the Departure Board;
- * M3 opens the same collection to the Crew for Punch and the roster.
+ * The Conductor's anchor: M3 writes `at_stop` only through the plan commit endpoint.
+ * Crew Punch and a check-in roster are outside M3's scope.
  */
 export type Checkin = RecordModel & {
   user: string; stop: string; kind: 'at_stop' | 'on_train'; at: string;

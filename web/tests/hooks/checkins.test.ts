@@ -1,5 +1,5 @@
 // The checkins rules against a live PocketBase: anyone signed in may read, you may only create
-// your own. M2 writes only the Conductor's correction, but the rules already allow M3's Punch.
+// your own. M3 uses check-ins only for the Conductor's anchor through the plan commit endpoint.
 import { beforeAll, describe, expect, it } from 'vitest';
 import { ADMIN_LOGIN_PASSWORD, get, loginToken, post, truncate } from './setup';
 

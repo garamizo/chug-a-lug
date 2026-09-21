@@ -59,7 +59,8 @@ export async function findAnchor(pb: PocketBase, itineraryId: string): Promise<{
 }
 
 /**
- * The anchor only steers the planner on the event's own day. `at` is a real timestamp — the moment
+ * The anchor only steers the planner when both today and its own Chicago date are the event day.
+ * `at` is a real timestamp — the moment
  * someone clicked "set here" — and `computeLegs` turns it into minutes since the *event date's*
  * midnight via `minutesOfDay`. Off-day (a Conductor opening The Route a week early to fix a bar that
  * closed) that timestamp is nowhere near the event date's midnight, so it comes out as a huge,
@@ -75,7 +76,7 @@ export function activeAnchor(
   anchor: { stopId: string; at: string } | null,
   now: Date = new Date()
 ): { stopId: string; at: string } | null {
-  return anchor && eventDate === todayInTz(now) ? anchor : null;
+  return anchor && eventDate === todayInTz(now) && todayInTz(new Date(anchor.at)) === eventDate ? anchor : null;
 }
 
 /** Leg times for a set of stops, in UTC. Pure apart from reading the cached GTFS schedule. */

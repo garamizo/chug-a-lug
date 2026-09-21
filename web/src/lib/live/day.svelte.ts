@@ -82,9 +82,13 @@ export class LiveDay {
     }
   }
 
-  async loadAnchor() {
+  async loadAnchor(itineraryId = this.itinerary?.id) {
+    if (!itineraryId) { this.anchor = null; return; }
     try {
-      const rows = await pb.collection('checkins').getList<Checkin>(1, 20, { filter: pb.filter('kind = "at_stop"'), sort: '-at', expand: 'user' });
+      const rows = await pb.collection('checkins').getList<Checkin>(1, 20, {
+        filter: pb.filter('kind = "at_stop" && stop.itinerary = {:id}', { id: itineraryId }),
+        sort: '-at', expand: 'user'
+      });
       const hit = rows.items.find((c) => c.expand?.user?.is_admin && c.stop);
       this.anchor = hit ? { stopId: hit.stop, at: hit.at } : null;
     } catch { this.anchor = null; }
@@ -139,22 +143,33 @@ export class LiveDay {
   /** Starts the pollers and subscriptions. Returns the teardown; safe to call once per layout. */
   start(): () => void {
     const refreshRoute = () => void this.loadRoute().catch(() => {});
+    let stopped = false;
+    let refreshTimer: ReturnType<typeof setTimeout> | undefined;
+    // One Save produces many stop/leg events. Reload after the burst settles.
+    const queueRefresh = () => {
+      if (stopped) return;
+      clearTimeout(refreshTimer);
+      refreshTimer = setTimeout(() => { refreshTimer = undefined; refreshRoute(); }, 750);
+    };
     void this.loadRoute().then(() => { void this.loadBulletins(); void this.loadTrains(); void this.loadDrinks(); void this.loadMedia(); }).catch(() => {});
     void this.loadAlerts();
     void fetchStatus().then((s) => { this.rtFetchedAt = s.feeds?.tripupdates?.fetchedAt ?? null; this.mode = s.mode; }).catch(() => {});
     const tick = setInterval(() => { this.now = new Date(); }, 15_000);
     const poll = setInterval(() => { refreshRoute(); void this.loadTrains(); void this.loadAlerts(); void this.loadDrinks(); void this.loadMedia(); }, 30_000);
     const unsubs = [
-      subscribe('itineraries', '', refreshRoute),
-      subscribe('stops', '', refreshRoute),
-      subscribe('legs', '', refreshRoute),
+      subscribe('itineraries', '', queueRefresh),
+      subscribe('stops', '', queueRefresh),
+      subscribe('legs', '', queueRefresh),
       subscribe('checkins', '', () => void this.loadAnchor()),
       subscribe('broadcasts', '', () => void this.loadBulletins()),
       subscribe('broadcast_acks', '', () => void this.loadBulletins()),
       subscribe('drink_entries', '', () => void this.loadDrinks()),
       subscribe('media', '', () => void this.loadMedia())
     ];
-    return () => { clearInterval(tick); clearInterval(poll); unsubs.forEach((u) => u()); };
+    return () => {
+      stopped = true; clearTimeout(refreshTimer);
+      clearInterval(tick); clearInterval(poll); unsubs.forEach((u) => u());
+    };
   }
 }
 

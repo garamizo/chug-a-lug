@@ -20,15 +20,13 @@
   let { data } = $props();
   let draft = $state<Draft | null>(null);
   let error = $state('');
+  let saveError = $state('');
   let plan = $state<StagedPlan | null>(null);
   // The plan as it stood when the editor opened: what the Bulletin is diffed against (Task 14), and
   // what has to survive the trip to the venue picker along with the staged change itself.
   let before = $state<PlanSnapshot | null>(null);
   let previewLegs = $state<Leg[]>([]);
-  // Whether the currently-staged plan has been checked against the planner yet, and whether that
-  // check came back broken. Both keep Save disabled: rendering `blockers` off a stale or empty
-  // `previewLegs` (mid-flight, or after a failed check) would read a genuinely impossible route as
-  // clean, since an absent leg cannot be flagged "impossible".
+  // Wait for an in-flight preview, but treat a failed check as a warning: the server validates Save.
   let previewPending = $state(false);
   let previewFailed = $state(false);
   let saving = $state(false);
@@ -59,7 +57,7 @@
           // The shared live day owns the "newest check-in belonging to an admin" rule; force a
           // fresh read so the staged plan starts from where the Conductor actually is, not from
           // whatever `liveDay` happened to have loaded first.
-          await liveDay.loadAnchor();
+          await liveDay.loadAnchor(data.id);
           plan = stagePlan(draft.stops, liveDay.anchor?.stopId ?? null);
           before = snapshot(plan);
         }
@@ -100,7 +98,7 @@
   }
 
   $effect(() => {
-    draft = null; error = ''; plan = null; before = null; previewLegs = [];
+    draft = null; error = ''; saveError = ''; plan = null; before = null; previewLegs = [];
     void load();
     // A staged edit must not be clobbered by the realtime reload, so on The Route only the first
     // load builds the plan (see `load`); the watcher keeps the draft path live as before.
@@ -111,11 +109,8 @@
   // unrideable stops being savable. `previewLegs` is cleared the moment `plan` changes (not left
   // holding the previous plan's legs until the new response lands): `blockers` reads legs to find
   // an impossible one, and a removed stop's leg is simply absent from a stale list, so a stale
-  // list under-reports blockers rather than over-reporting them. `previewPending` gates Save for
-  // the same reason, but only for that first, unverified check of a given plan: the periodic
-  // re-check exists to catch a plan quietly going bad while the Conductor sits still, not to grey
-  // out Save once a minute while they are actively editing. It keeps showing the last good legs
-  // and only replaces them — or sets `previewFailed`, which still gates Save — once it returns.
+  // list under-reports blockers rather than over-reporting them. Every in-flight check gates Save.
+  // Periodic checks keep the last good legs; a failure warns and leaves validation to the server.
   $effect(() => {
     const current = plan;
     previewLegs = [];
@@ -123,7 +118,7 @@
     let alive = true;
     let first = true;
     const run = () => {
-      if (first) previewPending = true;
+      previewPending = true;
       void previewPlan(current, data.id)
         .then((legs) => { if (!alive) return; previewLegs = legs; previewFailed = false; })
         .catch(() => { if (!alive) return; previewFailed = true; if (first) previewLegs = []; })
@@ -179,7 +174,7 @@
   /** The Save button: drafts the Bulletin from what actually changed and opens the sheet. The
    *  commit itself waits for the sheet's answer (sent, edited, or skipped) in `commit()`. */
   function askToTell() {
-    if (!plan || !before || blockers.length || previewPending || previewFailed || saving || pending) return;
+    if (!plan || !before || blockers.length || previewPending || saving || pending) return;
     const departAt = (stopId: string) => previewLegs.find((l) => l.from_stop === stopId)?.depart_at ?? null;
     const changes = planDiff(before, snapshot(plan), departAt);
     // The id is minted here, once, so a retried save cannot post the same Bulletin twice.
@@ -188,7 +183,7 @@
 
   async function commit(bulletin: { id: string; kind: BulletinKind; body: string } | null) {
     if (!plan) return;
-    pending = null; saving = true; error = '';
+    pending = null; saving = true; saveError = '';
     try {
       const res = await api<{ ok: boolean; impossible: number }>('/api/plan/commit', {
         method: 'POST', json: { ...commitPayload(plan, data.id), bulletin }
@@ -199,12 +194,12 @@
       if (res.impossible > 0) {
         // Saved, but a later leg has no train: stay on the editor so the Conductor can fix it and
         // save again, rather than navigating away as though this were a plain success.
-        error = copy.savedButBroken;
+        saveError = copy.savedButBroken;
         return;
       }
       await goto(`/plan/${data.id}`);
     } catch (err) {
-      error = (err as Error).message || copy.saveFailed;
+      saveError = err instanceof TypeError ? copy.noSignal : (err as Error).message || copy.saveFailed;
     } finally {
       saving = false;
     }
@@ -242,16 +237,18 @@
 
     {#if live}
       <div class="savebar">
+        {#if saveError}<p class="error" role="alert">{saveError}</p>{/if}
         {#if previewPending}
           <p data-testid="preview-status">{copy.checkingRoute}</p>
         {:else if previewFailed}
           <p data-testid="preview-status" class="error">{copy.checkFailed}</p>
-        {:else if blockers.length}
+        {/if}
+        {#if blockers.length}
           <ul class="blockers" data-testid="save-blockers">
             {#each blockers as blocker (blocker.message)}<li>{blocker.message}</li>{/each}
           </ul>
         {/if}
-        <button type="button" onclick={askToTell} disabled={!!blockers.length || previewPending || previewFailed || saving || !!pending} data-testid="save-plan">
+        <button type="button" onclick={askToTell} disabled={!!blockers.length || previewPending || saving || !!pending} data-testid="save-plan">
           {saving ? copy.saving : copy.savePlan}
         </button>
       </div>

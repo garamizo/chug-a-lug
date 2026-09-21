@@ -1,5 +1,6 @@
 import { expect, test } from '@playwright/test';
 import { clearLockedCrawls, deleteStopDirect, latestAnchor, login, seedLockedCrawl } from './helpers';
+import { copy } from '../../src/lib/labels';
 
 const ADMIN = process.env.ADMIN_PASSWORD ?? 'admin-test-password';
 const CREW = process.env.CREW_PASSWORD ?? 'crew-test-password';
@@ -95,12 +96,34 @@ test('a 409 stale after someone else edits The Route survives a reload without r
   await deleteStopDirect(seeded.secondStopId);
   await page.getByTestId('save-plan').click();
   await page.getByTestId('bulletin-skip').click();
-  await expect(page.getByRole('alert')).toContainText('Reload and make the change again');
+  await expect(page.locator('.savebar').getByRole('alert')).toContainText('Reload and make the change again');
 
   // Reload, exactly as the message says to. A plan parked earlier in this session must not come
   // back — only a fresh plan, read from what the database actually holds now, is safe to show.
   await page.reload();
   await expect(page.getByText('Berwyn Beer Hall')).toBeHidden();
+});
+
+test('a failed preview warns but still allows the server to accept Save', async ({ page }) => {
+  const seeded = await openEditor(page, 'E2E Preview Failure Conductor', ADMIN);
+  await page.route('**/api/plan/preview', (route) => route.abort('failed'));
+  await page.getByTestId('set-here-0').click();
+  await expect(page.getByTestId('preview-status')).toContainText(copy.checkFailed);
+  await expect(page.getByTestId('save-plan')).toBeEnabled();
+  await page.getByTestId('save-plan').click();
+  await page.getByTestId('bulletin-skip').click();
+  await expect(page).toHaveURL(new RegExp(`/plan/${seeded.itineraryId}$`));
+});
+
+test('a transport failure shows No signal beside Save', async ({ page }) => {
+  await openEditor(page, 'E2E Offline Save Conductor', ADMIN);
+  await page.getByTestId('set-here-0').click();
+  await expect(page.getByTestId('save-plan')).toBeEnabled();
+  await page.route('**/api/plan/commit', (route) => route.abort('failed'));
+  await page.getByTestId('save-plan').click();
+  await page.getByTestId('bulletin-skip').click();
+  await expect(page.locator('.savebar').getByRole('alert')).toHaveText(copy.noSignal);
+  await expect(page.getByTestId('save-plan')).toBeEnabled();
 });
 
 test('edits made before adding a stop survive the trip to the venue picker', async ({ page }) => {

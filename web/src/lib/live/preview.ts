@@ -12,6 +12,7 @@ type PreviewResponse = {
 export async function previewPlan(plan: StagedPlan, itineraryId: string): Promise<Leg[]> {
   const res = await api<PreviewResponse>('/api/plan/preview', {
     method: 'POST',
+    signal: AbortSignal.timeout(10_000),
     json: {
       itinerary: itineraryId,
       anchorStopId: plan.anchorStopId,
