@@ -63,6 +63,21 @@ restart without a rebuild.
   `web/`, because Node resolves ESM imports from the importing file's location.
 - **Times are UTC in the database and in every API payload.** Rendering to America/Chicago happens
   only through `$lib/time.ts`; "today" on the live day means Chicago's today (`todayInTz`).
+- **The anchor drives two things at once**: `currentStop()`'s override and where `recomputeLegs`
+  starts the remaining day. It is the newest admin `checkins` row. The live view only uses it on the
+  event day, and `activeAnchor` applies the same Chicago-date gate to preview, commit and recompute.
+  Off-day edits plan from `start_time`; converting an off-day anchor into event-day minutes wrecks
+  the timetable. Change one path and check the others.
+- **`ItineraryView` writes nothing itself.** It calls its `actions` prop: a draft passes
+  `recordActions` for immediate writes, the locked-route editor stages changes, and only Save through
+  `POST /api/plan/commit` persists those edits. Do not sneak a PocketBase write into a shared control.
+- **Nothing may plan legs except `computeLegs`.** Preview, commit and recompute share it so a preview
+  cannot disagree with a save. The Save gate and server also share `impossibleFromAnchor`: impossible
+  legs behind the crew are history, not blockers.
+- **Svelte `$state` values are proxies; IndexedDB cannot structured-clone them.** Mirror the raw
+  PocketBase responses before assigning them into state, or storage can fail while the screen works.
+- **Seeding stops fires the recompute hook.** The planner replaces seeded leg times with its own
+  answer. A test clock based on the fixture's hand-written departure may be watching the wrong train.
 
 ## Conventions
 

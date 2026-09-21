@@ -134,31 +134,47 @@ Goal: by early December, one locked itinerary that everyone has seen and voted o
 
 Goal: nobody misses a train, nobody is lost, and the plan can change without chaos.
 
-**Must have (MVP)**
-- **Departure banner** pinned at the top of every screen: current stop, next train (scheduled and live ETA
-  from GTFS-realtime), walk time to the platform, and "departs in". Two thresholds: a first warning about
-  10 minutes out (amber, settle the tab), then the leave-now alert (full-width red, vibration, sound if allowed).
+**Built in M3**
+
+- **Departure Board** is read-only: the full board on Live and a compact banner on every other
+  signed-in screen on the event day. It shows the current stop, next train (scheduled and live ETA),
+  walk time to the platform and countdown, with Last Call and All Aboard warnings.
 - Next-train logic works from the static schedule when the live feed is missing or stale, and says so.
-- **Check-in**: two big buttons, "At the bar" and "On the train". The roster shows who is where and who
-  hasn't checked in since the last leg. Straggler alert to the admin.
-- **Where the crawl is** comes from the clock over the locked itinerary, with a one-tap Conductor
-  correction on the Departure Board. No GPS: browsers cannot track location with the screen off, and a
-  clock is something anyone can check. Location sharing, if it ever lands, is foreground-only with a wake
-  lock during train legs. See the M2 design doc, section 3.
-- **Plan edits** by the admin: reroute, extend a stop, cancel a stop, add a stop. Downstream legs recompute;
-  every screen updates within seconds; a broadcast message is pinned until each person taps "Got it".
-  Everything lands in the event log.
-- **Drink log**: one tap per drink type (beer, wine, cocktail, shot, water, food) at the current stop.
-- **Media uploads**: photos and short videos from the phone with no labeling by the user. The server
-  tags each upload with the admin's current stop, taken from the latest shared position or check-in.
-  The admin can fix a tag later in the album.
-- Plan and station data cached offline so the itinerary is readable in a tunnel.
+- **Where the crawl is** comes from the clock over the locked itinerary. The Conductor corrects it in
+  the route editor; the same save adjusts the remaining plan. The anchor is the newest admin
+  `checkins` row, and only steers the planner on the event's own day (Chicago time). Before that, edits
+  plan from the route's start time. No per-person check-in, GPS tracking, positions collection or
+  straggler alert: ten people who can see each other do not need an app to say where they are.
+- **Plan edits** by the Conductor on The Route are staged until one Save through `POST /api/plan/commit`:
+  move, extend, remove or add stops and set the crawl's position. Preview and save use the same planner;
+  Save requires a position and rideable legs from there onward. Legs behind the crew are history and
+  may look broken. The endpoint checks for changes to the persisted stop set before validating the
+  route and returns 409, "The Route changed", on a conflict. Editor-generated stop and Bulletin ids
+  let the same payload be retried after a partial save without duplicating a bar or Bulletin. This is
+  a sequence of writes, not a database transaction; a retry can add another anchor and event-log row.
+  The staged plan and its original snapshot are parked in sessionStorage only for the venue-picker
+  round trip, consumed on return, ignored after an hour and cleared on a successful save.
+- **Bulletins** are drafted from the route diff for the Conductor to send, edit or skip at Save; the
+  Conductor can also compose a message. The newest unacknowledged Bulletin is pinned across screens
+  until that person taps "Got it". Plan edits and posted Bulletins go into the event log.
+- **Crew Board** lists names, the Conductor role, today's drink count and who acknowledged the latest
+  Bulletin. It does not track individual locations.
+- **The Tab** logs beer, wine, cocktail, shot, water or food at the current stop, with undo for your own
+  entries. The Tab and Freight are available only while the position source is `clock` or `override`;
+  a stop still appears before and after the crawl, but those controls stay closed.
+- **Freight** uploads photos and videos tagged with the stop the uploader's shared board shows. The
+  server checks that the stop belongs to a locked route; an invalid tag is cleared without losing the
+  upload. Images are compressed in the browser (the original is used if compression fails), videos
+  pass through, and each selected file must be at most 90 MB. Unsupported file types are refused with
+  a specific message; one failed file does not stop the rest of the batch.
+- **Offline reading**: the app shell is precached and the locked itinerary, stops and legs are mirrored
+  into IndexedDB. Live shows the saved copy and its age when PocketBase is unreachable. Open the app
+  online first to populate it. Writes are deliberately not queued; failed actions must be retried online.
 
 **Nice to have**
 - Mini map with the three lines and live train dots.
 - Meeting point per stop shown on the broadcast when someone taps "I'm lost".
 - Home station per user and a personal "last train home" deadline on their departure banner.
-- "Left early" button so the straggler alert ignores them.
 - Round tracker / expense split.
 - Push notifications for people who did add the app to their home screen (iOS 16.4+).
 
@@ -217,7 +233,8 @@ Recommendation, not yet decided. See the references doc for the alternatives con
 Data model sketch: `user`, `itinerary` (draft or locked), `stop` (venue, station, dwell, place_id),
 `stop_photo` (file, source, attribution), `leg` (computed: walk, one train, or two trains via a downtown
 transfer; segments json), `vote`, `comment`, `checkin`, `broadcast`, `drink_entry`, `media` (file, taken_at,
-stop, tagged_by), `event_log`, `position`. Stations come straight from GTFS.
+stop, tagged_by), `event_log`. M3 also adds `broadcast_acks` for each person's Bulletin acknowledgements;
+there is no crew positions collection. Stations come straight from GTFS.
 
 ## Roadmap
 
@@ -230,7 +247,7 @@ re-reads the feed rather than hard-coding it.
 | M0 Skeleton | early Oct | Repo skeleton, PocketBase + SvelteKit running locally, shared-password login, Cloudflare Tunnel live at chugalug.app |
 | M1 Planning | end Oct | Diagram, stop picker, venue cards with Google photos, drafts with real train times, votes, comments, approval vote — done 2026-09-19 (see docs/superpowers/plans/2026-09-19-m1-planning.md) |
 | M2 Metra proxy | mid Nov | BNSF realtime proxy with recording, Departure Board with Last Call and All Aboard, service alerts and the header menu, schedule fallback — done 2026-09-20 (see docs/superpowers/plans/2026-09-20-m2-metra-proxy.md) |
-| M3 Live | end Nov | Check-in, roster, plan edits, broadcasts, drink log, media upload, offline cache |
+| M3 Live | end Nov | Clock-derived position with Conductor anchor, Crew Board, staged route edits, Bulletins, Tab, Freight, offline route mirror — done 2026-09-20 (see [plan](docs/superpowers/plans/2026-09-20-m3-live.md)) |
 | M4 Simulation | Sat Dec 5 | Sim clock, replay, scripted GPS; full sim run at home |
 | M5 Wrap-up | Dec 12 | Album, scoreboard, awards, downloads |
 | Freeze + field test | Sat Dec 12 or 19 | Real train ride with 2-3 phones; bug fixes only after this |
@@ -255,12 +272,12 @@ Numbered to match the earlier review; each is reversible.
    means 30 detail calls and 150 photo calls, inside the 1,000 free calls a month for each. The key lives
    only on the home box with a monthly cap set in the Google console. Accepted caveat: Google's terms say
    Places photos may not be cached; the realistic downside for a private app is a disabled key.
-4. **Location sharing uses the browser location prompt.** That prompt is the Geolocation API; it works
-   foreground-only with wake lock, which you accepted. Each person toggles sharing; the admin is on by default.
-5. **Media is tagged with the admin's location, not the uploader's.** Users upload with no labels.
-   The server stamps each file with the stop the admin is at, from the latest shared position, or the
-   latest check-in if the position is stale. No EXIF reading needed, which also sidesteps iPhones stripping
-   GPS from browser uploads. The admin fixes stragglers in the album.
+4. **The clock and one Conductor anchor locate the crawl.** M3 deliberately cut per-person check-ins,
+   location sharing and straggler alerts. Corrections belong in the staged route editor, where the
+   remaining train legs can be fixed at the same time. The Departure Board is read-only.
+5. **Media is tagged from the shared crawl clock.** The uploader's board supplies the stop; the server
+   accepts it only if it belongs to a locked route, otherwise keeps the file untagged. No GPS or EXIF
+   location lookup. Admin retagging is permitted by the collection rules; the album UI belongs to M5.
 6. **Login is a shared crew password plus your name.** Replaces the earlier phone-number plan. The admin
    hands out one password in the family chat and keeps a second admin password for the Conductor role.
    The first login with a name creates that identity; the same name on another phone is the same person.

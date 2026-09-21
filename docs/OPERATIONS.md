@@ -68,11 +68,42 @@ dev (the PocketBase hook calls the SvelteKit server with that secret and URL aft
   feed per change in `header.timestamp`. Run it on a Saturday for M4's replay. The folder is git-ignored
   and bind-mounted, so it survives `docker compose up`. The script lives at `web/scripts/record.mjs`
   because the repo root has no `package.json` for Node to resolve the protobuf bindings from.
-- Where the crawl is on the live day comes from the clock, not GPS. The Conductor can correct it from the
-  Departure Board; that writes a `checkins` record and everyone's board follows within seconds.
+- The Departure Board follows the shared crawl clock. M3 moved position corrections into the route
+  editor; the board itself is read-only (see below).
 
 - If venue photos fail with `Google 403`, enable **Places API (New)** for the project in the Google Cloud
   console (APIs & Services → Library → Places API (New)); the key itself is fine.
+
+## Live day (M3)
+
+- Four new collections: `broadcasts` (Conductor Bulletins), `broadcast_acks` (one acknowledgement per
+  person per Bulletin), `drink_entries` (the Tab), and `media` (Freight). M3 reuses `checkins` for the
+  newest admin anchor and `event_log` for plan edits and Bulletins. There is no positions collection,
+  per-crew check-in or straggler alert.
+- Correct the crawl's position in The Route's editor and Save. The anchor changes both the shared
+  board's position and where planning the remaining legs starts, only on the event's Chicago date.
+  Off-day edits use the route's scheduled start time. The Tab and Freight open only for a `clock` or
+  `override` position; merely having a current stop is not enough before or after the crawl.
+- Save calls `POST /api/plan/commit`. It reconciles the persisted stop ids before validating rideability
+  from the anchor onward; impossible legs behind the crew do not block Save. A 409 "The Route changed"
+  means reload and make the change again. Reconciliation checks stop membership, not a version of
+  every field: it is not a general concurrent-edit lock.
+- Saves span several PocketBase requests. Retrying the same payload after a partial failure reuses
+  editor-minted stop and Bulletin ids, skips already-completed deletes and cannot duplicate those
+  records. It can add another `checkins` anchor and `event_log` entry; the newest anchor wins. Do not
+  describe this as an atomic transaction. Unsaved edits are parked only for the venue-picker trip,
+  expire after one hour, and are cleared on success; this is not durable draft recovery.
+- Freight files live in PocketBase's `data/pb_data` storage alongside venue photos and are included
+  in the nightly PocketBase backup and host snapshot. Include uploads when estimating backup size.
+  The application and `media.file` field both cap each file at 94,371,840 bytes (90 MiB, labeled 90 MB
+  in the UI). This cap leaves room below the Cloudflare free-plan tunnel request limit; it is an
+  application setting, not an inherent PocketBase limit. Images are compressed client-side, videos
+  pass through. A rejected file does not stop the rest of its batch; unsupported types get a specific
+  error. The client supplies the board's stop, and the hook clears invalid tags but keeps the file.
+- Before the crawl, open the app online on each phone so the service worker precaches the shell and
+  IndexedDB receives the locked route. When PocketBase cannot be reached, Live uses that mirror and
+  shows its age (a saved date/time after an hour). A fresh browser without a mirror has no saved route.
+  Offline writes are deliberately not queued; retry failed actions after connectivity returns.
 
 ## Daily
 - `just logs` to tail everything. `docker compose ps` should show the services `Up` and pocketbase `healthy`.
@@ -86,6 +117,10 @@ dev (the PocketBase hook calls the SvelteKit server with that secret and URL aft
   delete the stray record (or rename `name` / `name_key` on the right one).
 - Force everyone to log in again (leaked password): change `CREW_PASSWORD` in `.env`, then in the
   PocketBase admin UI → Collections → `users` → Options → Auth token → regenerate the secret.
+- The login endpoint reads `LOGIN_RATE_LIMIT` from PocketBase's environment: default **20 attempts
+  per IP per 15 minutes**. Only `web/playwright.config.ts` raises it (to 500) for the e2e harness.
+  Production keeps the default unless explicitly configured; do not copy the harness override into
+  production to solve a test failure.
 
 ## Deploy a change
     git pull
