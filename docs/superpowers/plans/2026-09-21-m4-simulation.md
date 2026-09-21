@@ -412,7 +412,7 @@ leases. Service and storage behavior have dedicated unit suites in addition to t
 Tests were written and observed failing before implementation.
 
 Task 3 is also implemented: isolated Compose launcher/status/stop commands, private run credentials,
-strict ownership/config checks, and a clock-first timetable seed. Tasks 4–11 remain pending. In particular,
+strict ownership/config checks, and a clock-first timetable seed. Task 4 is implemented as recorded below; tasks 5–11 remain pending. In particular,
 action ordering and live-path write-lease integration are specified but still belong to task 7;
 this clock foundation does not yet change event timestamps, enable replay, or expose rehearsal UI.
 
@@ -439,10 +439,39 @@ The one-instance Docker smoke test used 15174/18094 and passed:
 - Starting an already-running instance and stop/start both preserved record IDs and paused clock state.
 - Shutdown removed only the rehearsal containers/network; the run data remains for inspection.
 
-The smoke instance is stopped. No GPS or phone rehearsal was introduced. Task 4 (recording metadata
-and reproducible fixture builder) is next; the full live-clock/replay/UI rehearsal remains pending.
+The smoke instance is stopped. No GPS or phone rehearsal was introduced. Recording metadata and fixture progress is recorded below; the full live-clock/replay/UI rehearsal
+remains pending.
 
 Task 3 final gate: 436 unit tests, 42 browser e2e tests and 42 hook tests passed;
 Svelte/type check reported zero errors and zero warnings. Compose production build and the
 start/status/stop/resume smoke checks passed. `just` argument quoting was checked with a shell
 metacharacter in the run name; it remains a literal argument for validation.
+
+### Task 4 implementation and evidence
+
+Version-1 manifests pin the original Chicago date/window and the archived GTFS SHA-256. Recording
+starts only after the zip is archived and usable BNSF service is verified. Snapshot/manifest writes
+are atomic; successful polls require an existing regular snapshot file, and failed disk writes do
+not mark a snapshot as saved. Repeated successful polls retain their own timestamps even when the
+protobuf header does not change. Complete append-log rows are authoritative after an interruption.
+
+The recorder has one in-flight tick and enforces the 30-second minimum separately per feed, including
+slow-tick cases. Failed observation writes stop the CLI. Explicit legacy indexing preserves snapshot
+names, requires a matching zip/date/window, and marks freshness as conservative without poll history.
+The inspection command streams snapshots one at a time and reports unmatched entities and corrupt
+files; ordinary index loading reads metadata without decoding an entire day's snapshots.
+
+The deterministic fixture has six protobufs, a matching zip, manifest, and 24 poll observations.
+It covers normal/delayed/canceled BNSF trips, missing positions, independent feed outages, alert
+expiry, successful unchanged polls and UTC midnight. Optional protobuf fields remain absent.
+Regeneration was verified byte-identical. The checked-in fixture README records the exact file list.
+No real feed/token or train recording was used in this validation.
+
+Task 5 (disk-backed replay and independent freshness) is next. The application still has no replay
+provider or recording-backed launcher; tasks 5–11 and phone rehearsal remain pending.
+
+Task 4 final validation: 461 unit tests, 42 browser e2e tests and 42 PocketBase hook tests passed;
+Svelte/type check reported zero errors and zero warnings. Fixture regeneration was byte-identical.
+A local CLI smoke test with synthetic HTTP feeds verified GTFS archiving, three successful poll
+observations, signal shutdown, and clean exit when the window expires during setup. No live service
+was started or changed by this task.

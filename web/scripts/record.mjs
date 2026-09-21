@@ -1,63 +1,58 @@
 #!/usr/bin/env node
-// Records Metra's realtime feeds to data/recordings/<name>/ until interrupted. M4's replayer reads
-// these back. Run it on a Saturday: `just record saturday`.
-import { mkdir, writeFile, readFile } from 'node:fs/promises';
-import { dirname, join, resolve } from 'node:path';
+// Records real observations on their original service date; never rebases or resets a recording.
+import { readFile } from 'node:fs/promises';
+import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import GtfsRealtimeBindings from 'gtfs-realtime-bindings';
-
-// This lives under web/ so Node resolves gtfs-realtime-bindings from web/node_modules (the repo root
-// has no package.json). Paths come from this file's own location rather than the working directory,
-// so .env and data/ are found wherever it is launched from.
-const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..');
-
-const { FeedMessage } = GtfsRealtimeBindings.transit_realtime;
-const FEEDS = ['positions', 'tripupdates', 'alerts'];
-
-const name = process.argv[2];
-if (!name || !/^[A-Za-z0-9_-]+$/.test(name)) {
-  console.error('Usage: just record <name>   (letters, digits, dash, underscore)');
-  process.exit(1);
+import { parseEnv } from 'node:util';
+import { createRecording, validRecordingId, atomicRecordingWrite, appendPoll } from '../src/lib/server/metra/recording.ts';
+import { createRecorder } from '../src/lib/server/metra/recorder.ts';
+import { recordingCopy } from '../src/lib/labels.ts';
+const root = fileURLToPath(new URL('../../', import.meta.url));
+const [recordingId, serviceDate, windowStart, windowEnd, ...extra] = process.argv.slice(2);
+if (!recordingId || !validRecordingId(recordingId) || !serviceDate || !windowStart || !windowEnd || extra.length) {
+  console.error(recordingCopy.recordUsage); process.exit(1);
 }
-
-// Read .env without a dependency: KEY=value lines, ignoring comments.
-const envFile = join(ROOT, '.env');
-const env = { ...process.env };
 try {
-  for (const line of (await readFile(envFile, 'utf8')).split('\n')) {
-    const m = /^\s*([A-Z_][A-Z0-9_]*)\s*=\s*(.*)\s*$/.exec(line);
-    if (m && !env[m[1]]) env[m[1]] = m[2].replace(/^["']|["']$/g, '');
+  let fileEnv = {};
+  try { fileEnv = parseEnv(await readFile(join(root, '.env'), 'utf8')); }
+  catch (error) { if (error.code !== 'ENOENT') throw error; }
+  const env = { ...fileEnv, ...process.env };
+  if (!env.METRA_API_TOKEN) throw new Error(recordingCopy.noToken);
+  if (!(Date.parse(windowStart) <= Date.now() && Date.now() < Date.parse(windowEnd))) throw new Error(recordingCopy.outsideWindow);
+  const source = new URL(env.GTFS_URL || 'https://schedules.metrarail.com/gtfs/schedule.zip');
+  let zip;
+  if (source.protocol === 'file:') zip = await readFile(source);
+  else {
+    if (!['http:', 'https:'].includes(source.protocol)) throw new Error(recordingCopy.invalid);
+    const response = await fetch(source, { signal: AbortSignal.timeout(30_000) });
+    if (!response.ok) throw new Error(recordingCopy.failed);
+    zip = new Uint8Array(await response.arrayBuffer());
   }
-} catch { /* no .env: rely on the environment */ }
-
-const token = env.METRA_API_TOKEN;
-const base = env.METRA_RT_BASE || 'https://gtfspublic.metrarr.com/gtfs/public';
-if (!token) { console.error('METRA_API_TOKEN is not set; nothing to record.'); process.exit(1); }
-
-const dir = join(ROOT, 'data', 'recordings', name);
-await mkdir(dir, { recursive: true });
-const seen = new Map();
-let written = 0;
-
-async function tick() {
-  for (const feed of FEEDS) {
-    try {
-      const res = await fetch(`${base}/${feed}`, { headers: { Authorization: `Bearer ${token}` } });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const bytes = new Uint8Array(await res.arrayBuffer());
-      const ts = Number(FeedMessage.decode(bytes).header?.timestamp ?? 0);
-      if (seen.get(feed) === ts) continue;
-      seen.set(feed, ts);
-      await writeFile(join(dir, `${ts}.${feed}.pb`), bytes);
-      written++;
-    } catch (err) {
-      console.warn(`[record] ${feed}: ${err.message}`);
-    }
+  const { dir, manifest } = await createRecording(join(root, 'data/recordings'), { recordingId, serviceDate, windowStart, windowEnd }, zip);
+  const recorder = createRecorder({ base: env.METRA_RT_BASE || 'https://gtfspublic.metrarr.com/gtfs/public', token: env.METRA_API_TOKEN,
+    saveSnapshot: (file, bytes) => atomicRecordingWrite(dir, file, bytes),
+    appendObservation: observation => appendPoll(dir, manifest, observation) });
+  let timer, stopping = false, current = Promise.resolve();
+  async function stop(failed = false) {
+    if (failed) process.exitCode = 1;
+    if (stopping) return;
+    stopping = true; clearInterval(timer);
+    await current.catch(() => { failed = true; process.exitCode = 1; });
+    console.log(failed ? recordingCopy.failed : recordingCopy.stopped);
+    if (failed) process.exitCode = 1;
   }
-  process.stdout.write(`\r${written} snapshots in data/recordings/${name}  `);
+  function poll() {
+    if (stopping) return;
+    if (Date.now() >= Date.parse(manifest.windowEnd)) { void stop(); return; }
+    current = recorder.tick();
+    void current.then(() => console.log(JSON.stringify({ recordingId, snapshots: recorder.snapshotsWritten() })), () => stop(true));
+  }
+  process.on('SIGINT', () => void stop()); process.on('SIGTERM', () => void stop());
+  console.log(recordingCopy.started);
+  // Register before the first poll so a window that closed during setup can clear it.
+  timer = setInterval(poll, recorder.pollMs); poll();
+} catch (error) {
+  // Only our fixed messages may leave this process; fetch errors can include secrets/URLs.
+  console.error(Object.values(recordingCopy).includes(error.message) ? error.message : recordingCopy.failed);
+  process.exitCode = 1;
 }
-
-console.log(`Recording ${FEEDS.join(', ')} to data/recordings/${name}. Ctrl-C to stop.`);
-await tick();
-const timer = setInterval(tick, 30_000);
-process.on('SIGINT', () => { clearInterval(timer); console.log(`\nStopped. ${written} snapshots.`); process.exit(0); });

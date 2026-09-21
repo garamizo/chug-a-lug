@@ -1,0 +1,14 @@
+{
+  "version": 1,
+  "recordingId": "recording",
+  "serviceDate": "2026-12-26",
+  "windowStart": "2026-12-26T18:20:00.000Z",
+  "windowEnd": "2026-12-27T00:10:00.000Z",
+  "gtfs": {
+    "file": "schedule.zip",
+    "sha256": "76d75796f5612eb6a7f5f7e83354ae532c493c6fb41d1b65460d0c9c5056f881"
+  },
+  "observationsAvailable": true,
+  "observationStart": "2026-12-26T18:20:00.000Z",
+  "observationEnd": "2026-12-27T00:00:00.000Z"
+}

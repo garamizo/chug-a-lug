@@ -40,8 +40,17 @@ logs SERVICE="":
 backup:
     bash scripts/backup.sh
 
-record NAME:
-    node web/scripts/record.mjs "{{NAME}}"
+record NAME DATE WINDOW_START WINDOW_END:
+    node web/scripts/record.mjs {{quote(NAME)}} {{quote(DATE)}} {{quote(WINDOW_START)}} {{quote(WINDOW_END)}}
+
+index-recording NAME ZIP DATE WINDOW_START WINDOW_END:
+    node web/scripts/index-recording.mjs {{quote(NAME)}} {{quote(ZIP)}} {{quote(DATE)}} {{quote(WINDOW_START)}} {{quote(WINDOW_END)}}
+
+inspect-recording NAME:
+    node web/scripts/index-recording.mjs {{quote(NAME)}}
+
+sim-fixture:
+    node web/scripts/generate-sim-fixture.mjs
 
 # sim.mjs discards inherited dotenv values; only .env.sim's allowlisted settings are read.
 sim RUN SOURCE="fixture":

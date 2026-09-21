@@ -295,3 +295,17 @@ export const simSetup = {
   stopped: 'Rehearsal stopped. Its data is preserved.',
   lanNote: 'LAN HTTP supports functional checks; phone PWA/offline checks require dedicated HTTPS origins.',
 } as const;
+
+export const recordingCopy = {
+  invalid: 'Invalid or incompatible recording metadata, schedule, or snapshot reference.',
+  exists: 'This recording already has metadata. Refusing to replace its archive or history.',
+  recordUsage: 'Usage: just record NAME DATE WINDOW_START_UTC WINDOW_END_UTC',
+  indexUsage: 'Usage: just index-recording NAME MATCHING_ZIP DATE WINDOW_START_UTC WINDOW_END_UTC',
+  noToken: 'METRA_API_TOKEN is not set; nothing to record.',
+  outsideWindow: 'The recording window must include the current time.',
+  started: 'Recording with an archived timetable. Ctrl-C stops after the current poll.',
+  stopped: 'Recording stopped. Snapshots and poll history are preserved.',
+  failed: 'Recording stopped after a storage or setup failure. Inspect the recording directory.',
+  indexed: 'Legacy recording indexed. Freshness is conservative because poll history is unavailable.',
+  generated: 'Deterministic rehearsal recording generated.',
+} as const;

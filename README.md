@@ -204,7 +204,7 @@ Sim mode has to exist before the live phase is considered done, because the real
 - **Shared position**: rehearse the same clock-derived stop and Conductor anchor as the live day. No GPS, waypoint player or per-person tracking.
 - **Schedule-only fallback**: use scheduled departures when no recording exists; do not invent vehicle positions.
 - **Isolation**: a rehearsal uses its own database and origin. Replay uses the recording's original service date and archived GTFS; operational timeouts and cache ages remain on wall time.
-- M4 is in progress: the server clock and isolated timetable launcher are implemented; replay, live-clock integration and UI controls are still pending. See the [design](docs/superpowers/specs/2026-09-21-m4-simulation-design.md) and [implementation plan](docs/superpowers/plans/2026-09-21-m4-simulation.md).
+- M4 is in progress: the server clock, isolated timetable launcher, and recording metadata/fixtures are implemented; replay, live-clock integration and UI controls are still pending. See the [design](docs/superpowers/specs/2026-09-21-m4-simulation-design.md) and [implementation plan](docs/superpowers/plans/2026-09-21-m4-simulation.md).
 - A real dry run on a December Saturday with two or three phones, before the freeze.
 
 ### Isolated timetable rehearsal (M4 in progress)
@@ -239,6 +239,42 @@ five allowlisted settings before the first start. LAN access requires an explici
 both reachable origins. LAN HTTP supports functional checks; phone PWA/offline checks require
 separate HTTPS origins and an independently configured reverse proxy. The launcher supplies no
 production tunnel configuration.
+
+### Recording and indexing train feeds
+
+Recording requires Node 22.18+, `METRA_API_TOKEN`, and an explicit original Chicago service date and
+UTC window that includes the current time. For example, when recording on December 26:
+
+```bash
+just record saturday 2026-12-26 2026-12-26T16:00:00Z 2026-12-27T04:00:00Z
+```
+
+The command first archives `GTFS_URL` (or Metra's default static zip), verifies BNSF service for that
+date, and creates `data/recordings/saturday/`. It refuses an existing name. Each feed is polled at
+least 30 real seconds apart; duplicate snapshots still get successful poll observations. Ctrl-C or
+SIGTERM finishes the in-flight tick before stopping. Fetch/decode/snapshot-write failures become
+failed observations; an observation-storage failure stops recording. Tokens and raw errors are not
+written into the recording.
+
+To index an old snapshot-only folder, supply the **known matching** static zip, original date and
+window explicitly; the indexer cannot establish the historical provenance of a zip for you:
+
+```bash
+just index-recording saturday /path/to/matching-schedule.zip 2026-12-26 2026-12-26T16:00:00Z 2026-12-27T04:00:00Z
+just inspect-recording saturday
+just sim-fixture
+```
+
+Legacy metadata declares that poll history is unavailable, so future replay will use conservative
+snapshot-timestamp freshness. Inspection reports truncated trailing poll data, missing/corrupt
+snapshots, and unmatched trip entities. Snapshot names remain `<headerEpoch>.<feed>.pb`. New
+recordings add `manifest.json`, `schedule.zip` and `polls.ndjson`. If a crash leaves manifest observation
+bounds behind the append log, the complete poll rows remain authoritative. Incomplete final JSON is
+ignored and reported; malformed complete rows are rejected.
+
+`just sim-fixture` regenerates the small [deterministic fixture](web/tests/fixtures/sim/recording/README.md).
+Playback and recording-backed launcher support are still pending; `just sim` currently accepts only
+`fixture` and starts the timetable scenario.
 
 ---
 
@@ -283,7 +319,7 @@ re-reads the feed rather than hard-coding it.
 | M1 Planning | end Oct | Diagram, stop picker, venue cards with Google photos, drafts with real train times, votes, comments, approval vote — done 2026-09-19 (see docs/superpowers/plans/2026-09-19-m1-planning.md) |
 | M2 Metra proxy | mid Nov | BNSF realtime proxy with recording, Departure Board with Last Call and All Aboard, service alerts and the header menu, schedule fallback — done 2026-09-20 (see docs/superpowers/plans/2026-09-20-m2-metra-proxy.md) |
 | M3 Live | end Nov | Clock-derived position with Conductor anchor, Crew Board, staged route edits, Bulletins, Tab, Freight, offline route mirror — done 2026-09-20 (see [plan](docs/superpowers/plans/2026-09-20-m3-live.md)) |
-| M4 Simulation | Sat Dec 5 | Shared sim clock, feed replay and timetable fallback, Conductor anchor; full rehearsal at home — [spec and plan](docs/superpowers/plans/2026-09-21-m4-simulation.md) in progress (clock authority and isolated launcher implemented) |
+| M4 Simulation | Sat Dec 5 | Shared sim clock, feed replay and timetable fallback, Conductor anchor; full rehearsal at home — [spec and plan](docs/superpowers/plans/2026-09-21-m4-simulation.md) in progress (clock, launcher, and recording format implemented) |
 | M5 Wrap-up | Dec 12 | Album, scoreboard, awards, downloads |
 | Freeze + field test | Sat Dec 12 or 19 | Real train ride with 2-3 phones; bug fixes only after this |
 | Launch | Sat Dec 26 | Crawl |
