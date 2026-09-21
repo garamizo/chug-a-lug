@@ -18,7 +18,7 @@
       {#if unread}<span class="badge">{unread}</span>{/if}
     </button>
     <button type="button" class="item" disabled>
-      <span class="label">{copy.drinkScoreboard}</span><span class="soon">{copy.comingInM3}</span>
+      <span class="label">{copy.drinkScoreboard}</span><span class="soon">{copy.comingInM5}</span>
     </button>
     <button type="button" class="item" onclick={() => go('/route')}>
       <span class="label">{copy.theRoute}</span>
