@@ -38,12 +38,21 @@ test('the header carries no date: the phone already shows one', async ({ page })
   await expect(page.getByRole('banner')).not.toContainText(/Sat|Sun|Mon|Dec/);
 });
 
-test('the menu holds logout, and the M3 items are visible but disabled', async ({ page }) => {
+test('the menu holds logout, opens the Crew Board, and keeps the Drink scoreboard visible but disabled', async ({ page }) => {
   await login(page);
   await page.getByTestId('menu').click();
   await expect(page.getByTestId('logout')).toBeVisible();
-  await expect(page.getByRole('button', { name: /Drink scoreboard/ })).toBeDisabled();
-  await expect(page.getByRole('button', { name: /Crew Board/ })).toBeDisabled();
+  const scoreboard = page.getByRole('button', { name: /Drink scoreboard/ });
+  await expect(scoreboard).toBeVisible();
+  await expect(scoreboard).toBeDisabled();
+
+  const crewBoard = page.getByRole('button', { name: 'Crew Board', exact: true });
+  await expect(crewBoard).toBeVisible();
+  await expect(crewBoard).toBeEnabled();
+  await crewBoard.click();
+  await expect(page).toHaveURL(/\/crew$/);
+  await expect(page.getByRole('heading', { name: 'Crew Board', exact: true })).toBeVisible();
+  await expect(page.getByTestId('crew-row').filter({ hasText: 'E2E Desk' })).toBeVisible();
 });
 
 test('the menu is not offered before signing in', async ({ page }) => {

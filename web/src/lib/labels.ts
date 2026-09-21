@@ -234,6 +234,8 @@ export const copy = {
   gotIt: 'Got it',
   fromTheConductor: 'From the Conductor',
   postBulletin: 'Post a Bulletin',
+  seenBulletin: 'Seen',
+  unseenBulletin: 'Not seen',
   // Menu and notifications
   menu: 'Menu',
   close: 'Close the menu',

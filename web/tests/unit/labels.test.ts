@@ -2,6 +2,11 @@ import { describe, it, expect } from 'vitest';
 import { labels, label, copy } from '../../src/lib/labels';
 
 describe('labels', () => {
+  it('names the Crew Board and its Bulletin statuses', () => {
+    expect(labels.userRoster).toBe('Crew Board');
+    expect(copy.seenBulletin).toBe('Seen');
+    expect(copy.unseenBulletin).toBe('Not seen');
+  });
   it('maps developer terms to the README glossary', () => {
     expect(label('planningPhase')).toBe('Route Planner');
     expect(label('lockedItinerary')).toBe('The Route');

@@ -28,8 +28,8 @@
         <span class="label">{copy.postBulletin}</span>
       </button>
     {/if}
-    <button type="button" class="item" disabled>
-      <span class="label">{labels.userRoster}</span><span class="soon">{copy.comingInM3}</span>
+    <button type="button" class="item" onclick={() => go('/crew')} data-testid="menu-crew">
+      <span class="label">{labels.userRoster}</span>
     </button>
     <button type="button" class="item" onclick={() => { onclose(); logout(); }} data-testid="logout">
       <span class="label">{copy.logout}</span>
