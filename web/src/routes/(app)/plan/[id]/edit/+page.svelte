@@ -1,32 +1,164 @@
 <script lang="ts">
-  // Editing the stops: the map with its controls, the start time, and delete. No cheers,
-  // comments or Highball here; those live on the draft's view screen.
+  // Editing the stops. A draft is written as it is edited; The Route on the day is staged and saved
+  // in one go, so the crew never sees a half-finished change.
   import { goto } from '$app/navigation';
   import { pb, auth } from '$lib/pb';
+  import { api } from '$lib/api';
   import { copy } from '$lib/labels';
   import { loadDraft, watchDraft, type Draft } from '$lib/draft';
-  import { recordActions } from '$lib/planActions';
+  import { recordActions, type PlanActions } from '$lib/planActions';
+  import { addStop, commitPayload, moveStop, removeStop, setAnchor, setDwell, stagePlan, type StagedPlan, type StagedStop } from '$lib/live/staged';
+  import { insertionIndex, plannerStations } from '$lib/lineMap';
+  import type { PlanSnapshot } from '$lib/live/diff';
+  import { previewPlan } from '$lib/live/preview';
+  import { cohesionBlockers } from '$lib/live/cohesion';
   import ItineraryView from '$lib/components/ItineraryView.svelte';
+  import type { Checkin, Leg, Line } from '$lib/types';
 
   let { data } = $props();
   let draft = $state<Draft | null>(null);
   let error = $state('');
+  let plan = $state<StagedPlan | null>(null);
+  // The plan as it stood when the editor opened: what the Bulletin is diffed against (Task 14), and
+  // what has to survive the trip to the venue picker along with the staged change itself.
+  let before = $state<PlanSnapshot | null>(null);
+  let previewLegs = $state<Leg[]>([]);
+  let saving = $state(false);
 
-  async function load() {
-    try { draft = await loadDraft(data.id); } catch { error = copy.loadError; }
-  }
-  $effect(() => {
-    draft = null; error = '';
-    void load();
-    return watchDraft(data.id, load);
+  const snapshot = (p: StagedPlan): PlanSnapshot => ({
+    anchorStopId: p.anchorStopId,
+    stops: p.stops.map((s) => ({ id: s.id, name: s.name, order: s.order, station_name: s.station_name, dwell_min: s.dwell_min }))
   });
 
   const isAdmin = $derived(!!$auth.user?.is_admin);
+  const live = $derived(!!draft && draft.itinerary.status === 'locked');
   const editable = $derived(!!draft && (draft.itinerary.status === 'draft' || isAdmin));
-  // The creator manages their own draft; once it is locked or archived only the admin still can
-  // (the PocketBase hook rejects a non-admin's edit of a non-draft itinerary).
   const canManage = $derived(!!draft && (isAdmin || (draft.itinerary.created_by === $auth.user?.id && draft.itinerary.status === 'draft')));
-  // Nothing to edit here for this person: show the draft instead.
+
+  async function load() {
+    try {
+      draft = await loadDraft(data.id);
+      // On The Route the staged plan is built once: from a plan parked before the add screen if
+      // there is one, otherwise from the records. Later realtime reloads must not clobber an edit
+      // in progress.
+      if (draft.itinerary.status === 'locked' && !plan) {
+        const parked = readParked();
+        if (parked) { plan = parked.plan; before = parked.before; }
+        else {
+          plan = stagePlan(draft.stops, await loadAnchor());
+          before = snapshot(plan);
+        }
+      }
+    } catch { error = copy.loadError; }
+  }
+
+  const PARK_KEY = $derived(`chugalug.stagedPlan:${data.id}`);
+
+  /** Park the whole staged change before leaving for the venue picker, and pick it up on return. */
+  function park() {
+    if (!plan || !before) return;
+    try { sessionStorage.setItem(PARK_KEY, JSON.stringify({ plan, before })); } catch { /* private mode */ }
+  }
+  function readParked(): { plan: StagedPlan; before: PlanSnapshot } | null {
+    try {
+      const raw = sessionStorage.getItem(PARK_KEY);
+      if (!raw) return null;
+      sessionStorage.removeItem(PARK_KEY);
+      const parked = JSON.parse(raw) as { plan: StagedPlan; before: PlanSnapshot };
+      return parked.plan?.stops?.length ? parked : null;
+    } catch { return null; }
+  }
+
+  /** The newest Conductor position, which is where the staged plan starts from. */
+  async function loadAnchor(): Promise<string | null> {
+    try {
+      const rows = await pb.collection('checkins').getList<Checkin>(1, 20, { filter: pb.filter('kind = "at_stop"'), sort: '-at', expand: 'user' });
+      return rows.items.find((c) => c.expand?.user?.is_admin && c.stop)?.stop ?? null;
+    } catch { return null; }
+  }
+
+  $effect(() => {
+    draft = null; error = ''; plan = null; before = null; previewLegs = [];
+    void load();
+    // A staged edit must not be clobbered by the realtime reload, so on The Route only the first
+    // load builds the plan (see `load`); the watcher keeps the draft path live as before.
+    return watchDraft(data.id, load);
+  });
+
+  // Parked on every change, not only when the "add" action fires: the venue picker is reached by a
+  // real browser navigation (a station circle's href, or a test driving the URL bar directly), which
+  // this component cannot intercept to park just-in-time. The copy in sessionStorage has to already
+  // be current whenever that navigation happens.
+  $effect(() => { if (plan && before) park(); });
+
+  // Re-plan whenever the staged plan changes, and once a minute so a plan that has quietly become
+  // unrideable stops being savable.
+  $effect(() => {
+    const current = plan;
+    if (!current || !draft) return;
+    let alive = true;
+    const run = () => void previewPlan(current, data.id)
+      .then((legs) => { if (alive) previewLegs = legs; })
+      .catch(() => { if (alive) previewLegs = []; });
+    run();
+    const timer = setInterval(run, 60_000);
+    return () => { alive = false; clearInterval(timer); };
+  });
+
+  const blockers = $derived(plan
+    ? cohesionBlockers({
+        stops: plan.stops.map((s) => ({ id: s.id, order: s.order, name: s.name })),
+        legs: previewLegs.map((l) => ({ fromStopId: l.from_stop, toStopId: l.to_stop, kind: l.kind })),
+        anchorStopId: plan.anchorStopId
+      })
+    : []);
+
+  const stagedActions: PlanActions = {
+    setStartTime: () => {},
+    setDwell: (stopId, dwellMin) => { if (plan) plan = setDwell(plan, stopId, dwellMin); },
+    move: (stopId, dir) => { if (plan) plan = moveStop(plan, stopId, dir); },
+    remove: (stopId) => { if (plan) plan = removeStop(plan, stopId); },
+    add: (stationId, side) => {
+      park();
+      void goto(`/plan/${data.id}/add?station=${encodeURIComponent(stationId)}&side=${side}&staged=1`);
+    },
+    get anchorStopId() { return plan?.anchorStopId ?? null; },
+    setAnchor: (stopId) => { if (plan) plan = setAnchor(plan, stopId); }
+  };
+
+  // A venue picked on the add screen comes back through sessionStorage and slots into the staged
+  // plan — not the database's — using the same rule the planner uses: going stops top to bottom,
+  // then return stops bottom to top.
+  $effect(() => {
+    if (!plan || !draft) return;
+    const key = `chugalug.stagedAdd:${data.id}`;
+    let raw: string | null = null;
+    try { raw = sessionStorage.getItem(key); if (raw) sessionStorage.removeItem(key); } catch { return; }
+    if (!raw) return;
+    let stop: Omit<StagedStop, 'id' | 'order' | 'isNew'>;
+    try { stop = JSON.parse(raw); } catch { return; }
+    const current = plan;
+    void api<{ lines: Line[] }>(`/api/metra/stations?date=${encodeURIComponent(draft.itinerary.event_date)}`)
+      .then(({ lines }) => {
+        const at = insertionIndex(plannerStations(lines), current.stops, stop.station_id, stop.direction === 'back' ? 'back' : 'out');
+        plan = addStop(current, stop, at);
+      })
+      .catch(() => { plan = addStop(current, stop, current.stops.length); });
+  });
+
+  async function save() {
+    if (!plan || blockers.length || saving) return;
+    saving = true; error = '';
+    try {
+      await api('/api/plan/commit', { method: 'POST', json: commitPayload(plan, data.id) });
+      await goto(`/plan/${data.id}`);
+    } catch (err) {
+      error = (err as Error).message || copy.saveFailed;
+    } finally {
+      saving = false;
+    }
+  }
+
   $effect(() => { if (draft && !editable) void goto(`/plan/${draft.itinerary.id}`, { replaceState: true }); });
 
   async function deleteDraft() {
@@ -37,10 +169,45 @@
 
 {#if draft}<p><a href="/plan/{draft.itinerary.id}" data-testid="done-editing">← {copy.doneEditing}</a></p>{:else}<p><a href="/plan">← {copy.backToPlanner}</a></p>{/if}
 {#if error}<p class="error" role="alert">{error}</p>{/if}
+
 {#if draft && editable}
-  <ItineraryView itinerary={draft.itinerary} stops={draft.stops} legs={draft.legs} {editable} {canManage}
-    actions={recordActions(draft.itinerary.id, (m) => (error = m))} onerror={(m) => (error = m)} />
-  {#if canManage && draft.itinerary.status === 'draft'}
-    <button type="button" class="secondary" onclick={deleteDraft} data-testid="delete-draft">{copy.deleteDraft}</button>
+  {#if live}
+    <p class="warning" data-testid="live-route-warning">{copy.liveRouteWarning}</p>
+  {/if}
+  {#if live && !plan}
+    <!-- `draft` (and so `live`) is set the moment the itinerary loads, but the staged plan needs a
+         second, separate await (the anchor lookup) before it exists. Rendering the staged controls
+         any earlier would wire "Set here"/"Remove" to a `plan` that is still null, so the click's
+         `if (plan) ...` guard would silently discard the very first tap. -->
+    <p>{copy.working}</p>
+  {:else}
+    <ItineraryView
+      itinerary={draft.itinerary}
+      stops={live && plan ? plan.stops : draft.stops}
+      legs={live ? previewLegs : draft.legs}
+      {editable} {canManage}
+      actions={live ? stagedActions : recordActions(draft.itinerary.id, (m) => (error = m))}
+      onerror={(m) => (error = m)} />
+
+    {#if live}
+      <div class="savebar">
+        {#if blockers.length}
+          <ul class="blockers" data-testid="save-blockers">
+            {#each blockers as blocker (blocker.message)}<li>{blocker.message}</li>{/each}
+          </ul>
+        {/if}
+        <button type="button" onclick={save} disabled={!!blockers.length || saving} data-testid="save-plan">
+          {saving ? copy.saving : copy.savePlan}
+        </button>
+      </div>
+    {:else if canManage && draft.itinerary.status === 'draft'}
+      <button type="button" class="secondary" onclick={deleteDraft} data-testid="delete-draft">{copy.deleteDraft}</button>
+    {/if}
   {/if}
 {/if}
+
+<style>
+  .warning { border: 1px solid #c0261c; border-left-width: 5px; border-radius: 10px; padding: 12px 14px; color: #ffd9d6; background: rgba(192,38,28,.12); }
+  .savebar { position: sticky; bottom: 0; padding: 12px 0 20px; background: linear-gradient(to top, #111 70%, transparent); }
+  .blockers { margin: 0 0 10px; padding-left: 20px; color: #ffb4ae; font-size: 14px; line-height: 1.5; }
+</style>

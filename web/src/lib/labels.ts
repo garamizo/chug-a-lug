@@ -190,6 +190,10 @@ export const copy = {
   setOurStop: 'Not here? Set our stop',
   setOurStopTitle: 'Where is the crawl?',
   // The live editor
+  liveRouteWarning: 'This is The Route and the crew is riding it. Nothing changes for them until you save.',
+  savePlan: 'Save and tell the crew',
+  saving: 'Saving…',
+  saveFailed: 'Saved partly — check The Route and try again.',
   blockNoPosition: 'Set where the crew is before saving.',
   blockAnchorMissing: 'The crew is at a stop you removed. Move the crew first, or put the stop back.',
   blockNoTrain: 'No train from',

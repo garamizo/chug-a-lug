@@ -58,6 +58,20 @@
     if (!station || busy) return;
     busy = venue.id || 'manual'; error = '';
     try {
+      // The Route is edited as one staged change, so a venue picked here goes back to the editor
+      // rather than straight into the database.
+      if (page.url.searchParams.get('staged') === '1') {
+        const payload = {
+          name: venue.name, kind: venue.kind, station_id: station.id, station_name: station.name,
+          dwell_min: 60, walk_min: walkMinutes(haversineM(station.lat, station.lon, venue.lat, venue.lon)),
+          direction, place: venue.placeRef ?? '', place_id: venue.source === 'google' ? venue.id : '',
+          osm_id: venue.source === 'osm' ? venue.id : '', address: venue.address ?? '',
+          lat: venue.lat, lon: venue.lon, phone: venue.phone ?? '', website: venue.website ?? ''
+        };
+        try { sessionStorage.setItem(`chugalug.stagedAdd:${itineraryId}`, JSON.stringify(payload)); } catch { /* private mode */ }
+        await goto(`/plan/${itineraryId}/edit`);
+        return;
+      }
       // Slot the stop into the crawl: going stops top to bottom, then return stops bottom to top.
       // Later stops shift down one so every order stays unique.
       const current = await pb.collection('stops').getFullList<Stop>({ filter: pb.filter('itinerary = {:id}', { id: itineraryId }), sort: 'order,created' });
