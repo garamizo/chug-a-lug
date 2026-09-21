@@ -1,6 +1,7 @@
 // What stops the Conductor saving. The rule is narrow on purpose: legs before the crawl's position
 // are history and can look as broken as they like — the day already happened that way.
 import { copy } from '$lib/labels';
+import { todayInTz } from '$lib/time';
 
 export type CohesionStop = { id: string; order: number; name: string };
 export type CohesionLeg = { fromStopId: string; toStopId: string; kind: 'train' | 'walk' | 'impossible' };
@@ -26,6 +27,7 @@ export function impossibleFromAnchor(input: { stops: CohesionStop[]; legs: Cohes
 
 export function cohesionBlockers(input: {
   stops: CohesionStop[]; legs: CohesionLeg[]; anchorStopId: string | null;
+  eventDate: string; now?: Date;
 }): Blocker[] {
   if (!input.anchorStopId) return [{ code: 'no_position', message: copy.blockNoPosition }];
   const ordered = [...input.stops].sort((a, b) => a.order - b.order);
@@ -33,7 +35,11 @@ export function cohesionBlockers(input: {
   if (index.get(input.anchorStopId) === undefined) return [{ code: 'anchor_missing', message: copy.blockAnchorMissing }];
   const name = (id: string) => ordered.find((s) => s.id === id)?.name ?? id;
 
-  return impossibleFromAnchor(input).map((leg) => ({
+  // A selected position is still required off-day, but no leg is history until the event day.
+  const impossible = input.eventDate === todayInTz(input.now)
+    ? impossibleFromAnchor(input)
+    : input.legs.filter((leg) => leg.kind === 'impossible');
+  return impossible.map((leg) => ({
     code: 'impossible_leg' as const,
     message: `${copy.blockNoTrain} ${name(leg.fromStopId)} ${copy.blockTo} ${name(leg.toStopId)}. ${copy.blockHint}`
   }));

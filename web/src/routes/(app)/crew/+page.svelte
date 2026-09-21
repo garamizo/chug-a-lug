@@ -2,7 +2,7 @@
   // The Crew Board. No location column: nothing in the app knows where an individual is, and a
   // column of guesses would be a lie.
   import { copy, labels } from '$lib/labels';
-  import { pb } from '$lib/pb';
+  import { pb, subscribe } from '$lib/pb';
   import { liveDay } from '$lib/live/day.svelte';
   import { drinkCount as countDrinks, hasSeen as seenBulletin } from '$lib/live/crew';
   import { todayInTz } from '$lib/time';
@@ -19,15 +19,30 @@
   const hasSeen = (userId: string) => seenBulletin(acks, userId, current?.id ?? null);
 
   $effect(() => {
-    void (async () => {
+    let active = true;
+    let version = 0;
+    const load = async () => {
+      const request = ++version;
       try {
-        [crew, drinks, acks] = await Promise.all([
+        const rows = await Promise.all([
           pb.collection('users').getFullList<UserRecord>({ sort: 'name' }),
           pb.collection('drink_entries').getFullList<DrinkEntry>(),
           pb.collection('broadcast_acks').getFullList<BroadcastAck>()
         ]);
-      } catch { error = copy.loadError; }
-    })();
+        if (!active || request !== version) return;
+        [crew, drinks, acks] = rows;
+        error = '';
+      } catch { if (active && request === version) error = copy.loadError; }
+    };
+    const unsubs = ['users', 'drink_entries', 'broadcast_acks'].map((name) => subscribe(name, '', () => void load()));
+    // Recover changes missed while the realtime connection was down.
+    const timer = setInterval(() => void load(), 30_000);
+    void load();
+    return () => {
+      active = false;
+      clearInterval(timer);
+      unsubs.forEach((unsubscribe) => unsubscribe());
+    };
   });
 </script>
 

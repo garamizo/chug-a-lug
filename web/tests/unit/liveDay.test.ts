@@ -27,7 +27,7 @@ function startDay() {
   for (const method of ['loadBulletins', 'loadTrains', 'loadDrinks', 'loadMedia', 'loadAlerts'] as const) {
     vi.spyOn(day, method).mockResolvedValue(undefined);
   }
-  return { reload, stop: day.start() };
+  return { day, reload, stop: day.start() };
 }
 
 describe('live route refresh', () => {
@@ -46,6 +46,21 @@ describe('live route refresh', () => {
       mocks.callbacks.get('legs')!();
       await vi.advanceTimersByTimeAsync(750);
       expect(reload).toHaveBeenCalledTimes(3);
+    } finally { stop(); }
+  });
+
+  it('recovers missed Bulletins on the next route poll without a realtime event', async () => {
+    const { day, reload, stop } = startDay();
+    try {
+      await vi.advanceTimersByTimeAsync(0);
+      vi.mocked(day.loadBulletins).mockClear();
+      let finish!: () => void;
+      reload.mockImplementationOnce(() => new Promise<void>((resolve) => { finish = resolve; }));
+      await vi.advanceTimersByTimeAsync(30_000);
+      expect(day.loadBulletins).not.toHaveBeenCalled();
+      finish();
+      await vi.advanceTimersByTimeAsync(0);
+      expect(day.loadBulletins).toHaveBeenCalledOnce();
     } finally { stop(); }
   });
 

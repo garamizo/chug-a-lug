@@ -102,3 +102,34 @@ test('the Conductor can post a Bulletin without changing the plan', async ({ pag
 
   await expect(page.getByTestId('pinned-bulletin')).toContainText('Meet under the clock');
 });
+
+test('retrying a lost save response preserves the edited Bulletin without posting twice', async ({ page }) => {
+  await login(page, 'E2E Retry Conductor', ADMIN);
+  await clearLockedCrawls();
+  const seeded = await seedLockedCrawl({
+    ownerName: 'E2E Retry Conductor', eventDate: DATE, startTime: '12:00',
+    departAt: '2026-12-26T20:34:00.000Z', arriveAt: '2026-12-26T20:49:00.000Z'
+  });
+  await page.goto(`/plan/${seeded.itineraryId}/edit`);
+  await page.getByTestId('set-here-0').click();
+  const submitted: { id: string; body: string }[] = [];
+  await page.route('**/api/plan/commit', async (route) => {
+    submitted.push(route.request().postDataJSON().bulletin);
+    const response = await route.fetch();
+    expect(response.ok()).toBe(true);
+    if (submitted.length === 1) await route.abort('failed');
+    else await route.fulfill({ response });
+  });
+  await page.getByTestId('save-plan').click();
+  await page.getByTestId('bulletin-body').fill('Wait under the clock.');
+  await page.getByTestId('bulletin-send').click();
+  await expect(page.locator('.savebar').getByRole('alert')).toBeVisible();
+  await expect(page.getByTestId('bulletin-body')).toHaveValue('Wait under the clock.');
+  await page.getByTestId('bulletin-send').click();
+  await expect(page).toHaveURL(new RegExp(`/plan/${seeded.itineraryId}$`));
+  expect(submitted).toHaveLength(2);
+  expect(submitted[1]).toEqual(submitted[0]);
+  await page.goto('/notifications');
+  await expect(page.getByTestId('bulletin-list').locator('article')).toHaveCount(1);
+  await expect(page.getByTestId('bulletin-list')).toContainText('Wait under the clock.');
+});

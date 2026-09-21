@@ -142,8 +142,10 @@ export class LiveDay {
 
   /** Starts the pollers and subscriptions. Returns the teardown; safe to call once per layout. */
   start(): () => void {
-    const refreshRoute = () => void this.loadRoute().catch(() => {});
     let stopped = false;
+    const refreshRoute = () => void this.loadRoute()
+      .then(() => { if (!stopped) return this.loadBulletins(); })
+      .catch(() => {});
     let refreshTimer: ReturnType<typeof setTimeout> | undefined;
     // One Save produces many stop/leg events. Reload after the burst settles.
     const queueRefresh = () => {

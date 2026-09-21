@@ -129,8 +129,9 @@
     return () => { alive = false; clearInterval(timer); };
   });
 
-  const blockers = $derived(plan
+  const blockers = $derived(plan && draft
     ? cohesionBlockers({
+        eventDate: draft.itinerary.event_date, now: liveDay.now,
         stops: plan.stops.map((s) => ({ id: s.id, order: s.order, name: s.name })),
         legs: previewLegs.map((l) => ({ fromStopId: l.from_stop, toStopId: l.to_stop, kind: l.kind })),
         anchorStopId: plan.anchorStopId
@@ -200,6 +201,9 @@
       await goto(`/plan/${data.id}`);
     } catch (err) {
       saveError = err instanceof TypeError ? copy.noSignal : (err as Error).message || copy.saveFailed;
+      // The server may have posted this already, even if its response never reached us.
+      // Reopen the edited Bulletin under the same id so retrying cannot announce it twice.
+      if (bulletin) pending = { id: bulletin.id, kind: bulletin.kind, text: bulletin.body };
     } finally {
       saving = false;
     }

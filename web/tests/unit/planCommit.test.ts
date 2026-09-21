@@ -98,6 +98,26 @@ describe('POST /api/plan/commit', () => {
     expect(state.writes).toEqual([]);
   });
 
+  it('rejects impossible legs before the selected position off the event day without writing', async () => {
+    vi.setSystemTime(new Date('2026-12-19T18:00:00.000Z'));
+    const res = await call({
+      ...rideable, anchorStopId: 's3',
+      stops: [{ ...rideable.stops[0], dwell_min: 600 }, rideable.stops[1]]
+    });
+    expect(res.status).toBe(409);
+    expect((await res.json()).blockers[0].code).toBe('impossible_leg');
+    expect(state.writes).toEqual([]);
+    expect(recomputeItinerary).not.toHaveBeenCalled();
+  });
+
+  it('still treats legs before the selected position as history on the event day', async () => {
+    const res = await call({
+      ...rideable, anchorStopId: 's3',
+      stops: [{ ...rideable.stops[0], dwell_min: 600 }, rideable.stops[1]]
+    });
+    expect(res.status).toBe(200);
+  });
+
   it('refuses when the route holds a stop the editor never saw', async () => {
     state.persisted = ['s2', 's3', 'sOther']; // someone added a stop while this editor was open
     const res = await call(rideable);

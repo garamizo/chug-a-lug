@@ -130,6 +130,7 @@ export const POST: RequestHandler = async ({ request }) => {
     stops: planStops
   });
   const blockers = cohesionBlockers({
+    eventDate: itinerary.event_date, now: new Date(at),
     stops: stops.map((s) => ({ id: s.id, order: s.order, name: s.name })),
     legs, anchorStopId: anchorStopId || null
   });
