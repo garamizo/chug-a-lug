@@ -140,7 +140,7 @@ clock or unavailable persistence returns 503, never a silent switch to wall time
 All clock responses use `Cache-Control: no-store` and `Vary: Authorization`.
 
 The single web process serializes control mutations and checks the revision again before persisting.
-Prevent clock changes during a plan commit: track active plan writes and return a retryable 409
+Prevent clock changes during a plan commit: track active event-write leases (commit and autonomous recompute) and return a retryable 409
 from the control endpoint while one is applying. Do not hold a clock mutex while waiting on
 `recomputeItinerary`; its hook-triggered queue must remain able to run. Preview is a dry run and
 returns its captured `clockRevision`, which the editor rejects if it is now obsolete. In simulation,
@@ -204,8 +204,39 @@ vectors. In normal mode hooks continue stamping wall time.
 `computeLegs` stays pure apart from its existing schedule read. Inject time where the anchor is
 chosen, not inside the train search. Commit captures event time/revision before validation and
 retains that context for its explicit recompute. Autonomous hook recomputes capture their own
-context at execution time. No process-wide monkey-patching of `Date`, timer acceleration or
+context inside a write lease at execution time. No process-wide monkey-patching of `Date`, timer acceleration or
 simulation-specific bypass of `activeAnchor`/cohesion rules is allowed.
+
+### Ordering actions while time is paused
+
+Event timestamps are not action IDs. Add a server-assigned, immutable positive `action_order` to
+`checkins` and `drink_entries`, allocated from a persisted monotonic counter in the same database
+transaction as creation. Rollbacks must not publish an order and concurrent creates must never
+share one. Ignore client-supplied values, including superuser request values. Deleting the latest
+row must not reset the counter. Backfill existing rows deterministically by `(created, id)`;
+the original submission order of historical same-timestamp records cannot be reconstructed.
+
+Keep event time unchanged while paused. Both server `findAnchor` and client `loadAnchor` sort by
+`-at,-action_order`; the Tab's Undo comparison uses `(at, action_order)` and does not depend on list
+arrival order. Define a stable `(created, id)` fallback only for legacy cached entries lacking the
+new field. Repeated paused saves, retry-created anchor rows, same-millisecond requests, concurrent
+creates, and beer-then-water followed by Undo all get regression tests. Two distinct actions can
+have the same `at`, but must still have an unambiguous latest action.
+
+### Recompute publication and clock changes
+
+Every operation that publishes event-dependent legs participates in the clock's write lease,
+including autonomous hook recomputes. Acquire a lease before capturing the recompute's context and
+hold it through computing and publishing its legs and log. For a supplied commit context, verify
+its revision at lease admission; never publish using an obsolete revision. Control mutations return
+409 while any lease is active. Release leases on every failure path.
+
+A lease is a reference count admitted under a short serialization lock, not a mutex held across
+its callback. Nested recompute inside commit can obtain a lease on the same revision, and queued
+hook recomputes can finish while the commit awaits the per-itinerary queue. Add tests that hold an
+autonomous recompute across a requested midnight seek, exercise a nested lease, and throw inside a
+publisher; no stale legs, deadlocks or leaked busy state are permitted. Read-only previews remain
+optimistic and discard responses from obsolete revisions.
 
 ## 6. Recording format and replay
 

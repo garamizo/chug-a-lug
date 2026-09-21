@@ -82,8 +82,9 @@ timetable scenario until recording support is complete. No separate agents are r
 4. Implement injectable server clock reads and serialized updates, using `adminPb` only lazily.
    Capture wall time after obtaining the state. Compare revision inside the control queue and persist
    the fully validated new state before returning it. Echo complete public state on success/409.
-5. Add the active-plan-write guard API for task 7. Control changes fail with a retryable 409 while
-   writes are applying. Tests must show the guard clears on exceptions and does not block reads.
+5. Add the reference-counted event-write lease API for task 7 (commits and autonomous recomputes). Control changes fail with a retryable 409 while
+   a write lease is active, including an autonomous recompute computing its legs. Tests must show leases clear on exceptions, allow nested callbacks at the same revision,
+   reject stale revisions on admission and do not block reads.
    Do not introduce a mutex that recompute must acquire while commit is awaiting it.
 6. Keep errors shown by the UI in `labels.ts`. No state or recording filesystem paths go in public
    error messages. No client-specific virtual clock accepted from request headers.
@@ -214,25 +215,30 @@ shutdown before test suites run. No production services are restarted.
 ## Task 7 — Server planning, anchors and event timestamps
 
 **Create:** `pocketbase/pb_hooks/clock.js`, a new incremental migration
-`pocketbase/pb_migrations/1758810000_broadcast_time.js`.
+`pocketbase/pb_migrations/1758810000_broadcast_time.js`, and
+`pocketbase/pb_migrations/1758820000_action_order.js` for the persisted sequence and ordered fields.
 
 **Modify:**
 - `web/src/lib/server/{plan,recompute}.ts`
 - `web/src/routes/api/plan/{preview,commit}/+server.ts`
 - `pocketbase/pb_hooks/{planning.pb,live.pb}.js`
-- `web/src/lib/types.ts`
+- `web/src/lib/types.ts`, `web/src/lib/live/{day.svelte,tab}.ts`,
+  `pocketbase/pb_hooks/action_order.pb.js`
 - Unit tests `planEndpoints`, `planCommit`, `serverPlan`, `recompute`; hook tests `live`, `simulation`
 
 1. Add failing cases for a simulated event-day anchor on a different wall day; off-day rejection;
    simulated Chicago midnight; commit validation/anchor/recompute using the same captured context;
    controller mutation during a commit and during its validation; stale client clockRevision
    refusing before any write;
-   failure cleanup and hook-triggered recompute completing without deadlock.
+   failure cleanup and hook-triggered recompute completing without deadlock. Test a clock seek
+   across midnight during an autonomous recompute: it must be rejected until publication completes.
 2. Preview returns its clock revision; simulation commits require that revision. Capture server context
    before validation and retain it through the explicit recompute. Ordinary SIM=0 payloads remain
    backward-compatible. The active-plan-write guard rechecks the captured revision on entry, wraps the application phase
    and clears in finally.
-3. Supply explicit eventNow to `activeAnchor` and `cohesionBlockers`, including autonomous recomputes.
+3. Autonomous recomputes acquire an event-write lease before capturing context and retain it through
+   publication. Explicit commit recomputes use nested same-revision leases. No mutex may be held
+   across callbacks or while awaiting the itinerary queue. Supply explicit eventNow to `activeAnchor` and `cohesionBlockers`, including autonomous recomputes.
    Keep their shared date/history behavior. Do not change the schedule search or bypass the Save gate.
    Keep idempotent stop/Bulletin IDs and retry behavior from M3.
 4. Implement the PocketBase helper using the same persisted state and shared clock vectors. Check
@@ -243,6 +249,16 @@ shutdown before test suites run. No production services are restarted.
    Do not change PocketBase autodates, locked_at or the real timestamp used for leg computed_at.
 6. Prove a normal production request does not consult the clock record. Assert `broadcasts.at` and
    event_log.at are virtual in simulation but created/updated remain actual wall metadata.
+
+7. Add immutable server-issued `action_order` to checkins and drink entries. Allocate it from a
+   persisted counter in the same transaction as create, ignoring supplied values; retain the counter
+   after deletes. Backfill historical rows by `(created, id)`. Update both anchor queries to
+   `-at,-action_order`, and Tab Undo to compare `(at, action_order)`. Keep a stable legacy-cache
+   fallback without pretending it recovers historical request order.
+8. Before implementing that migration/hook, add real PocketBase tests for concurrent creates,
+   rollback, attempted forged order, counter persistence after deleting the newest record, and
+   paused repeated saves/retries. Add client/server reader tests and beer-then-water Undo tests,
+   including responses delivered out of order. Do not change virtual timestamps to break ties.
 
 **Targeted checks:** planning unit files, then hook suite. Hold a mocked commit mid-write to test the
 clock guard, and release it to prove the normal recompute queue completes.
@@ -296,7 +312,7 @@ clock guard, and release it to prove the normal recompute queue completes.
    event date, rate, ended state and synchronization status. Keep technical revision IDs out of UI.
 3. Add Conductor-only menu navigation to /sim; keep server authorization authoritative. Controls send
    expectedRevision and adopt 409 state without retrying the obsolete action automatically.
-4. Use liveDay/clock event time for new Tab entries and Crew Board date. Show Bulletin at, falling
+4. Use task 7’s deterministic action order for Undo and anchor selection. Use liveDay/clock event time for new Tab entries and Crew Board date. Show Bulletin at, falling
    back to created for legacy data. Preserve actual photo capture dates and real cache/park ages.
 5. In the editor, a new clock revision triggers a fresh preview. Track its returned revision, discard
    late results and keep Save gated while a check is pending. Submit clockRevision with simulation
@@ -380,3 +396,10 @@ This document was prepared by inspecting the M3 source and tests at `72a32a5`. I
 M4 code, migration, command, fixture or test listed as Create already exists. The baseline's last
 verified gate was 312 unit tests, 42 e2e tests, 37 hook tests and a clean Svelte/type check. Preparing
 these Markdown documents does not rerun or substitute for M4's future implementation checks.
+
+## Independent review addressed (2026-09-21)
+
+The review identified equal-time anchor and Undo ambiguity while paused, plus an unspecified
+autonomous-recompute publication boundary. Spec §5 now defines transactional action ordering and
+reference-counted publication leases; tasks 2, 7 and 9 include the corresponding implementation and
+regression tests. Those future consumers must be wired before M4 can be called complete.

@@ -1,0 +1,11 @@
+[
+  {"name":"paused after restart","state":{"rate":0},"wallNow":"2026-09-22T12:00:00.000Z","eventNow":"2026-12-26T18:00:00.000Z"},
+  {"name":"normal speed","state":{"rate":1},"wallNow":"2026-09-21T12:00:10.000Z","eventNow":"2026-12-26T18:00:10.000Z"},
+  {"name":"ten times speed","state":{"rate":10},"wallNow":"2026-09-21T12:00:10.000Z","eventNow":"2026-12-26T18:01:40.000Z"},
+  {"name":"sixty times speed","state":{"rate":60},"wallNow":"2026-09-21T12:00:10.000Z","eventNow":"2026-12-26T18:10:00.000Z"},
+  {"name":"running restart includes downtime","state":{"rate":10},"wallNow":"2026-09-21T12:05:00.000Z","eventNow":"2026-12-26T18:50:00.000Z"},
+  {"name":"clamp at the end","state":{"rate":60},"wallNow":"2026-09-22T12:00:00.000Z","eventNow":"2026-12-27T04:00:00.000Z"},
+  {"name":"wall clock before anchor","state":{"rate":10},"wallNow":"2026-09-21T11:59:00.000Z","eventNow":"2026-12-26T18:00:00.000Z"},
+  {"name":"UTC midnight remains Chicago event day","state":{"epochStart":"2026-12-26T23:59:50.000Z","rate":1},"wallNow":"2026-09-21T12:00:10.000Z","eventNow":"2026-12-27T00:00:00.000Z"},
+  {"name":"Chicago midnight starts the event day","state":{"epochStart":"2026-12-26T05:59:50.000Z","windowStart":"2026-12-26T05:00:00.000Z","rate":1},"wallNow":"2026-09-21T12:00:10.000Z","eventNow":"2026-12-26T06:00:00.000Z"}
+]
