@@ -17,6 +17,7 @@
     "test:e2e": "playwright test"
   },
   "dependencies": {
+    "browser-image-compression": "^2.0.2",
     "fflate": "^0.8.3",
     "gtfs-realtime-bindings": "^1.1.1",
     "pocketbase": "^0.28.1"

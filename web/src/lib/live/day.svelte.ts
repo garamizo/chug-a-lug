@@ -6,7 +6,7 @@ import { localToUtc, parseHm, todayInTz } from '$lib/time';
 import { currentStop, type Current } from './current';
 import { pickTrip } from './board';
 import { fetchAlerts, fetchNext, fetchStatus } from './feed';
-import type { Alert, Broadcast, BroadcastAck, Checkin, DrinkEntry, FeedMode, Itinerary, Leg, NextTrip, Stop } from '$lib/types';
+import type { Alert, Broadcast, BroadcastAck, Checkin, DrinkEntry, FeedMode, Itinerary, Leg, Media, NextTrip, Stop } from '$lib/types';
 
 export class LiveDay {
   itinerary = $state<Itinerary | null>(null);
@@ -18,6 +18,7 @@ export class LiveDay {
   bulletins = $state<Broadcast[]>([]);
   ackedIds = $state<string[]>([]);
   drinks = $state<DrinkEntry[]>([]);
+  media = $state<Media[]>([]);
   // One flag, one owner: the root layout (which has no live day of its own) sets this from the
   // menu, and the `(app)` layout — the only place with a route to post to — reads it to render the
   // compose sheet. No prop drilling through a layout that has nothing else to do with a Bulletin.
@@ -86,6 +87,14 @@ export class LiveDay {
     } catch { /* keep the last tally */ }
   }
 
+  async loadMedia() {
+    const stopId = this.here?.stop?.id;
+    if (!stopId) { this.media = []; return; }
+    try {
+      this.media = await pb.collection('media').getFullList<Media>({ filter: pb.filter('stop = {:s}', { s: stopId }), sort: '-created' });
+    } catch { /* keep what we had */ }
+  }
+
   async loadTrains() {
     const here = this.here;
     // The train goes to the next *different* station: with several bars at one station the literal
@@ -105,18 +114,19 @@ export class LiveDay {
 
   /** Starts the pollers and subscriptions. Returns the teardown; safe to call once per layout. */
   start(): () => void {
-    void this.loadRoute().then(() => { void this.loadBulletins(); void this.loadTrains(); void this.loadDrinks(); }).catch(() => {});
+    void this.loadRoute().then(() => { void this.loadBulletins(); void this.loadTrains(); void this.loadDrinks(); void this.loadMedia(); }).catch(() => {});
     void this.loadAlerts();
     void fetchStatus().then((s) => { this.rtFetchedAt = s.feeds?.tripupdates?.fetchedAt ?? null; this.mode = s.mode; }).catch(() => {});
     const tick = setInterval(() => { this.now = new Date(); }, 15_000);
-    const poll = setInterval(() => { void this.loadTrains(); void this.loadAlerts(); void this.loadDrinks(); }, 30_000);
+    const poll = setInterval(() => { void this.loadTrains(); void this.loadAlerts(); void this.loadDrinks(); void this.loadMedia(); }, 30_000);
     const unsubs = [
       subscribe('stops', '', () => void this.loadRoute()),
       subscribe('legs', '', () => void this.loadRoute()),
       subscribe('checkins', '', () => void this.loadAnchor()),
       subscribe('broadcasts', '', () => void this.loadBulletins()),
       subscribe('broadcast_acks', '', () => void this.loadBulletins()),
-      subscribe('drink_entries', '', () => void this.loadDrinks())
+      subscribe('drink_entries', '', () => void this.loadDrinks()),
+      subscribe('media', '', () => void this.loadMedia())
     ];
     return () => { clearInterval(tick); clearInterval(poll); unsubs.forEach((u) => u()); };
   }

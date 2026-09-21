@@ -7,13 +7,16 @@
   import { auth, pb } from '$lib/pb';
   import type { DrinkEntry, DrinkKind } from '$lib/types';
   import { liveDay } from '$lib/live/day.svelte';
+  import { prepare } from '$lib/live/upload';
   import DepartureBoard from '$lib/components/DepartureBoard.svelte';
   import AlertBubbles from '$lib/components/AlertBubbles.svelte';
   import TabRow from '$lib/components/TabRow.svelte';
+  import FreightStrip from '$lib/components/FreightStrip.svelte';
 
   let error = $state('');
+  let uploading = $state(false);
   const here = $derived(liveDay.here);
-  // The board retains a stop before and after the crawl, when the Tab must stay closed.
+  // The board retains a stop before and after the crawl, when the Tab and Freight must stay closed.
   const tabStop = $derived(here?.source === 'clock' || here?.source === 'override' ? here.stop : null);
   const remaining = $derived(liveDay.stops.filter((s) => s.order > (here?.stop?.order ?? 0)));
 
@@ -31,6 +34,29 @@
     error = '';
     try { await pb.collection('drink_entries').delete(entry.id); await liveDay.loadDrinks(); }
     catch { error = copy.noSignal; }
+  }
+
+  async function upload(files: FileList | null) {
+    const stop = tabStop, user = $auth.user;
+    if (!files?.length || !stop || !user || uploading) return;
+    error = '';
+    uploading = true;
+    try {
+      const { default: compressImage } = await import('browser-image-compression');
+      for (const file of Array.from(files)) {
+        const prepared = await prepare(file, (f) => compressImage(f, { maxWidthOrHeight: 2000, initialQuality: 0.8, useWebWorker: true }));
+        const form = new FormData();
+        form.set('user', user.id);
+        form.set('stop', stop.id);
+        form.set('kind', prepared.kind);
+        form.set('taken_at', prepared.takenAt);
+        form.set('file', prepared.file);
+        await pb.collection('media').create(form);
+      }
+      await liveDay.loadMedia();
+    } catch (err) {
+      error = err instanceof Error && err.message === copy.uploadTooBig ? copy.uploadTooBig : copy.uploadFailed;
+    } finally { uploading = false; }
   }
 </script>
 
@@ -54,6 +80,7 @@
 {#if tabStop && $auth.user}
   <TabRow entries={liveDay.drinks} stopId={tabStop.id} userId={$auth.user.id}
     onlog={(kind) => void logDrink(kind)} onundo={(entry) => void undoDrink(entry)} />
+  <FreightStrip media={liveDay.media} busy={uploading} onpick={(files) => void upload(files)} />
 {:else}
   <section class="tabclosed"><h2>{copy.tabTitle}</h2><p>{copy.tabClosed}</p></section>
 {/if}
