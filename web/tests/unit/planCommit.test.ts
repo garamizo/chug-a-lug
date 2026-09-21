@@ -106,6 +106,18 @@ describe('POST /api/plan/commit', () => {
     expect(state.writes).toEqual([]);
   });
 
+  it('refuses when a kept stop was deleted by another Conductor', async () => {
+    // The symmetric twin of "refuses when the route holds a stop the editor never saw": here the
+    // payload is stale in the other direction — it still keeps a stop (s3) the database no longer
+    // has, with nothing in `removed` to explain the gap. Without this check, s3 falls into the
+    // create branch and comes back resurrected with none of its venue fields.
+    state.persisted = ['s2'];
+    const res = await call(rideable); // keeps s2 and s3, removes nothing
+    expect(res.status).toBe(409);
+    expect((await res.json()).stale).toBe(true);
+    expect(state.writes).toEqual([]);
+  });
+
   it('ignores a removed id that belongs to no persisted stop of this route', async () => {
     // Whether it never existed, belongs to another itinerary, or a previous attempt already deleted
     // it, an unpersisted `removed` id is already the state we wanted: the commit converges without

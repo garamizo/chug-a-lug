@@ -9,6 +9,10 @@ import { parseHm } from '$lib/time';
 import type { BulletinKind } from '$lib/live/diff';
 import type { Itinerary } from '$lib/types';
 
+// `isNew` is load-bearing, not a hint: a genuinely new stop sent without it is treated as an
+// existing one the database doesn't have, and reconcile refuses it as stale rather than creating
+// it. Task 9's staged-stop model always sets it on a new stop; this type does not make it required
+// only because a kept/updated stop legitimately omits it.
 type CommitStop = {
   id: string; isNew?: boolean; order: number; name: string; kind: string; station_id: string;
   station_name: string; dwell_min: number; walk_min: number; direction?: string; place?: string;
@@ -43,8 +47,12 @@ const fields = (s: CommitStop) => ({
 // every stop and Bulletin write is keyed by an id the editor generated and is safe to repeat: the
 // same payload sent again after a failure at any step converges on the same route, with no
 // duplicate stop and no second Bulletin. (The `checkins` anchor row and the `event_log` entry are
-// not deduplicated the same way — a retry adds another row of each — but a duplicate anchor at the
-// same stop and moment, or a duplicate Train Sheet line, changes nothing the Crew or Conductor act on.)
+// not deduplicated the same way — a retry adds another row of each, and `at` is computed fresh per
+// request, so a retry's anchor row carries a *later* moment than the one before it, not the same
+// one. That is harmless, not merely tolerated: `findAnchor` sorts by `-at`, so the newest row wins,
+// and it is the very moment this same request just validated the plan against and recomputed from
+// — so the anchor only ever moves to where this request already proved the route works. A second
+// Train Sheet line is just a duplicate entry in a log, with nothing downstream reading it twice.)
 export const POST: RequestHandler = async ({ request }) => {
   const user = await requireUser(request);
   if (!user.is_admin) throw error(403, 'Only the Conductor can change The Route.');
@@ -74,22 +82,34 @@ export const POST: RequestHandler = async ({ request }) => {
   //    not in `accounted`, and refuses forever as "stale" even though the identical payload is what
   //    the editor is trying, correctly, to converge on.
   //
-  //    Staleness is exactly one thing: a stop the database has that this payload neither keeps nor
-  //    removes — that is the only shape of "the route moved on without the editor." A `removed` id
-  //    that is *not* persisted is not stale, it is already-satisfied (this is the delete's half of
-  //    the same retry story as the create side above): its own delete is skipped below rather than
-  //    rejected here, which is also why a `removed` id belonging to another itinerary is merely
-  //    ignored — never deleted — instead of refused.
+  //    A `removed` id that is *not* persisted is not stale, it is already-satisfied (this is the
+  //    delete's half of the same retry story as the create side above): its own delete is skipped
+  //    below rather than rejected here, which is also why a `removed` id belonging to another
+  //    itinerary is merely ignored — never deleted — instead of refused.
+  //
+  //    Staleness is three things, not one: (a) a persisted stop that `accounted` (`stops` ids
+  //    union `removed` ids) doesn't cover — someone added a stop this editor never saw; (b) a
+  //    non-new stop the payload claims to keep or update that `persisted` does not actually hold —
+  //    someone else deleted it while this editor was open. (b) is not the same shape as either
+  //    retry window above: a staged-new stop always carries `isNew: true`, even on a retry, so it
+  //    is excluded from this check, and this endpoint never deletes an id that also appears in
+  //    `stops` (the overlap check below forbids `stops ∩ removed`), so a kept id cannot have been
+  //    removed by *this* request either. Without (b), a stop another Conductor deleted would fall
+  //    into the `!persisted.has` create branch below and be silently resurrected — with none of
+  //    its venue fields, since this payload never carried them for a stop it thought already
+  //    existed. And (c) an id repeated inside `stops`, or shared between `stops` and `removed`,
+  //    which collapses into one entry in the `accounted` Set: catch that here rather than deleting
+  //    a stop and then updating the now-missing record, a 404 the Conductor cannot recover from by
+  //    retrying.
   const persisted = new Set((await pb.collection('stops').getFullList({
     filter: pb.filter('itinerary = {:id}', { id }), fields: 'id'
   })).map((s) => s.id));
   const stopIds = stops.map((s) => s.id);
+  const kept = stops.filter((s) => !s.isNew).map((s) => s.id);
   const accounted = new Set([...stopIds, ...removed]);
   const stale =
+    kept.some((stopId) => !persisted.has(stopId)) ||
     [...persisted].some((stopId) => !accounted.has(stopId)) ||
-    // An id repeated inside `stops`, or shared between `stops` and `removed`, collapses into one
-    // entry in the Set above: catch that here rather than deleting a stop and then updating the
-    // now-missing record, which is a 404 the Conductor cannot recover from by retrying.
     stopIds.length + removed.length !== accounted.size;
   if (stale) return json({ ok: false, stale: true, message: copy.routeMovedOn }, { status: 409 });
   // Only a delete already reflected in the database is skipped; everything else in `removed` is a
@@ -170,7 +190,7 @@ export const POST: RequestHandler = async ({ request }) => {
   // 7. The Train Sheet.
   await pb.collection('event_log').create({
     itinerary: id, kind: 'plan_edit', actor: user.id, at,
-    payload: { stops: stops.length, added: stops.filter((s) => s.isNew).length, removed: removed.length, anchor: anchorStopId, broadcast, impossible: recomputed.impossible }
+    payload: { stops: stops.length, added: stops.filter((s) => s.isNew).length, removed: toRemove.length, anchor: anchorStopId, broadcast, impossible: recomputed.impossible }
   });
 
   return json({ ok: true, anchorAt: at, legs: recomputed.legs, impossible: recomputed.impossible, broadcast });
