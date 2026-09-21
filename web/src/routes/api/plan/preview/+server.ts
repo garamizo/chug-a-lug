@@ -28,7 +28,7 @@ export const POST: RequestHandler = async ({ request }) => {
   await requireUser(request);
   const body = (await request.json()) as { itinerary?: string; anchorStopId?: string | null; stops?: unknown };
   const id = String(body.itinerary ?? '');
-  if (!/^[a-z0-9]+$/.test(id)) throw error(400, 'itinerary id required');
+  if (!/^[a-z0-9]{15}$/.test(id)) throw error(400, 'itinerary id required');
   const stops = readStops(body.stops);
 
   const pb = await adminPb();
