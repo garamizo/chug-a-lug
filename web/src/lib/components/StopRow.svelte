@@ -7,18 +7,18 @@
   import { copy } from '$lib/labels';
   import { dwellOptions } from '$lib/dwell';
   import { fmtDur, fmtTime } from '$lib/time';
-  import type { Leg, NextTrip, Stop } from '$lib/types';
+  import type { Leg, NextTrip, Stop, StopLike } from '$lib/types';
   import type { Side } from '$lib/lineMap';
   import LegRow from './LegRow.svelte';
 
   let { stop, index, arriveAt, leaveAt, editable, last, href, side = 'left', leg, legReason, names, nextStationId, date, canUp = false, canDown = false, onupdate, onmove, onremove }: {
-    stop: Stop; index: number; arriveAt: Date | null; leaveAt: Date | null; editable: boolean; last: boolean;
+    stop: StopLike; index: number; arriveAt: Date | null; leaveAt: Date | null; editable: boolean; last: boolean;
     href: string; side?: Side; leg: Leg | undefined; legReason?: string; names: Record<string, string>;
     /** Where the crawl goes next, so the departure options are that day's trains toward it. */
     nextStationId?: string; date: string;
     /** Whether the previous / next stop is at the same station (the only moves allowed). */
     canUp?: boolean; canDown?: boolean;
-    onupdate: (patch: Partial<Stop>) => Promise<void>; onmove?: (dir: -1 | 1) => void; onremove: () => void;
+    onupdate: (patch: Partial<Stop>) => unknown; onmove?: (dir: -1 | 1) => void; onremove: () => void;
   } = $props();
 
   const kind = $derived(copy[`kind_${stop.kind ?? 'other'}`]);

@@ -1,20 +1,19 @@
 <script lang="ts">
   import { onMount, tick } from 'svelte';
-  import { goto } from '$app/navigation';
-  import { pb } from '$lib/pb';
   import { api } from '$lib/api';
   import { copy } from '$lib/labels';
   import { fmtDate, fmtWeekday, localToUtc, parseHm } from '$lib/time';
   import { PLANNER_ROUTE, placeStops, plannerStations, type Side } from '$lib/lineMap';
-  import type { Itinerary, Leg, Line, Station, Stop } from '$lib/types';
+  import type { Itinerary, Leg, Line, Station, StopLike } from '$lib/types';
+  import type { PlanActions } from '$lib/planActions';
   import LineMap from './LineMap.svelte';
   import StopRow from './StopRow.svelte';
 
-  let { itinerary, stops, legs, editable, canManage, onerror }: {
-    itinerary: Itinerary; stops: Stop[]; legs: Leg[]; editable: boolean; canManage: boolean; onerror?: (message: string) => void;
+  let { itinerary, stops, legs, editable, canManage, actions, onerror }: {
+    itinerary: Itinerary; stops: StopLike[]; legs: Leg[]; editable: boolean; canManage: boolean; actions: PlanActions; onerror?: (message: string) => void;
   } = $props();
 
-  const sorted = $derived([...stops].sort((a, b) => a.order - b.order || a.created.localeCompare(b.created)));
+  const sorted = $derived([...stops].sort((a, b) => a.order - b.order || (a.created ?? '').localeCompare(b.created ?? '')));
   const names = $derived(Object.assign(
     {},
     ...sorted.map((s) => ({ [s.station_id]: s.station_name || s.station_id })),
@@ -62,10 +61,8 @@
   // Adding a stop leaves and comes back; remember where the page was scrolled so the crawl does
   // not jump back to the top every time.
   const scrollKey = $derived(`scroll:/plan/${itinerary.id}`);
-  function addAt(s: Station) {
+  function rememberScroll() {
     try { sessionStorage.setItem(scrollKey, String(window.scrollY)); } catch { /* private mode */ }
-    // The side of the map the circle was tapped on is the new stop's direction.
-    void goto(`/plan/${itinerary.id}/add?station=${encodeURIComponent(s.id)}&side=${focused}`);
   }
   $effect(() => {
     if (stations === null) return;
@@ -87,29 +84,6 @@
     }
   });
 
-  const fail = (err: unknown) => onerror?.((err as Error).message || copy.genericError);
-
-  async function saveStart() {
-    if (!/^([01]\d|2[0-3]):[0-5]\d$/.test(startTime) || startTime === itinerary.start_time) return;
-    try { await pb.collection('itineraries').update(itinerary.id, { start_time: startTime }); } catch (err) { fail(err); }
-  }
-  async function update(stop: Stop, patch: Partial<Stop>) {
-    try { await pb.collection('stops').update(stop.id, patch); } catch (err) { fail(err); }
-  }
-  // Only stops at the same station swap places; the line fixes everything else.
-  async function move(i: number, dir: -1 | 1) {
-    if (!sameStation(i, i + dir)) return;
-    const next = [...sorted];
-    [next[i], next[i + dir]] = [next[i + dir], next[i]];
-    try {
-      for (const [idx, s] of next.entries()) {
-        if (s.order !== idx + 1) await pb.collection('stops').update(s.id, { order: idx + 1 });
-      }
-    } catch (err) { fail(err); }
-  }
-  async function remove(stop: Stop) {
-    try { await pb.collection('stops').delete(stop.id); } catch (err) { fail(err); }
-  }
 </script>
 
 {#snippet card(i: number)}
@@ -117,7 +91,17 @@
   <StopRow {stop} index={i} arriveAt={arriveAt(i)} leaveAt={leaveAt(i)} {editable} last={i === sorted.length - 1}
     side={placement.side[i]} leg={legAfter(i)} legReason={legReason(i)} {names} nextStationId={sorted[i + 1]?.station_id} date={itinerary.event_date}
     canUp={sameStation(i, i - 1)} canDown={sameStation(i, i + 1)}
-    href="/plan/{itinerary.id}/stops/{stop.id}" onupdate={(patch) => update(stop, patch)} onmove={(dir) => move(i, dir)} onremove={() => remove(stop)} />
+    href="/plan/{itinerary.id}/stops/{stop.id}"
+    onupdate={(patch) => patch.dwell_min !== undefined && actions.setDwell(stop.id, patch.dwell_min)}
+    onmove={(dir) => actions.move(stop.id, dir)} onremove={() => actions.remove(stop.id)} />
+  {#if actions.setAnchor}
+    <div class="under">
+      <button type="button" class="here" class:on={actions.anchorStopId === stop.id}
+        onclick={() => actions.setAnchor?.(stop.id)} data-testid="set-here-{i}">
+        {actions.anchorStopId === stop.id ? copy.crewIsHere : copy.crewIsHereSet}
+      </button>
+    </div>
+  {/if}
 {/snippet}
 
 {#snippet label(station: Station, i: number)}
@@ -128,7 +112,7 @@
   <h1>{itinerary.title}</h1>
   <p class="meta">{copy.eventDate}: <strong>{fmtDate(itinerary.event_date)}</strong></p>
   {#if canManage}
-    <label class="inline">{copy.startTime} <input type="time" bind:value={startTime} onchange={saveStart} data-testid="start-time" /></label>
+    <label class="inline">{copy.startTime} <input type="time" bind:value={startTime} onchange={() => { if (/^([01]\d|2[0-3]):[0-5]\d$/.test(startTime) && startTime !== itinerary.start_time) void actions.setStartTime(startTime); }} data-testid="start-time" /></label>
   {:else}
     <p class="meta">{copy.startTime} <strong>{itinerary.start_time}</strong></p>
   {/if}
@@ -144,7 +128,7 @@
     <button type="button" role="tab" class="tab" aria-selected={focused === 'right'} onclick={() => map?.focusSide('right')} data-testid="side-right">{copy.outbound}</button>
   </div>
   <LineMap bind:this={map} {stations} color={lineColor} panes onside={(s) => (focused = s)}
-    onpick={editable ? addAt : undefined} pickLabel={(s) => `${copy.addAt} ${stationLabel(s)}`}>
+    onpick={editable ? (s) => { rememberScroll(); actions.add(s.id, focused); } : undefined} pickLabel={(s) => `${copy.addAt} ${stationLabel(s)}`}>
     {#snippet left(station, i)}
       <div class="rowhead">{#if focused === 'left'}{@render label(station, i)}{/if}</div>
       {#each placement.rows[i].left as k (sorted[k].id)}{@render card(k)}{/each}
@@ -181,4 +165,6 @@
   .name small { font-size: 11px; }
   .list { max-width: 320px; }
   a.button { display: block; text-align: center; background: #ffb400; color: #111; font-weight: 700; padding: 14px; border-radius: 10px; text-decoration: none; margin-top: 20px; min-height: 48px; }
+  .here { font-size: 13px; padding: 8px; min-height: 40px; margin-top: 8px; background: transparent; color: #ffce5c; border: 1px solid #555; border-radius: 9px; }
+  .here.on { background: #ffb400; color: #111; border-color: #ffb400; }
 </style>

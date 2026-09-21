@@ -4,6 +4,7 @@
   import { auth } from '$lib/pb';
   import { copy } from '$lib/labels';
   import { loadDraft, watchDraft, type Draft } from '$lib/draft';
+  import { recordActions } from '$lib/planActions';
   import ItineraryView from '$lib/components/ItineraryView.svelte';
   import Votes from '$lib/components/Votes.svelte';
   import Comments from '$lib/components/Comments.svelte';
@@ -32,7 +33,8 @@
 {#if error}<p class="error" role="alert">{error}</p>{/if}
 {#if draft}
   {#if canEdit}<p><a class="button" href="/plan/{draft.itinerary.id}/edit" data-testid="edit-draft">{copy.editDraft}</a></p>{/if}
-  <ItineraryView itinerary={draft.itinerary} stops={draft.stops} legs={draft.legs} editable={false} canManage={false} />
+  <ItineraryView itinerary={draft.itinerary} stops={draft.stops} legs={draft.legs} editable={false} canManage={false}
+    actions={recordActions(draft.itinerary.id, (m) => (error = m))} />
   <Votes targetCollection="itineraries" targetId={draft.itinerary.id} />
   <Comments targetCollection="itineraries" targetId={draft.itinerary.id} />
   <ApprovalPanel itinerary={draft.itinerary} />

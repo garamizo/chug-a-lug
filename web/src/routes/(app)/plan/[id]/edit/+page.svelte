@@ -5,6 +5,7 @@
   import { pb, auth } from '$lib/pb';
   import { copy } from '$lib/labels';
   import { loadDraft, watchDraft, type Draft } from '$lib/draft';
+  import { recordActions } from '$lib/planActions';
   import ItineraryView from '$lib/components/ItineraryView.svelte';
 
   let { data } = $props();
@@ -37,7 +38,8 @@
 {#if draft}<p><a href="/plan/{draft.itinerary.id}" data-testid="done-editing">← {copy.doneEditing}</a></p>{:else}<p><a href="/plan">← {copy.backToPlanner}</a></p>{/if}
 {#if error}<p class="error" role="alert">{error}</p>{/if}
 {#if draft && editable}
-  <ItineraryView itinerary={draft.itinerary} stops={draft.stops} legs={draft.legs} {editable} {canManage} onerror={(m) => (error = m)} />
+  <ItineraryView itinerary={draft.itinerary} stops={draft.stops} legs={draft.legs} {editable} {canManage}
+    actions={recordActions(draft.itinerary.id, (m) => (error = m))} onerror={(m) => (error = m)} />
   {#if canManage && draft.itinerary.status === 'draft'}
     <button type="button" class="secondary" onclick={deleteDraft} data-testid="delete-draft">{copy.deleteDraft}</button>
   {/if}

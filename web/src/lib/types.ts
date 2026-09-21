@@ -29,6 +29,9 @@ export type Stop = RecordModel & {
   photos_status: PhotosStatus; direction: 'out' | 'back' | ''; expand?: { place?: Place };
 };
 
+/** The fields an itinerary screen needs, so a staged (unsaved) stop can be rendered too. */
+export type StopLike = Pick<Stop, 'id' | 'order' | 'name' | 'kind' | 'station_id' | 'station_name' | 'dwell_min' | 'walk_min' | 'direction'> & { created?: string };
+
 export type StopPhoto = RecordModel & { stop: string; file: string; source: 'google' | 'user'; attribution: string };
 
 /**

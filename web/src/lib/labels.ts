@@ -224,4 +224,6 @@ export const copy = {
   direction: 'Direction',
   routeMovedOn: 'The Route changed while you were editing. Reload and make the change again.',
   savedButBroken: 'Saved, but a leg after here has no train. Fix it and save again.',
+  crewIsHere: 'The crew is here',
+  crewIsHereSet: 'Move the crew here',
 } as const;

@@ -3,6 +3,7 @@
   import { pb, subscribe } from '$lib/pb';
   import { copy, label } from '$lib/labels';
   import { fmtDateTime } from '$lib/time';
+  import { recordActions } from '$lib/planActions';
   import ItineraryView from '$lib/components/ItineraryView.svelte';
   import type { Itinerary, Leg, Stop } from '$lib/types';
 
@@ -36,7 +37,7 @@
   <p data-testid="no-route">{copy.noRoute}</p>
   <p><a href="/plan">{copy.backToPlanner}</a></p>
 {:else if itinerary}
-  <ItineraryView {itinerary} {stops} {legs} editable={false} canManage={false} />
+  <ItineraryView {itinerary} {stops} {legs} editable={false} canManage={false} actions={recordActions(itinerary.id, () => {})} />
   {#if itinerary.locked_at}<p class="meta" data-testid="locked-on">{copy.lockedOn} {fmtDateTime(itinerary.locked_at)}</p>{/if}
 {/if}
 
