@@ -14,6 +14,11 @@ WORKDIR /app
 ENV NODE_ENV=production PORT=3000 HOST=0.0.0.0
 COPY --from=build /app/build ./build
 COPY --from=build /app/package*.json ./
+COPY scripts/shared-rehearsal.mjs ./scripts/shared-rehearsal.mjs
+COPY src/lib/server/sim/seed.ts src/lib/server/sim/shared.ts ./src/lib/server/sim/
+COPY src/lib/labels.ts ./src/lib/labels.ts
+COPY tests/fixtures/sim/recording ./rehearsal/recording
+COPY src/lib/sim/shared-scenario.json ./rehearsal/scenario.json
 RUN npm ci --omit=dev --ignore-scripts && npm cache clean --force
 USER node
 EXPOSE 3000

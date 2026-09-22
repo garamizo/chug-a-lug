@@ -153,24 +153,30 @@ it), so rotate it with `docker compose up -d --force-recreate pocketbase web`.
 
 ## Shakedown Run (M4)
 
-Use the isolated launcher from the implementation checkout; do not run `just up` for a rehearsal.
-Normal production uses `SIM=0` (or unset) and `PUBLIC_SIM=0` (or unset). Never copy production
-credentials, `.env`, database files or uploads into a rehearsal. Setup discards inherited settings,
-seeds the clock before event-producing hooks and refuses occupied ports or mismatched saved runs.
+Run `just up` from `main`. Rehearsal is the default (`REHEARSAL=1` or unset), available to everyone
+at the usual HTTPS app URL with the usual shared passwords. The persistent header and login notice
+identify practice explicitly. Choose **Practice the live day** from the home page.
 
-```bash
-just sim rehearsal-a fixture-recording
-just sim-status rehearsal-a
-just sim-stop rehearsal-a
-just sim rehearsal-a fixture-recording  # resume retained data
-just sim rehearsal-b fixture-recording # independent database and history
-```
+Startup uses `compose.rehearsal.yml`, isolates the database/uploads/cache under `data/rehearsal/`,
+and seeds a paused recorded route once. Repeated startup preserves practice activity and clock state.
+The normal real-event database stays at its existing path. Do not copy real-event data into rehearsal.
+`just logs` and `just down` use the regular stack lifecycle.
 
-`fixture` is timetable only; `fixture-recording` includes delay/cancellation/outage scenarios.
-A real recording ID selects `data/recordings/ID/`, using its original Chicago date and archived GTFS.
-Source, date, window and origins are immutable for a saved run. Missing/corrupt setup fails visibly;
-there is no live-feed fallback. Retire runs separately; the application has no rewind/reset action.
-The default web/PocketBase ports are 15174/18094; tests use 15173/18093 and run one suite at a time.
+Set `REHEARSAL=0` in `.env`, then run `just up` to switch to the real event. Set `REHEARSAL=1` and
+run it again to resume rehearsal. Mode switching rebuilds the frontend and requires a fresh login;
+separate auth cookies prevent identities from crossing databases. Do not run bare `docker compose up`
+for routine rehearsal deployment: it selects the base real-event configuration. Use `just up` after
+rotating credentials so both services and the rehearsal bootstrap receive the current settings.
+
+Initialization refuses an incomplete or mismatched saved run. Preserve and inspect `data/rehearsal/`
+before recovering it; startup never automatically deletes it. An interrupted initializer may leave
+`data/rehearsal/setup.lock`; remove that empty directory only after confirming no initializer is
+running. A `seeding` marker needs inspection, not blind deletion or another seed into occupied data.
+The source/date/window are fixed for the saved run; the UI offers no rewind/reset action.
+
+Tests use disposable credentials/data and ports 15173/18093, one suite at a time. Never test against
+the regular stack ports 3000/8090. The advanced standalone launcher remains available through
+`node web/scripts/sim.mjs` for isolated developer runs; it is not needed for shared practice.
 
 To capture or index an archive, supply its service date and explicit UTC playback window:
 
@@ -185,7 +191,7 @@ Use `just index-recording` with the matching zip/date/window for legacy snapshot
 recover successful unchanged polls; legacy freshness remains conservative. Never re-date protobuf
 headers to pretend the recording is from another Saturday.
 
-Sign in with the run's private generated credentials, then choose Shakedown Run from the Conductor
+Sign in with the usual shared password, then choose Shakedown Run from the Conductor
 menu. All signed-in users see Railroad Time and synchronization status. Only the Conductor sees
 controls. Pause before seeking forward; the seek input is Chicago time on the source service date.
 Rates are 1×, 5×, 10×, 30× and 60×. A paused rate selection changes the resume rate without starting.
@@ -199,12 +205,8 @@ writes are not queued. A previously synchronized browser can display its last ru
 marked unsynchronized; a fresh offline browser shows only its route mirror and clock-unavailable
 status. Mirror ages and parked-edit expiry remain wall time, as do auth, cache budgets and photo dates.
 
-For phones, copy `.env.sim.example` to `.env.sim` and set `BIND_HOST=0.0.0.0`, plus both origins to
-addresses reachable by every device. LAN HTTP permits functional rehearsal only. PWA installation
-and offline phone acceptance require dedicated HTTPS web and PocketBase origins, routed to this
-isolated stack with a trusted certificate; do not reuse production origins. Configure those origins
-before creating the named run. The localhost production-build test is secure-context browser
-coverage, not evidence that physical phones or a LAN HTTP origin support offline operation.
+For phones, use the regular HTTPS app and PocketBase origins. Localhost production-build tests
+exercise the real service worker, but do not establish physical-phone offline acceptance.
 
 Run the ordinary gate, then `npm run test:sim` and `npm run test:sim:offline` in `web/`, sequentially.
 The latter builds the production bundle, registers its real service worker, disconnects and reloads

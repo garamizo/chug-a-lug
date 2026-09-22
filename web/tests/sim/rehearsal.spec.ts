@@ -2,7 +2,7 @@ import { expect, test, devices, type Page } from '@playwright/test';
 import { login } from '../e2e/helpers';
 import { admin } from './setup';
 async function token(page: Page) {
-  const cookie = (await page.context().cookies()).find(c => c.name === 'pb_auth');
+  const cookie = (await page.context().cookies()).find(c => c.name === 'pb_auth_rehearsal');
   return JSON.parse(decodeURIComponent(cookie!.value)).token;
 }
 async function clock(page: Page) {
@@ -17,7 +17,11 @@ async function change(page: Page, body: object) {
 
 test('three sessions rehearse clock, replay, route edits, Tab, Freight and reconnect', async ({ page, browser }, info) => {
   test.setTimeout(120_000);
+  await page.goto('/login');
+  await expect(page.getByTestId('rehearsal-badge')).toContainText('Rehearsal');
+  await expect(page.getByTestId('rehearsal-notice')).toContainText('Nothing here changes the real event');
   await login(page, 'Rehearsal Conductor', process.env.ADMIN_PASSWORD!);
+  await expect(page.getByTestId('nav-live')).toBeVisible();
   const crewContext = await browser.newContext({ ...devices['iPhone 13'], baseURL: 'http://127.0.0.1:15173' });
   const otherContext = await browser.newContext({ ...devices['iPhone 13'], baseURL: 'http://127.0.0.1:15173' });
   const externalRequests: string[] = [];

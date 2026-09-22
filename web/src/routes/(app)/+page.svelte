@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { clientClock } from '$lib/sim/clock.svelte';
   import { onMount } from 'svelte';
   import { auth, pb } from '$lib/pb';
   import { label, copy } from '$lib/labels';
@@ -18,7 +19,8 @@
 <ul>
   <li><a href="/plan" data-testid="nav-plan"><strong>{label('planningPhase')}</strong><span>{copy.plannerTeaser}</span></a></li>
   <li><a href="/route" data-testid="nav-route"><strong>{label('lockedItinerary')}</strong><span>{locked ? locked.title : copy.noRoute}</span></a></li>
-  <li><strong>{label('livePhase')}</strong><span>{copy.comingSoon}</span></li>
+  {#if clientClock.enabled}<li><a href="/live" data-testid="nav-live"><strong>{copy.rehearsalLive}</strong><span>{copy.rehearsalLiveHint}</span></a></li>
+  {:else}<li><strong>{label('livePhase')}</strong><span>{copy.comingSoon}</span></li>{/if}
   <li><strong>{label('wrapUpPhase')}</strong><span>{copy.comingSoon}</span></li>
 </ul>
 <p>{copy.notYou}</p>

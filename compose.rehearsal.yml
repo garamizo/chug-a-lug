@@ -1,0 +1,52 @@
+# Selected automatically by just up unless REHEARSAL=0. Same URLs, separate data and cookies.
+x-rehearsal-build: &rehearsal-build
+  context: ./web
+  args:
+    PUBLIC_PB_URL: ${PUBLIC_PB_URL:?Set PUBLIC_PB_URL in .env}
+    PUBLIC_SIM: "1"
+services:
+  pocketbase:
+    environment:
+      SIM: "1"
+      SIM_RUN_ID: shared-rehearsal
+    command:
+      - /bin/sh
+      - -ec
+      - |
+        /pb/pocketbase superuser upsert "$$PB_ADMIN_EMAIL" "$$PB_ADMIN_PASSWORD" --dir=/pb/pb_data --migrationsDir=/pb/pb_migrations >/dev/null
+        exec /pb/pocketbase serve --http=0.0.0.0:8090 --dir=/pb/pb_data --hooksDir=/pb/pb_hooks --migrationsDir=/pb/pb_migrations
+    volumes:
+      - ./data/rehearsal/pb_data:/pb/pb_data
+    healthcheck:
+      interval: 2s
+      timeout: 2s
+      retries: 30
+  web:
+    build: *rehearsal-build
+    environment:
+      SIM: "1"
+      PUBLIC_SIM: "1"
+      SIM_RUN_ID: shared-rehearsal
+      SIM_RECORDINGS_DIR: /app/rehearsal
+      DATA_DIR: /data
+      GTFS_URL: file:///app/rehearsal/recording/schedule.zip
+      GTFS_PUBLISHED_URL: ""
+      METRA_API_TOKEN: ""
+      GOOGLE_PLACES_KEY: ""
+      OVERPASS_URL: http://127.0.0.1:9
+    volumes:
+      - ./data/rehearsal/cache/gtfs:/data/gtfs
+      - ./data/rehearsal/cache/places:/data/places
+      - ./data/rehearsal/cache/recordings:/data/recordings
+  rehearsal-init:
+    profiles: [setup]
+    build: *rehearsal-build
+    user: "1000:1000"
+    env_file: .env
+    environment:
+      SIM: "1"
+      PB_URL: http://pocketbase:8090
+      WEB_INTERNAL_URL: http://web:3000
+    command: [node, scripts/shared-rehearsal.mjs]
+    volumes:
+      - ./data/rehearsal:/state

@@ -6,6 +6,7 @@ services:
     user: "1000:1000"
     env_file: .env
     environment:
+      SIM: "0"
       WEB_INTERNAL_URL: http://web:3000
     volumes:
       - ./data/pb_data:/pb/pb_data
@@ -22,6 +23,8 @@ services:
     restart: unless-stopped
     env_file: .env
     environment:
+      SIM: "0"
+      PUBLIC_SIM: "0"
       ORIGIN: ${ORIGIN:?Set ORIGIN in .env}
       PUBLIC_PB_URL: ${PUBLIC_PB_URL:?Set PUBLIC_PB_URL in .env}
       PB_URL: http://pocketbase:8090

@@ -43,7 +43,8 @@ Never point a dev or test server at 8090 or 3000 — that is the live stack on t
 
 ## Deploying
 
-`just up` runs `docker compose up -d --build`, which rebuilds the images from **whatever is on disk**,
+`just up` selects shared rehearsal by default; `REHEARSAL=0` selects the real event. It runs
+`docker compose up -d --build` with the selected configuration, rebuilding from **whatever is on disk**,
 committed or not. Production therefore tracks the working tree of the checkout you run it in, not
 `origin/main`. Check freshness with `docker images | grep chug` against your last edit, never against
 git. `pb_hooks/` and `pb_migrations/` are read-only bind mounts, so migrations apply on a PocketBase
@@ -82,8 +83,8 @@ restart without a rebuild.
 - **Simulation has event time and wall time.** Use the shared clock for the live day, Tab, anchors,
   planning and Bulletins. Cache ages, auth, timeouts, parked-edit expiry and file capture metadata
   stay on wall time. Unknown offline Railroad Time is not today's date.
-- **Never reuse production rehearsal data.** Use the isolated launcher and named run; source/date
-  are immutable. Replay selects original timestamps from an archived matching timetable.
+- **Keep practice and real-event data separate.** Regular `just up` uses `data/rehearsal/`;
+  tests use disposable data and credentials on test ports. Source/date are immutable. Replay selects original timestamps from an archived matching timetable.
 - **Capture clock context through preview/commit/recompute.** Save carries preview `clockRevision`;
   autonomous and nested recomputes use event-write leases. Never hold a clock mutex while awaiting
   the hook's itinerary queue.

@@ -48,6 +48,13 @@ export function label(key: LabelKey): string {
 
 // UI copy lives alongside the glossary so it can be changed in one place.
 export const copy = {
+  rehearsalTitle: 'Rehearsal — practice only',
+  rehearsalIntro: 'This is a shared practice run. Explore the route, log drinks, and try the controls. Nothing here changes the real event. Sign in with your usual name and shared password.',
+  rehearsalReady: 'Rehearsal is ready at the usual app URL. Sign in with your usual shared password.',
+  rehearsalSetupIncomplete: 'Rehearsal setup is incomplete or belongs to another run. Inspect data/rehearsal before retrying; existing data has been preserved.',
+  rehearsalLive: 'Practice the live day',
+  rehearsalLiveHint: 'Departure Board, Tab and photos',
+
   simRecorded: 'Recorded feed',
   simTimetable: 'Timetable rehearsal',
   simEnded: 'Ended',

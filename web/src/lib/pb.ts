@@ -5,7 +5,7 @@ import type { UserRecord } from './types';
 
 export type { UserRecord } from './types';
 
-const COOKIE = 'pb_auth';
+const COOKIE = env.PUBLIC_SIM === '1' ? 'pb_auth_rehearsal' : 'pb_auth';
 const ONE_YEAR = 60 * 60 * 24 * 365;
 
 /** Keeps the PocketBase session in a cookie on the app's origin instead of localStorage. */

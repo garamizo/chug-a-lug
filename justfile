@@ -28,8 +28,7 @@ build:
     cd web && npm run build
 
 up:
-    mkdir -p data/gtfs data/places data/recordings
-    docker compose up -d --build
+    bash scripts/up.sh
 
 down:
     docker compose down
@@ -51,13 +50,3 @@ inspect-recording NAME:
 
 sim-fixture:
     node web/scripts/generate-sim-fixture.mjs
-
-# sim.mjs discards inherited dotenv values; only .env.sim's allowlisted settings are read.
-sim RUN SOURCE="fixture":
-    node web/scripts/sim.mjs start {{quote(RUN)}} {{quote(SOURCE)}}
-
-sim-status RUN:
-    node web/scripts/sim.mjs status {{quote(RUN)}}
-
-sim-stop RUN:
-    node web/scripts/sim.mjs stop {{quote(RUN)}}

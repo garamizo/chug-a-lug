@@ -6,7 +6,7 @@
 </script>
 {#if clientClock.enabled}
   <aside data-testid="simulation-status" aria-live="polite">
-    <strong>{labels.simulationMode}</strong>
+    <strong>{copy.rehearsalTitle}</strong>
     {#if clientClock.sample}
       <span>{labels.simulationClock}: {fmtDateTime(liveDay.now.toISOString())}</span>
       <span>{clientClock.sample.source === 'recording' ? copy.simRecorded : copy.simTimetable} · {clientClock.sample.rate || clientClock.sample.resumeRate}× · {liveDay.now.getTime() >= Date.parse(clientClock.sample.windowEnd) ? copy.simEnded : clientClock.sample.rate === 0 ? copy.simPaused : copy.simRunning}</span>

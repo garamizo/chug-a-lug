@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { env } from '$env/dynamic/public';
   import { goto } from '$app/navigation';
   import { ClientResponseError } from 'pocketbase';
   import { login, auth } from '$lib/pb';
@@ -27,6 +28,7 @@
 </script>
 
 <h1>{copy.loginTitle}</h1>
+{#if env.PUBLIC_SIM === '1'}<p data-testid="rehearsal-notice">{copy.rehearsalIntro}</p>{/if}
 <p>{copy.loginIntro}</p>
 
 <form onsubmit={submit} aria-busy={busy}>

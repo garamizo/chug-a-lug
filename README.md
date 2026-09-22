@@ -197,46 +197,32 @@ Goal: the memories and the bragging rights.
 Sim mode has to exist before the live phase is considered done, because the real event happens once a year.
 
 - **Sim clock**: the server publishes `{epochStart, rate, wallStart}`; every client and the Metra proxy
-  derive the same virtual "now". In production it is the wall clock.
+  derive the same virtual "now". In real-event mode it is the wall clock.
 - **Recorded train feed**: a recorder polls Metra's positions, trip updates, and alerts every 30 s into
   timestamped protobuf snapshots. The proxy replays the snapshot nearest the sim clock.
   Record on a **Saturday in December**, since Dec 26 runs the Saturday timetable.
 - **Shared position**: rehearse the same clock-derived stop and Conductor anchor as the live day. No GPS, waypoint player or per-person tracking.
 - **Schedule-only fallback**: use scheduled departures when no recording exists; do not invent vehicle positions.
-- **Isolation**: a rehearsal uses its own database and origin. Replay uses the recording's original service date and archived GTFS; operational timeouts and cache ages remain on wall time.
+- **Isolation**: the shared rehearsal uses its own database and auth cookie at the regular origin. Replay uses the recording's original service date and archived GTFS; operational timeouts and cache ages remain on wall time.
 - M4 implementation includes the shared browser/server clock, isolated launcher, recording replay, Conductor controls, and offline safeguards. Automated rehearsal coverage is included; physical-phone and real-recording acceptance remain pending. See the [design](docs/superpowers/specs/2026-09-21-m4-simulation-design.md) and [implementation plan](docs/superpowers/plans/2026-09-21-m4-simulation.md).
 - A real dry run on a December Saturday with two or three phones, before the freeze.
 
-### Isolated rehearsals (M4 in progress)
+### Shared rehearsal
 
-Requires Docker Compose and Node 22.18+ on the host. From the M4 worktree:
+`just up` opens rehearsal by default at the regular app URL, with the usual Crew and Conductor
+passwords. No extra startup target is needed. The login page and persistent header say
+**Rehearsal — practice only**. Everyone shares one practice route, clock and activity history.
 
-```bash
-just sim practice fixture
-just sim-status practice
-just sim-stop practice
-```
+The first startup seeds a recorded two-stop BNSF route, paused at 12:20 Chicago time on December 26.
+Choose **Practice the live day** from the home page. Conductors can open **Shakedown Run** to resume,
+pause, change speed or advance while paused. Crew can read Railroad Time but cannot change it.
 
-The default origins are `http://127.0.0.1:15174` (web) and `http://127.0.0.1:18094`
-(PocketBase). The launcher creates `.simulations/practice/`, generates private credentials, and seeds
-Rehearsal Conductor / Rehearsal Crew plus a locked December 26 route. Read the matching
-`ADMIN_PASSWORD` or `CREW_PASSWORD` from that run's `credentials.env` to sign in; passwords are never
-printed. Its clock starts paused at 10:00 Chicago time. Open **Shakedown Run** from the Conductor’s
-menu to resume, pause, choose 1×/5×/10×/30×/60×, or advance to a later Chicago time while paused.
-Every signed-in screen shows Railroad Time, source, speed and synchronization status. Crew can
-read the status but cannot change the clock.
+Rehearsal database, uploads and caches live under `data/rehearsal/`, separately from real-event data.
+Repeated `just up` preserves practice activity and the clock. Set `REHEARSAL=0` in `.env` and run
+`just up` to switch to the real event; set it back to `1` to resume practice. Switching modes requires
+signing in again. Recorded playback never falls back to the real train feed.
 
-A stopped run keeps its data. Starting the same name resumes it without reseeding; source, fixture,
-date and port changes are rejected. Choose a new name for a fresh run. Interrupted seeding preserves the database and refuses automatic repair; inspect it,
-stop that run, and use a new name. An interrupted launcher may leave `.operation-lock`; remove only
-that empty directory after confirming no setup process is still using the run.
-
-`SOURCE` can also be `fixture-recording` for the checked-in December 26 replay, or a safe recording
-ID under this checkout's `data/recordings/`. For example, `just sim recorded-practice fixture-recording`
-starts at 12:20 Chicago time and seeds a two-stop BNSF route from the archived timetable. A real
-recording uses its original date and playback window. The launcher validates coverage, copies the
-archive into the run, and fingerprints its contents so a changed archive cannot silently resume an
-existing run. Legacy recordings must be explicitly indexed first (see recording commands below).
+See [operations](docs/OPERATIONS.md#shakedown-run-m4) for recovery and recording details.
 
 The Metra endpoints use Railroad Time and return `source` (`live`, `recording`, `timetable`), `revision`,
 and safe diagnostics alongside the existing modes/timestamps. A fresh recording still has
@@ -302,8 +288,7 @@ bounds behind the append log, the complete poll rows remain authoritative. Incom
 ignored and reported; malformed complete rows are rejected.
 
 `just sim-fixture` regenerates the small [deterministic fixture](web/tests/fixtures/sim/recording/README.md).
-Playback and recording-backed launcher support are still pending; `just sim` currently accepts only
-`fixture` and starts the timetable scenario.
+The default shared rehearsal plays this recording with its archived timetable.
 
 ---
 
