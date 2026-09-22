@@ -1,6 +1,7 @@
 <script lang="ts">
   // The Crew Board. No location column: nothing in the app knows where an individual is, and a
   // column of guesses would be a lie.
+  import { clientClock } from '$lib/sim/clock.svelte';
   import { copy, labels } from '$lib/labels';
   import { pb, subscribe } from '$lib/pb';
   import { liveDay } from '$lib/live/day.svelte';
@@ -14,11 +15,12 @@
   let error = $state('');
 
   const current = $derived(liveDay.bulletins[0] ?? null);
-  const date = $derived(todayInTz(liveDay.now));
+  const date = $derived(liveDay.clockKnown ? todayInTz(liveDay.now) : '');
   const drinkCount = (userId: string) => countDrinks(drinks, userId, date);
   const hasSeen = (userId: string) => seenBulletin(acks, userId, current?.id ?? null);
 
   $effect(() => {
+    void clientClock.revision;
     let active = true;
     let version = 0;
     const load = async () => {

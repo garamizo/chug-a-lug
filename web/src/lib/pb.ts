@@ -37,6 +37,7 @@ class CookieAuthStore extends BaseAuthStore {
 
 export const pb = new PocketBase(env.PUBLIC_PB_URL || 'http://127.0.0.1:8090', new CookieAuthStore());
 pb.autoCancellation(false);
+if (env.PUBLIC_SIM === '1') pb.beforeSend = (url, options) => ({ url, options: { ...options, cache: 'no-store' } });
 
 export const auth = writable<{ user: UserRecord | null }>({
   user: pb.authStore.isValid ? (pb.authStore.record as UserRecord) : null

@@ -1,6 +1,8 @@
 <script lang="ts">
   // The live day: where the crawl is, the run it has to catch, and what Metra is saying about it.
   // The shared `liveDay` owns the data so a Tab tap reaches every screen through the same tally.
+  import compressionWorkerUrl from 'browser-image-compression/dist/browser-image-compression.js?url';
+  import { clientClock } from '$lib/sim/clock.svelte';
   import { goto } from '$app/navigation';
   import { copy } from '$lib/labels';
   import { fmtTime } from '$lib/time';
@@ -26,14 +28,17 @@
     if (!stop || !user) return;
     error = '';
     try {
-      await pb.collection('drink_entries').create({ user: user.id, stop: stop.id, kind, at: new Date().toISOString() });
+      await clientClock.ready();
+      liveDay.now = clientClock.eventNow() ?? liveDay.now;
+      if (tabStop?.id !== stop.id) throw new Error(copy.simClockConflict);
+      await pb.collection('drink_entries').create({ user: user.id, stop: stop.id, kind, at: (clientClock.eventNow() ?? liveDay.now).toISOString() });
       await liveDay.loadDrinks();
     } catch { error = copy.noSignal; }
   }
 
   async function undoDrink(entry: DrinkEntry) {
     error = '';
-    try { await pb.collection('drink_entries').delete(entry.id); await liveDay.loadDrinks(); }
+    try { await clientClock.ready(); await pb.collection('drink_entries').delete(entry.id); await liveDay.loadDrinks(); }
     catch { error = copy.noSignal; }
   }
 
@@ -43,10 +48,13 @@
     error = '';
     uploading = true;
     try {
+      await clientClock.ready();
+      liveDay.now = clientClock.eventNow() ?? liveDay.now;
+      if (tabStop?.id !== stop.id) throw new Error(copy.simClockConflict);
       error = await uploadBatch(Array.from(files), async (file) => {
         const prepared = await prepare(file, async (f) => {
           const { default: compressImage } = await import('browser-image-compression');
-          return compressImage(f, { maxWidthOrHeight: 2000, initialQuality: 0.8, useWebWorker: true });
+          return compressImage(f, { maxWidthOrHeight: 2000, initialQuality: 0.8, useWebWorker: true, libURL: new URL(compressionWorkerUrl, location.href).href });
         });
         const form = new FormData();
         form.set('user', user.id);
@@ -54,16 +62,17 @@
         form.set('kind', prepared.kind);
         form.set('taken_at', prepared.takenAt);
         form.set('file', prepared.file);
+        await clientClock.ready();
         await pb.collection('media').create(form);
       }, () => liveDay.loadMedia());
-    } finally { uploading = false; }
+    } catch { error = copy.noSignal; } finally { uploading = false; }
   }
 </script>
 
 <svelte:head><title>{copy.live}</title></svelte:head>
 
 {#if liveDay.fromMirror && liveDay.mirrorSavedAt}
-  <p class="stale" data-testid="mirror-notice">{copy.showingMirror} {mirrorSavedWhen(liveDay.mirrorSavedAt, liveDay.now)}.</p>
+  <p class="stale" data-testid="mirror-notice">{copy.showingMirror} {mirrorSavedWhen(liveDay.mirrorSavedAt, liveDay.wallNow)}.</p>
 {/if}
 
 {#if !liveDay.itinerary || !liveDay.isToday}

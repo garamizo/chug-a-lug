@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { clientClock } from '$lib/sim/clock.svelte';
   import { onMount } from 'svelte';
   import { copy } from '$lib/labels';
   import { auth } from '$lib/pb';
@@ -17,6 +18,7 @@
   // The dot is best-effort: a failed alerts read simply leaves that half off.
   $effect(() => {
     if (!$auth.user) { alertsUnread = 0; return; }
+    if (clientClock.enabled) { alertsUnread = unseenCount(liveDay.alerts, readSeen()); return; }
     const check = () => void fetchAlerts()
       .then((r) => { alertsUnread = unseenCount(r.alerts, readSeen()); })
       .catch(() => { alertsUnread = 0; });

@@ -9,7 +9,7 @@
 
 <p><a href="/">← {copy.appTitle}</a></p>
 {#if liveDay.fromMirror && liveDay.mirrorSavedAt}
-  <p class="stale" data-testid="mirror-notice">{copy.showingMirror} {mirrorSavedWhen(liveDay.mirrorSavedAt, liveDay.now)}.</p>
+  <p class="stale" data-testid="mirror-notice">{copy.showingMirror} {mirrorSavedWhen(liveDay.mirrorSavedAt, liveDay.wallNow)}.</p>
 {/if}
 {#if !liveDay.itinerary}
   <h1>{label('lockedItinerary')}</h1>

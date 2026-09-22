@@ -8,10 +8,10 @@ const DB = 'chugalug';
 const STORE = 'mirror';
 const KEY = 'route';
 
-export type Mirror = { savedAt: string; itinerary: Itinerary; stops: Stop[]; legs: Leg[] };
+export type Mirror = { runId?: string; savedAt: string; itinerary: Itinerary; stops: Stop[]; legs: Leg[] };
 
-export function mirrorPayload(itinerary: Itinerary, stops: Stop[], legs: Leg[], now: Date): Mirror {
-  return { savedAt: now.toISOString(), itinerary, stops, legs };
+export function mirrorPayload(itinerary: Itinerary, stops: Stop[], legs: Leg[], now: Date, runId?: string): Mirror {
+  return { savedAt: now.toISOString(), itinerary, stops, legs, ...(runId ? { runId } : {}) };
 }
 
 export function mirrorAgeMin(mirror: Pick<Mirror, 'savedAt'>, now: Date): number {
@@ -92,6 +92,22 @@ export async function readMirror(): Promise<Mirror | null> {
         tx.onerror = () => resolve(null);
         tx.onabort = () => resolve(null);
       } catch { resolve(null); }
+    });
+  } finally { close(db); }
+}
+
+/** Remove another run's mirror atomically, without deleting a newer concurrent save. */
+export async function scopeMirror(runId: string): Promise<void> {
+  const db = await open();
+  if (!db) return;
+  try {
+    await new Promise<void>(resolve => {
+      try {
+        const tx = db.transaction(STORE, 'readwrite');
+        tx.oncomplete = tx.onerror = tx.onabort = () => resolve();
+        const store = tx.objectStore(STORE), request = store.get(KEY);
+        request.onsuccess = () => { if (request.result && request.result.runId !== runId) store.delete(KEY); };
+      } catch { resolve(); }
     });
   } finally { close(db); }
 }

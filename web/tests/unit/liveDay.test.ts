@@ -130,3 +130,25 @@ it('requests paused anchors in server action order', async () => {
   expect(mocks.getList).toHaveBeenCalledWith(1, 20, expect.objectContaining({ sort: '-at,-action_order' }));
   expect(day.anchor?.stopId).toBe('newest');
 });
+
+it('does not restore a stale Tab read after a newer action or stop change', async () => {
+  const day = new LiveDay();
+  const here = vi.spyOn(day, 'here', 'get').mockReturnValue({ stop: { id: 'stop' } } as never);
+  let finish!: (rows: unknown[]) => void;
+  mocks.getFullList.mockImplementationOnce(() => new Promise(resolve => { finish = resolve; })).mockResolvedValueOnce([{ id: 'new' }]);
+  const old = day.loadDrinks(); await day.loadDrinks(); finish([]); await old;
+  expect(day.drinks.map(d => d.id)).toEqual(['new']);
+  mocks.getFullList.mockImplementationOnce(() => new Promise(resolve => { finish = resolve; }));
+  const moved = day.loadDrinks(); here.mockReturnValue({ stop: { id: 'next' } } as never);
+  finish([{ id: 'old-stop' }]); await moved;
+  expect(day.drinks.map(d => d.id)).toEqual(['new']);
+});
+
+it('does not let an earlier anchor query overwrite a newer correction', async () => {
+  const day = new LiveDay();
+  let finish!: (value: unknown) => void;
+  mocks.getList.mockImplementationOnce(() => new Promise(resolve => { finish = resolve; }))
+    .mockResolvedValueOnce({ items: [{ stop: 'new', at: 'now', expand: { user: { is_admin: true } } }] });
+  const older = day.loadAnchor('route'); await day.loadAnchor('route');
+  finish({ items: [] }); await older; expect(day.anchor?.stopId).toBe('new');
+});

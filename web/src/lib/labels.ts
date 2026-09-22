@@ -48,6 +48,19 @@ export function label(key: LabelKey): string {
 
 // UI copy lives alongside the glossary so it can be changed in one place.
 export const copy = {
+  simRecorded: 'Recorded feed',
+  simTimetable: 'Timetable rehearsal',
+  simEnded: 'Ended',
+  simPaused: 'Paused',
+  simRunning: 'Running',
+  simSynced: 'Synchronized',
+  simUnsynced: 'Not synchronized — reconnect before making changes.',
+  simPause: 'Pause',
+  simResume: 'Resume',
+  simSpeed: 'Playback speed',
+  simForwardTime: 'Forward time (Chicago)',
+  simSeek: 'Advance clock',
+  simWindow: 'Playback window',
   simDisabled: 'Shakedown Run is not enabled here.',
   simFeedUnavailable: 'Rehearsal train data is unavailable. Check the recording and pinned timetable.',
   metraUnavailable: 'Metra schedule is not available yet. Try again in a minute.',

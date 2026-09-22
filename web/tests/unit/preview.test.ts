@@ -4,7 +4,7 @@ const sent = vi.hoisted(() => ({ path: '', body: null as unknown, signal: undefi
 vi.mock('$lib/api', () => ({
   api: async (path: string, init: { json?: unknown; signal?: AbortSignal }) => {
     sent.path = path; sent.body = init.json; sent.signal = init.signal;
-    return { anchorAt: '2026-12-26T18:00:00.000Z', legs: [{
+    return { clockRevision: 12, anchorAt: '2026-12-26T18:00:00.000Z', legs: [{
       fromStopId: 'a', toStopId: 'b', kind: 'train',
       readyAt: '2026-12-26T18:00:00.000Z', departAt: '2026-12-26T18:30:00.000Z', arriveAt: '2026-12-26T18:59:00.000Z',
       segments: [{ kind: 'train', tripId: 'BN4', routeId: 'BNSF', headsign: 'Chicago', from: 'LAGRANGE', to: 'CUS', dep: '2026-12-26T18:30:00.000Z', arr: '2026-12-26T18:55:00.000Z' }]
@@ -45,7 +45,7 @@ describe('previewPlan', () => {
   });
 
   it('renames the fields so the itinerary components can render it', async () => {
-    const legs = await previewPlan(plan, 'itinerary000001');
+    const { legs } = await previewPlan(plan, 'itinerary000001');
     expect(legs[0]).toMatchObject({
       id: 'preview:a:b', itinerary: 'itinerary000001', from_stop: 'a', to_stop: 'b', kind: 'train',
       ready_at: '2026-12-26T18:00:00.000Z', depart_at: '2026-12-26T18:30:00.000Z', arrive_at: '2026-12-26T18:59:00.000Z'
@@ -53,3 +53,8 @@ describe('previewPlan', () => {
     expect(legs[0].segments[0]).toMatchObject({ kind: 'train', tripId: 'BN4' });
   });
 });
+
+ it('retains the captured revision alongside rendered preview legs', async () => {
+   const legs = await previewPlan(plan, 'itinerary000001');
+   expect(legs.clockRevision).toBe(12);
+ });

@@ -1,6 +1,7 @@
 <script lang="ts">
   // The header menu. Items that belong to later milestones are rendered disabled rather than hidden,
   // so the shape of the finished app is visible and M3 only has to enable them.
+  import { clientClock } from '$lib/sim/clock.svelte';
   import { goto } from '$app/navigation';
   import { copy, labels } from '$lib/labels';
   import { logout, auth } from '$lib/pb';
@@ -24,6 +25,7 @@
       <span class="label">{copy.theRoute}</span>
     </button>
     {#if $auth.user?.is_admin}
+      {#if clientClock.enabled}<button type="button" class="item" onclick={() => go('/sim')}>{labels.simulationMode}</button>{/if}
       <button type="button" class="item" onclick={() => { onclose(); oncompose(); }} data-testid="menu-bulletin">
         <span class="label">{copy.postBulletin}</span>
       </button>

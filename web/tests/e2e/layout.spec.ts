@@ -1,3 +1,4 @@
+import { login as loginNamed } from './helpers';
 import { test, expect, type Page } from '@playwright/test';
 
 const CREW = process.env.CREW_PASSWORD ?? 'crew-test-password';
@@ -60,4 +61,11 @@ test('the menu is not offered before signing in', async ({ page }) => {
   await expect(page.getByRole('banner').getByText('Chug-a-Lug Choo-Choo')).toBeVisible();
   await expect(page.getByTestId('menu')).toHaveCount(0);
   await expect(page.getByTestId('logout')).toHaveCount(0);
+});
+
+test('normal mode hides simulation status and Conductor navigation', async ({ page }) => {
+  await loginNamed(page, 'E2E Normal Conductor', process.env.ADMIN_PASSWORD!);
+  await expect(page.getByTestId('simulation-status')).toHaveCount(0);
+  await page.getByTestId('menu').click();
+  await expect(page.getByRole('button', { name: 'Shakedown Run' })).toHaveCount(0);
 });

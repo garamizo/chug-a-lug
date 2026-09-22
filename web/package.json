@@ -14,7 +14,9 @@
     "check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
     "test": "vitest run tests/unit",
     "test:hooks": "vitest run tests/hooks --no-file-parallelism",
-    "test:e2e": "playwright test"
+    "test:e2e": "playwright test",
+    "test:sim": "playwright test --config playwright.sim.config.ts",
+    "test:sim:offline": "node scripts/smoke-sim-offline.mjs"
   },
   "dependencies": {
     "browser-image-compression": "^2.0.2",

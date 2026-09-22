@@ -5,11 +5,12 @@ import type { StagedPlan } from './staged';
 import type { Leg, Segment } from '$lib/types';
 
 type PreviewResponse = {
+  clockRevision?: number;
   anchorAt: string | null;
   legs: { fromStopId: string; toStopId: string; kind: Leg['kind']; readyAt: string; departAt: string; arriveAt: string; segments: Segment[] }[];
 };
 
-export async function previewPlan(plan: StagedPlan, itineraryId: string): Promise<Leg[]> {
+export async function previewPlan(plan: StagedPlan, itineraryId: string): Promise<{ legs: Leg[]; clockRevision?: number }> {
   const res = await api<PreviewResponse>('/api/plan/preview', {
     method: 'POST',
     signal: AbortSignal.timeout(10_000),
@@ -19,7 +20,7 @@ export async function previewPlan(plan: StagedPlan, itineraryId: string): Promis
       stops: plan.stops.map((s) => ({ id: s.id, order: s.order, station_id: s.station_id, dwell_min: s.dwell_min, walk_min: s.walk_min }))
     }
   });
-  return res.legs.map((leg) => ({
+  const legs = res.legs.map((leg) => ({
     id: `preview:${leg.fromStopId}:${leg.toStopId}`,
     itinerary: itineraryId,
     from_stop: leg.fromStopId,
@@ -31,4 +32,5 @@ export async function previewPlan(plan: StagedPlan, itineraryId: string): Promis
     segments: leg.segments,
     computed_at: ''
   } as Leg));
+  return { legs, clockRevision: res.clockRevision };
 }

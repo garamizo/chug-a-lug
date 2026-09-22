@@ -81,3 +81,13 @@ describe('live route mirror', () => {
     expect(day.fromMirror).toBe(false);
   });
 });
+
+it('rejects a mirror belonging to a different rehearsal run', async () => {
+  const { clientClock } = await import('$lib/sim/clock.svelte');
+  clientClock.enabled = true;
+  vi.spyOn(clientClock, 'runId', 'get').mockReturnValue('new-run');
+  mocks.list.mockRejectedValue(new Error('offline'));
+  mocks.read.mockResolvedValue({ ...mirror, runId: 'old-run' });
+  try { await expect(new LiveDay().loadRoute()).rejects.toThrow('offline and no mirror'); }
+  finally { clientClock.enabled = false; vi.restoreAllMocks(); }
+});

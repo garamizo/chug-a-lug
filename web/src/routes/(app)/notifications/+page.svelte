@@ -1,6 +1,7 @@
 <script lang="ts">
   // Service alerts from Metra, and (from M3) Bulletins from the Conductor. Opening the screen marks
   // every alert on it as seen, which clears the header dot.
+  import { clientClock } from '$lib/sim/clock.svelte';
   import { copy } from '$lib/labels';
   import { fmtTime } from '$lib/time';
   import { fetchAlerts } from '$lib/live/feed';
@@ -14,6 +15,7 @@
 
   $effect(() => {
     seen = readSeen();
+    if (clientClock.enabled) { alerts = liveDay.alerts; markSeen(alerts.map(a => a.id)); loaded = true; return; }
     void fetchAlerts()
       .then((r) => { alerts = r.alerts; markSeen(r.alerts.map((a) => a.id)); })
       .catch(() => { alerts = []; })
@@ -45,7 +47,7 @@
 <div data-testid="bulletin-list">
   {#each liveDay.bulletins as bulletin (bulletin.id)}
     <article class="notice">
-      <div class="row"><span class="title">{copy.fromTheConductor}</span><span class="when">{fmtTime(bulletin.created)}</span></div>
+      <div class="row"><span class="title">{copy.fromTheConductor}</span><span class="when">{fmtTime(bulletin.at || bulletin.created)}</span></div>
       <p class="body">{bulletin.body}</p>
     </article>
   {/each}

@@ -1,6 +1,7 @@
 <script lang="ts">
   // Editing the stops. A draft is written as it is edited; The Route on the day is staged and saved
   // in one go, so the crew never sees a half-finished change.
+  import { clientClock } from '$lib/sim/clock.svelte';
   import { goto } from '$app/navigation';
   import { pb, auth } from '$lib/pb';
   import { api } from '$lib/api';
@@ -25,6 +26,7 @@
   // The plan as it stood when the editor opened: what the Bulletin is diffed against (Task 14), and
   // what has to survive the trip to the venue picker along with the staged change itself.
   let before = $state<PlanSnapshot | null>(null);
+  let previewRevision = $state<number | undefined>();
   let previewLegs = $state<Leg[]>([]);
   // Wait for an in-flight preview, but treat a failed check as a warning: the server validates Save.
   let previewPending = $state(false);
@@ -113,16 +115,20 @@
   // Periodic checks keep the last good legs; a failure warns and leaves validation to the server.
   $effect(() => {
     const current = plan;
+    const revision = clientClock.revision;
+    previewRevision = undefined;
     previewLegs = [];
     if (!current || !draft) { previewPending = false; previewFailed = false; return; }
     let alive = true;
     let first = true;
+    let request = 0;
     const run = () => {
+      const id = ++request;
       previewPending = true;
       void previewPlan(current, data.id)
-        .then((legs) => { if (!alive) return; previewLegs = legs; previewFailed = false; })
-        .catch(() => { if (!alive) return; previewFailed = true; if (first) previewLegs = []; })
-        .finally(() => { if (!alive) return; previewPending = false; first = false; });
+        .then((result) => { if (!alive || id !== request) return; if (clientClock.enabled && (revision !== clientClock.revision || result.clockRevision !== revision)) throw new Error(copy.simClockConflict); previewLegs = result.legs; previewRevision = result.clockRevision; previewFailed = false; })
+        .catch(() => { if (!alive || id !== request) return; previewFailed = true; if (first) previewLegs = []; })
+        .finally(() => { if (!alive || id !== request) return; previewPending = false; first = false; });
     };
     run();
     const timer = setInterval(run, 60_000);
@@ -174,8 +180,9 @@
 
   /** The Save button: drafts the Bulletin from what actually changed and opens the sheet. The
    *  commit itself waits for the sheet's answer (sent, edited, or skipped) in `commit()`. */
+  const simBlocked = $derived(clientClock.enabled && (!clientClock.synchronized || previewRevision !== clientClock.revision || previewFailed));
   function askToTell() {
-    if (!plan || !before || blockers.length || previewPending || saving || pending) return;
+    if (!plan || !before || blockers.length || simBlocked || previewPending || saving || pending) return;
     const departAt = (stopId: string) => previewLegs.find((l) => l.from_stop === stopId)?.depart_at ?? null;
     const changes = planDiff(before, snapshot(plan), departAt);
     // The id is minted here, once, so a retried save cannot post the same Bulletin twice.
@@ -186,8 +193,10 @@
     if (!plan) return;
     pending = null; saving = true; saveError = '';
     try {
+      await clientClock.ready();
+      if (clientClock.enabled && (previewPending || previewFailed || previewRevision !== clientClock.revision)) throw new Error(copy.simClockConflict);
       const res = await api<{ ok: boolean; impossible: number }>('/api/plan/commit', {
-        method: 'POST', json: { ...commitPayload(plan, data.id), bulletin }
+        method: 'POST', json: { ...commitPayload(plan, data.id), bulletin, ...(clientClock.enabled ? { clockRevision: previewRevision } : {}) }
       });
       // The write landed either way: a leftover park from an abandoned trip to the picker has no
       // reason to survive a save that superseded it.
@@ -252,7 +261,7 @@
             {#each blockers as blocker (blocker.message)}<li>{blocker.message}</li>{/each}
           </ul>
         {/if}
-        <button type="button" onclick={askToTell} disabled={!!blockers.length || previewPending || saving || !!pending} data-testid="save-plan">
+        <button type="button" onclick={askToTell} disabled={!!blockers.length || simBlocked || previewPending || saving || !!pending} data-testid="save-plan">
           {saving ? copy.saving : copy.savePlan}
         </button>
       </div>

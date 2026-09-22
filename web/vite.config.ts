@@ -15,7 +15,7 @@ export default defineConfig({
         globPatterns: ['client/**/*.{js,css,ico,png,svg,webp,woff,woff2}'],
         runtimeCaching: [
           {
-            urlPattern: ({ url }) => url.pathname.startsWith('/api/metra/'),
+            urlPattern: ({ url, request }) => request.cache !== 'no-store' && url.pathname.startsWith('/api/metra/'),
             handler: 'NetworkFirst',
             options: { cacheName: 'metra', expiration: { maxEntries: 40, maxAgeSeconds: 86_400 }, networkTimeoutSeconds: 4 }
           },

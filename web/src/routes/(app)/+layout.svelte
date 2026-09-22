@@ -1,4 +1,6 @@
 <script lang="ts">
+  import { clientClock } from '$lib/sim/clock.svelte';
+  import SimulationStatus from '$lib/components/SimulationStatus.svelte';
   import { goto } from '$app/navigation';
   import { page } from '$app/state';
   import { pb, auth } from '$lib/pb';
@@ -12,7 +14,15 @@
   let error = $state('');
   $effect(() => { if (!$auth.user) goto('/login'); });
   // One owner for the live day: every screen reads this instance, so there is a single poller.
-  $effect(() => { if ($auth.user) return liveDay.start(); });
+  $effect(() => {
+    if (!$auth.user) return;
+    let disposed = false;
+    let stopDay: (() => void) | undefined;
+    if (!clientClock.enabled) return liveDay.start();
+    const stopClock = clientClock.start();
+    void clientClock.sync().catch(() => {}).then(() => { if (!disposed) stopDay = liveDay.start(); });
+    return () => { disposed = true; stopDay?.(); stopClock(); };
+  });
   const here = $derived(liveDay.here);
   // /live already shows the full ticket; the compact banner is for every *other* screen.
   const showBanner = $derived(!!here?.stop && page.url.pathname !== '/live');
@@ -45,6 +55,7 @@
     if (!$auth.user) return;
     error = '';
     try {
+      await clientClock.ready();
       await pb.collection('broadcast_acks').create({ broadcast: broadcastId, user: $auth.user.id });
     } catch { error = copy.noSignal; }
     await liveDay.loadBulletins();
@@ -57,6 +68,7 @@
     liveDay.composing = false;
     if (!liveDay.itinerary || !$auth.user || !body) return;
     try {
+      await clientClock.ready();
       await pb.collection('broadcasts').create({ id: newRecordId(), itinerary: liveDay.itinerary.id, kind: 'message', body, created_by: $auth.user.id });
       await liveDay.loadBulletins();
     } catch { error = copy.noSignal; }
@@ -64,6 +76,8 @@
 </script>
 
 {#if $auth.user}
+  <div class="clock-header" class:sim={clientClock.enabled}>
+  <SimulationStatus />
   {#if showBanner}
     <a class="banner" href="/live" data-testid="banner">
       <DepartureBoard compact
@@ -74,6 +88,7 @@
         mode={liveDay.mode} rtFetchedAt={liveDay.rtFetchedAt} />
     </a>
   {/if}
+  </div>
   {#if liveDay.pinnedBulletin}
     <PinnedBulletin bulletin={liveDay.pinnedBulletin} onack={() => void ack(liveDay.pinnedBulletin!.id)} />
   {/if}
@@ -85,5 +100,8 @@
 {/if}
 
 <style>
+  .clock-header { display: contents; }
+  .clock-header.sim { display: flow-root; position: sticky; top: 64px; z-index: 9; background: #111; padding-bottom: 4px; }
+  .clock-header.sim .banner { position: static; }
   .banner { display: block; position: sticky; top: 64px; z-index: 9; text-decoration: none; color: inherit; }
 </style>

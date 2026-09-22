@@ -7,7 +7,7 @@
 </script>
 
 <aside class="pinned" data-testid="pinned-bulletin" role="status">
-  <div class="head"><span>{copy.fromTheConductor}</span><span>{fmtTime(bulletin.created)}</span></div>
+  <div class="head"><span>{copy.fromTheConductor}</span><span>{fmtTime(bulletin.at || bulletin.created)}</span></div>
   <p class="body">{bulletin.body}</p>
   <button type="button" onclick={onack} data-testid="bulletin-ack">{copy.gotIt}</button>
 </aside>
