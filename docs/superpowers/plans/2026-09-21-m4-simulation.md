@@ -1,8 +1,9 @@
 # M4 simulation: implementation plan
 
 - Date: 2026-09-21
-- Status: planned, not implemented
-- Branch/worktree: `feat/m4-simulation`, `.worktrees/m4-simulation`
+- Status: implementation complete; final automated evidence below; physical-phone and real-recording acceptance pending
+- Original branch/worktree: `feat/m4-simulation`, `.worktrees/m4-simulation`
+- Tasks 8–11 branch/worktree: `feat/m4-finish`, `.worktrees/m4-finish`, based on `410e907`
 - Starting commit: `72a32a5`
 
 Design authority: [M4 simulation without GPS](../specs/2026-09-21-m4-simulation-design.md).
@@ -600,3 +601,58 @@ waiting for a three-photo upload to finish; all four Freight tests passed on the
 and the subsequent full browser gate passed without application or test changes. Host checks used
 Node 25.9.0 (npm reports the existing Node 22 engine requirement). No production deployment or
 complete phone rehearsal was performed.
+
+
+### Tasks 8–11 implementation and acceptance scope
+
+Implemented on `feat/m4-finish`, in `.worktrees/m4-finish`, from `410e907`.
+
+The layout owns one authenticated browser clock, with performance-based interpolation, half-round-trip
+compensation, five-second sync, focus/online recovery and logout teardown. Unknown simulation time
+stays unknown. Display ticks every 250 ms and replay feeds every wall second. Revisions invalidate
+feeds/previews and refresh route/anchor/Bulletins/Tab/Freight. Same-revision samples do not invalidate
+preview; the integration test caught that subtle Svelte dependency before closeout. Late clock/feed,
+route, anchor, Tab and media responses cannot overwrite newer reads. Run-specific mirrors retain
+wall save ages; discovering a new run removes the previous mirror atomically.
+
+Shakedown Run is visible across signed-in screens, with Conductor menu controls for pause/resume,
+rate and forward Chicago time. Source/date remain read-only. Conflicts adopt current state without
+replaying the action. The editor tracks preview revision and resynchronizes before Save; Tab, Undo,
+Freight, acknowledgements and standalone Bulletins likewise require readiness. Bulletin display uses
+`at` with legacy `created` fallback. File capture dates and auth/cache/park timing remain real time.
+
+Ordinary and simulation Playwright suites now share explicit isolated configuration. The simulation
+suite uses real clock/Metra/planning endpoints, a seeded recording, three separate mobile browser
+contexts (one with skewed Date), and a live-feed sentinel. It covers paused agreement, rates/seek,
+Crew denial, stale conflicts, normal/delayed/canceled trips, alerts and independent outages; Hold,
+Annul, manual added venue, lost-response Save/Bulletin retry, acknowledgements, Crew totals, paused
+beer/water Undo, a small upload and offline/reconnect writes. A test-only supervisor restarts web
+against the same disposable PocketBase to check paused/running persistence. Each suite seed verifies
+that the fresh database has no old anchors, drinks, acknowledgements or uploads.
+
+`test:sim:offline` builds the actual production bundle and checks its registered service worker with
+network disconnected across a reload. It verifies the run-tagged route mirror, unavailable clock,
+wall-based age, online recovery and absence of clock/Metra responses from runtime caches. This test
+caught the separate station API caller missing no-store; the shared API helper now covers it too.
+Screenshots are retained separately for simulation controls, board, Bulletin and offline state.
+The final rehearsal also exposed the existing image compressor’s default CDN worker fetch. Its
+worker is now bundled locally, with a browser assertion rejecting external upload requests.
+
+Tests were introduced before the clock, preview-revision, stale-read and control-conflict fixes.
+Focused controls and full integration share the real-endpoint browser suite instead of adding a
+second mocked clock UI harness. Final gates are consolidated after the coupled browser integration.
+No GPS, geolocation code, per-person tracking or new external dependency was added.
+
+Physical phones and a suitable real Saturday archive were not available to this execution. The
+three emulated sessions are automated synthetic evidence, not a claimed at-home phone rehearsal.
+The full milestone remains pending those manual acceptance steps. See the dated evidence note and
+rehearsal template under `docs/rehearsals/`. Nothing was merged, pushed or deployed to production.
+
+
+Final tasks 8–11 gate: `npm test` (543 passed), `npm run check` (zero errors/warnings),
+`npm run test:e2e` (43 passed), `bash scripts/test-hooks.sh` (47 normal/upgrade plus 3 simulation
+checks passed), `npm run test:sim` (2 passed), and `npm run test:sim:offline` (production build plus
+1 service-worker check passed), sequentially. The first full simulation gate identified a slow
+external image-compression worker fetch; the worker is now local. Mobile review then added sticky
+status and a scroll assertion. The final complete gate follows those changes. See
+[dated evidence and screenshots](../../rehearsals/2026-09-22-m4-automated.md).

@@ -204,7 +204,7 @@ Sim mode has to exist before the live phase is considered done, because the real
 - **Shared position**: rehearse the same clock-derived stop and Conductor anchor as the live day. No GPS, waypoint player or per-person tracking.
 - **Schedule-only fallback**: use scheduled departures when no recording exists; do not invent vehicle positions.
 - **Isolation**: a rehearsal uses its own database and origin. Replay uses the recording's original service date and archived GTFS; operational timeouts and cache ages remain on wall time.
-- M4 is in progress: the server clock, isolated launcher, recording fixtures/replay, Metra endpoint integration, and server planning/event timestamps are implemented; browser clock synchronization and UI controls are still pending. See the [design](docs/superpowers/specs/2026-09-21-m4-simulation-design.md) and [implementation plan](docs/superpowers/plans/2026-09-21-m4-simulation.md).
+- M4 implementation includes the shared browser/server clock, isolated launcher, recording replay, Conductor controls, and offline safeguards. Automated rehearsal coverage is included; physical-phone and real-recording acceptance remain pending. See the [design](docs/superpowers/specs/2026-09-21-m4-simulation-design.md) and [implementation plan](docs/superpowers/plans/2026-09-21-m4-simulation.md).
 - A real dry run on a December Saturday with two or three phones, before the freeze.
 
 ### Isolated rehearsals (M4 in progress)
@@ -221,8 +221,10 @@ The default origins are `http://127.0.0.1:15174` (web) and `http://127.0.0.1:180
 (PocketBase). The launcher creates `.simulations/practice/`, generates private credentials, and seeds
 Rehearsal Conductor / Rehearsal Crew plus a locked December 26 route. Read the matching
 `ADMIN_PASSWORD` or `CREW_PASSWORD` from that run's `credentials.env` to sign in; passwords are never
-printed. Its clock starts paused at 10:00 Chicago time. **The live screens still use wall time until
-M4's event-clock integration lands**, so this is a setup/planning check, not a full live rehearsal.
+printed. Its clock starts paused at 10:00 Chicago time. Open **Shakedown Run** from the Conductor’s
+menu to resume, pause, choose 1×/5×/10×/30×/60×, or advance to a later Chicago time while paused.
+Every signed-in screen shows Railroad Time, source, speed and synchronization status. Crew can
+read the status but cannot change the clock.
 
 A stopped run keeps its data. Starting the same name resumes it without reseeding; source, fixture,
 date and port changes are rejected. Choose a new name for a fresh run. Interrupted seeding preserves the database and refuses automatic repair; inspect it,
@@ -242,8 +244,20 @@ and safe diagnostics alongside the existing modes/timestamps. A fresh recording 
 returns 503 and never falls back to the live network. Server preview, commit and recompute use captured Railroad Time. Simulation commits require the
 preview’s `clockRevision`; clock controls return 409 while a commit or recompute publishes changes.
 Bulletins and event logs use event time, while storage metadata keeps wall time. Server-issued action
-orders keep anchors and Tab Undo deterministic while paused. Browser clock synchronization and UI
-integration remain upcoming M4 tasks.
+orders keep anchors and Tab Undo deterministic while paused. Browsers synchronize every five wall
+seconds, use a monotonic clock between samples, and refresh replay departures/alerts every wall
+second. A revision change refreshes the route and editor preview; Save carries that preview’s revision.
+
+Offline clients retain their last mapping but require resynchronization before writes. A fresh offline
+boot can show its saved route without inventing Railroad Time. Route mirrors are scoped to the run;
+mirror age, authentication and file capture dates stay on wall time. Clock/feed responses are not
+cached by the service worker. Forward seeks never rewind history; at the playback window end the
+clock stops. Restarting resumes the persisted mapping, including wall downtime if it was running.
+
+Run `cd web && npm run test:sim` for the isolated browser rehearsal and
+`npm run test:sim:offline` for the production-build service-worker check, sequentially after ordinary
+e2e and hook tests. The [operations guide](docs/OPERATIONS.md#shakedown-run-m4) covers phone origins;
+use the [rehearsal template](docs/rehearsals/m4-template.md) to record physical-device acceptance.
 
 The launcher discards inherited production settings and uses its own Compose project and network.
 External tokens are empty, the timetable is pinned locally, and the venue lookup URL is disabled.
@@ -334,7 +348,7 @@ re-reads the feed rather than hard-coding it.
 | M1 Planning | end Oct | Diagram, stop picker, venue cards with Google photos, drafts with real train times, votes, comments, approval vote — done 2026-09-19 (see docs/superpowers/plans/2026-09-19-m1-planning.md) |
 | M2 Metra proxy | mid Nov | BNSF realtime proxy with recording, Departure Board with Last Call and All Aboard, service alerts and the header menu, schedule fallback — done 2026-09-20 (see docs/superpowers/plans/2026-09-20-m2-metra-proxy.md) |
 | M3 Live | end Nov | Clock-derived position with Conductor anchor, Crew Board, staged route edits, Bulletins, Tab, Freight, offline route mirror — done 2026-09-20 (see [plan](docs/superpowers/plans/2026-09-20-m3-live.md)) |
-| M4 Simulation | Sat Dec 5 | Shared sim clock, feed replay and timetable fallback, Conductor anchor; full rehearsal at home — [spec and plan](docs/superpowers/plans/2026-09-21-m4-simulation.md) in progress (clock, launcher, replay, Metra endpoints, and server event-time integration implemented) |
+| M4 Simulation | Sat Dec 5 | Shared sim clock, feed replay and timetable fallback, Conductor anchor; full rehearsal at home — [spec and plan](docs/superpowers/plans/2026-09-21-m4-simulation.md) implemented; physical-phone and real-recording rehearsal acceptance pending |
 | M5 Wrap-up | Dec 12 | Album, scoreboard, awards, downloads |
 | Freeze + field test | Sat Dec 12 or 19 | Real train ride with 2-3 phones; bug fixes only after this |
 | Launch | Sat Dec 26 | Crawl |

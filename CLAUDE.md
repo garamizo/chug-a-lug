@@ -79,6 +79,18 @@ restart without a rebuild.
 - **Seeding stops fires the recompute hook.** The planner replaces seeded leg times with its own
   answer. A test clock based on the fixture's hand-written departure may be watching the wrong train.
 
+- **Simulation has event time and wall time.** Use the shared clock for the live day, Tab, anchors,
+  planning and Bulletins. Cache ages, auth, timeouts, parked-edit expiry and file capture metadata
+  stay on wall time. Unknown offline Railroad Time is not today's date.
+- **Never reuse production rehearsal data.** Use the isolated launcher and named run; source/date
+  are immutable. Replay selects original timestamps from an archived matching timetable.
+- **Capture clock context through preview/commit/recompute.** Save carries preview `clockRevision`;
+  autonomous and nested recomputes use event-write leases. Never hold a clock mutex while awaiting
+  the hook's itinerary queue.
+- **Browser clock ownership is the app layout.** Dispose polling and listeners on logout. Reject
+  late revisions/requests, scope route mirrors to run ID and keep simulation APIs out of Workbox.
+  A same-revision clock sync must not invalidate the editor preview: use the derived revision.
+
 ## Conventions
 
 - User-visible strings live only in `web/src/lib/labels.ts`. The README's UI glossary is the source

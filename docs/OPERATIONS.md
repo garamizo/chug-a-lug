@@ -118,7 +118,7 @@ dev (the PocketBase hook calls the SvelteKit server with that secret and URL aft
 - Force everyone to log in again (leaked password): change `CREW_PASSWORD` in `.env`, then in the
   PocketBase admin UI → Collections → `users` → Options → Auth token → regenerate the secret.
 - The login endpoint reads `LOGIN_RATE_LIMIT` from PocketBase's environment: default **20 attempts
-  per IP per 15 minutes**. Only `web/playwright.config.ts` raises it (to 500) for the e2e harness.
+  per IP per 15 minutes**. Only `web/tests/browser-config.ts` raises it (to 500) for the e2e harness.
   Production keeps the default unless explicitly configured; do not copy the harness override into
   production to solve a test failure.
 
@@ -149,3 +149,66 @@ Edit `.env`, then `docker compose up -d --force-recreate <service>`. The hooks r
 token is read by the `cloudflared` container at start (`docker compose up -d --force-recreate cloudflared`).
 `INTERNAL_SECRET` is read by both containers (the PocketBase hook sends it, the SvelteKit server checks
 it), so rotate it with `docker compose up -d --force-recreate pocketbase web`.
+
+
+## Shakedown Run (M4)
+
+Use the isolated launcher from the implementation checkout; do not run `just up` for a rehearsal.
+Normal production uses `SIM=0` (or unset) and `PUBLIC_SIM=0` (or unset). Never copy production
+credentials, `.env`, database files or uploads into a rehearsal. Setup discards inherited settings,
+seeds the clock before event-producing hooks and refuses occupied ports or mismatched saved runs.
+
+```bash
+just sim rehearsal-a fixture-recording
+just sim-status rehearsal-a
+just sim-stop rehearsal-a
+just sim rehearsal-a fixture-recording  # resume retained data
+just sim rehearsal-b fixture-recording # independent database and history
+```
+
+`fixture` is timetable only; `fixture-recording` includes delay/cancellation/outage scenarios.
+A real recording ID selects `data/recordings/ID/`, using its original Chicago date and archived GTFS.
+Source, date, window and origins are immutable for a saved run. Missing/corrupt setup fails visibly;
+there is no live-feed fallback. Retire runs separately; the application has no rewind/reset action.
+The default web/PocketBase ports are 15174/18094; tests use 15173/18093 and run one suite at a time.
+
+To capture or index an archive, supply its service date and explicit UTC playback window:
+
+```bash
+just record NAME DATE WINDOW_START WINDOW_END
+just index-recording NAME MATCHING_GTFS_ZIP DATE WINDOW_START WINDOW_END
+just inspect-recording NAME
+```
+
+ The recorder archives GTFS and per-feed poll observations.
+Use `just index-recording` with the matching zip/date/window for legacy snapshots. Indexing cannot
+recover successful unchanged polls; legacy freshness remains conservative. Never re-date protobuf
+headers to pretend the recording is from another Saturday.
+
+Sign in with the run's private generated credentials, then choose Shakedown Run from the Conductor
+menu. All signed-in users see Railroad Time and synchronization status. Only the Conductor sees
+controls. Pause before seeking forward; the seek input is Chicago time on the source service date.
+Rates are 1×, 5×, 10×, 30× and 60×. A paused rate selection changes the resume rate without starting.
+Playback clamps at the window end. Restart preserves paused time or includes elapsed wall downtime
+for a running clock. A conflict adopts the current clock and asks for another deliberate action.
+
+Use The Route editor to move the crew, Hold, Annul or add a venue. The same preview/Save/Bulletin
+flow is used as on the live day. A clock revision refreshes previews and prevents obsolete saves.
+Tab, Undo, uploads, acknowledgements and standalone Bulletins resynchronize before writing. Offline
+writes are not queued. A previously synchronized browser can display its last running mapping while
+marked unsynchronized; a fresh offline browser shows only its route mirror and clock-unavailable
+status. Mirror ages and parked-edit expiry remain wall time, as do auth, cache budgets and photo dates.
+
+For phones, copy `.env.sim.example` to `.env.sim` and set `BIND_HOST=0.0.0.0`, plus both origins to
+addresses reachable by every device. LAN HTTP permits functional rehearsal only. PWA installation
+and offline phone acceptance require dedicated HTTPS web and PocketBase origins, routed to this
+isolated stack with a trusted certificate; do not reuse production origins. Configure those origins
+before creating the named run. The localhost production-build test is secure-context browser
+coverage, not evidence that physical phones or a LAN HTTP origin support offline operation.
+
+Run the ordinary gate, then `npm run test:sim` and `npm run test:sim:offline` in `web/`, sequentially.
+The latter builds the production bundle, registers its real service worker, disconnects and reloads
+The Route, then verifies resynchronization and excluded API caches. Browser screenshots are retained
+under `web/test-results/sim/` and `web/test-results/sim-offline/`. Record device/browser/build/source
+and each manual checkpoint using [the rehearsal template](rehearsals/m4-template.md). Automated
+fixtures do not establish real Saturday recording or physical-phone acceptance.
