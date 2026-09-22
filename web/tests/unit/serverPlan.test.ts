@@ -104,3 +104,12 @@ describe('findAnchor', () => {
     expect(await findAnchor(pbWith([{ stop: '', at: 'x', expand: { user: { is_admin: true } } }]), 'itin1')).toBeNull();
   });
 });
+
+it('requests the newest paused anchor by action order', async () => {
+  const getList = vi.fn(async () => ({ items: [
+    { stop: 'newest', at: '2026-12-26T18:00:00Z', action_order: 2, expand: { user: { is_admin: true } } }
+  ] }));
+  const pb = { filter: (s: string) => s, collection: () => ({ getList }) };
+  expect(await findAnchor(pb as never, 'itinerary')).toMatchObject({ stopId: 'newest' });
+  expect(getList).toHaveBeenCalledWith(1, 20, expect.objectContaining({ sort: '-at,-action_order' }));
+});

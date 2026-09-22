@@ -1,7 +1,7 @@
 # M4: Simulation without GPS
 
 - Date: 2026-09-21
-- Status: specified; implementation pending
+- Status: implementation in progress; tasks 1–7 implemented, client synchronization and controls pending
 - Branch: `feat/m4-simulation`
 - Baseline: `72a32a5` (M3 and its review fixes)
 

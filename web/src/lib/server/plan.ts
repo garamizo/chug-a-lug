@@ -1,5 +1,6 @@
 // The one path from stops to leg times, shared by recompute, the preview endpoint and the commit
 // endpoint: whatever the editor previews is exactly what a save writes.
+import type { ClockContext } from './sim/service';
 import { error } from '@sveltejs/kit';
 import type PocketBase from 'pocketbase';
 import { metra } from './metra';
@@ -51,7 +52,7 @@ export function readStops(value: unknown, opts?: { checkVenueFields?: boolean })
 export async function findAnchor(pb: PocketBase, itineraryId: string): Promise<{ stopId: string; at: string } | null> {
   const rows = await pb.collection('checkins').getList<Checkin>(1, 20, {
     filter: pb.filter('kind = "at_stop" && stop.itinerary = {:id}', { id: itineraryId }),
-    sort: '-at',
+    sort: '-at,-action_order',
     expand: 'user'
   });
   const hit = rows.items.find((c) => c.expand?.user?.is_admin && c.stop);
@@ -81,9 +82,9 @@ export function activeAnchor(
 
 /** Leg times for a set of stops, in UTC. Pure apart from reading the cached GTFS schedule. */
 export async function computeLegs(opts: {
-  date: string; startMin: number; anchor?: { stopId: string; at: string } | null; stops: PlanStop[];
+  context?: ClockContext; date: string; startMin: number; anchor?: { stopId: string; at: string } | null; stops: PlanStop[];
 }): Promise<PlannedLeg[]> {
-  const schedule = await metra.getSchedule();
+  const schedule = await metra.getSchedule(opts.context);
   const anchor = opts.anchor ? { stopId: opts.anchor.stopId, atMin: minutesOfDay(opts.date, opts.anchor.at) } : null;
   const toIso = (m: number) => localToUtc(opts.date, m).toISOString();
   return recomputeLegs(schedule, { date: opts.date, startMin: opts.startMin, anchor }, opts.stops).map((leg) => ({

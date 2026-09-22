@@ -1,5 +1,22 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { createClockService } from '$lib/server/sim/service';
+import type { ClockState } from '$lib/sim/clock';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { fixtureSchedule } from '../fixtures/loadFixture';
+
+const clockSlot = vi.hoisted(() => ({ current: null as ReturnType<typeof createClockService> | null }));
+vi.mock('$lib/server/sim/clock', () => ({ simulationClock: {
+  readContext: () => clockSlot.current!.readContext(),
+  withEventWrite: (...args: Parameters<ReturnType<typeof createClockService>['withEventWrite']>) => clockSlot.current!.withEventWrite(...args)
+} }));
+let simState: ClockState;
+function enableSim(at = '2026-12-26T18:00:00.000Z') {
+  simState = { runId: 'test', revision: 1, epochStart: at, wallStart: '2026-09-21T12:00:00.000Z',
+    rate: 0, resumeRate: 1, serviceDate: '2026-12-26', source: 'timetable', recordingId: null,
+    windowStart: '2026-12-25T06:00:00.000Z', windowEnd: '2026-12-28T06:00:00.000Z' };
+  clockSlot.current = createClockService({ enabled: () => true, runId: () => 'test',
+    read: async () => simState, write: async s => { simState = s; } });
+  vi.setSystemTime(new Date('2026-09-21T12:00:00.000Z'));
+}
 
 const state = vi.hoisted(() => ({
   user: { id: 'u1', is_admin: true } as { id: string; is_admin: boolean },
@@ -26,6 +43,8 @@ const stops = [
 ];
 
 beforeEach(() => {
+  clockSlot.current = createClockService({ enabled: () => false, runId: () => '',
+    read: async () => { throw new Error('normal mode read clock'); }, write: async () => {} });
   state.user = { id: 'u1', is_admin: true };
   state.itinerary = { id: 'itinerary000001', status: 'locked', event_date: '2026-12-26', start_time: '11:00' };
 });
@@ -61,3 +80,17 @@ describe('POST /api/plan/preview', () => {
     await expect(call({ itinerary: 'it1', stops })).rejects.toMatchObject({ status: 400 });
   });
 });
+
+
+it.each([
+  ['2026-12-26T05:59:59.000Z', null],
+  ['2026-12-26T06:00:00.000Z', '2026-12-26T06:00:00.000Z'],
+  ['2026-12-27T05:59:59.000Z', '2026-12-27T05:59:59.000Z'],
+  ['2026-12-27T06:00:00.000Z', null]
+])('gates preview by simulated Chicago date at %s', async (at, anchorAt) => {
+  enableSim(at);
+  const res = await call({ itinerary: 'itinerary000001', anchorStopId: 's2', stops });
+  expect(await res.json()).toMatchObject({ anchorAt, clockRevision: 1 });
+});
+
+afterEach(() => { vi.useRealTimers(); });

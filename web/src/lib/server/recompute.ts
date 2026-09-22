@@ -1,5 +1,7 @@
 // Rebuilds the legs of an itinerary from its stops and the static schedule. Serialized per itinerary so
 // two quick edits cannot interleave their delete/create passes.
+import { simulationClock } from './sim/clock';
+import type { ClockContext } from './sim/service';
 import { adminPb } from './pb';
 import { parseHm } from '$lib/time';
 import { activeAnchor, computeLegs, findAnchor } from './plan';
@@ -13,9 +15,10 @@ const queues = new Map<string, Promise<unknown>>();
  * may ignore it: the chain always carries its own catch, so a failure logs instead of surfacing as
  * an unhandled rejection (which would take the Node server down).
  */
-export function recomputeItinerary(itineraryId: string): Promise<{ legs: number; impossible: number; impossibleFromAnchor: number }> {
+export function recomputeItinerary(itineraryId: string, context?: ClockContext): Promise<{ legs: number; impossible: number; impossibleFromAnchor: number }> {
   const prev = queues.get(itineraryId) ?? Promise.resolve();
-  const run = prev.catch(() => undefined).then(() => doRecompute(itineraryId));
+  const run = prev.catch(() => undefined).then(() => simulationClock.withEventWrite(context?.enabled ? context.revision : undefined,
+    captured => doRecompute(itineraryId, context ?? captured)));
   queues.set(itineraryId, run);
   // `run.catch(...)` marks `run` itself as handled, so a fire-and-forget caller is safe too; the
   // derived promise never rejects, so `.finally` cannot produce an unhandled rejection either.
@@ -25,7 +28,7 @@ export function recomputeItinerary(itineraryId: string): Promise<{ legs: number;
   return run;
 }
 
-async function doRecompute(itineraryId: string) {
+async function doRecompute(itineraryId: string, context: ClockContext) {
   const pb = await adminPb();
   // A deleted draft still fires the stops after-delete hook for each cascaded stop, so a missing
   // itinerary is normal: resolve as a no-op instead of rejecting.
@@ -40,9 +43,9 @@ async function doRecompute(itineraryId: string) {
   // Only the live day has an anchor; a draft has no Conductor position and plans from its start
   // time. `activeAnchor` narrows further: even a locked route plans from its start time, exactly
   // like a draft, unless the anchor's check-in was actually made on the event's own day.
-  const anchor = it.status === 'locked' ? activeAnchor(it.event_date, await findAnchor(pb, itineraryId)) : null;
+  const anchor = it.status === 'locked' ? activeAnchor(it.event_date, await findAnchor(pb, itineraryId), new Date(context.eventNow)) : null;
   const computed = await computeLegs({
-    date: it.event_date, startMin: parseHm(it.start_time), anchor,
+    context, date: it.event_date, startMin: parseHm(it.start_time), anchor,
     stops: stops.map((s) => ({ id: s.id, order: s.order, station_id: s.station_id, dwell_min: s.dwell_min ?? 60, walk_min: s.walk_min ?? 5 }))
   });
   const now = new Date().toISOString();
@@ -68,6 +71,6 @@ async function doRecompute(itineraryId: string) {
         anchorStopId: anchor.stopId
       }).length
     : impossible;
-  await pb.collection('event_log').create({ itinerary: itineraryId, kind: 'recompute', payload: { legs: computed.length, impossible, anchored: !!anchor }, at: now });
+  await pb.collection('event_log').create({ itinerary: itineraryId, kind: 'recompute', payload: { legs: computed.length, impossible, anchored: !!anchor }, at: context.eventNow });
   return { legs: computed.length, impossible, impossibleFromAnchor: filtered };
 }

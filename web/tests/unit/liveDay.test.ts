@@ -86,7 +86,7 @@ describe('live anchor lookup', () => {
     ] });
     await day.loadAnchor();
     expect(mocks.filter).toHaveBeenCalledWith('kind = "at_stop" && stop.itinerary = {:id}', { id: 'route' });
-    expect(mocks.getList).toHaveBeenCalledWith(1, 20, expect.objectContaining({ sort: '-at', expand: 'user' }));
+    expect(mocks.getList).toHaveBeenCalledWith(1, 20, expect.objectContaining({ sort: '-at,-action_order', expand: 'user' }));
     expect(day.anchor).toEqual({ stopId: 'a', at: 'now' });
   });
 
@@ -118,4 +118,15 @@ describe('live media reads', () => {
     finish([{ id: 'old-photo' }]); await older;
     expect(day.media).toEqual([]);
   });
+});
+
+it('requests paused anchors in server action order', async () => {
+  const day = new LiveDay();
+  mocks.getList.mockResolvedValue({ items: [
+    { stop: 'newest', at: '2026-12-26T18:00:00Z', action_order: 2, expand: { user: { is_admin: true } } },
+    { stop: 'older', at: '2026-12-26T18:00:00Z', action_order: 1, expand: { user: { is_admin: true } } }
+  ] });
+  await day.loadAnchor('itinerary');
+  expect(mocks.getList).toHaveBeenCalledWith(1, 20, expect.objectContaining({ sort: '-at,-action_order' }));
+  expect(day.anchor?.stopId).toBe('newest');
 });

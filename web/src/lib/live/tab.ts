@@ -14,6 +14,15 @@ export type Tally = {
 const zeroes = (): Record<DrinkKind, number> =>
   Object.fromEntries(DRINK_KINDS.map((k) => [k, 0])) as Record<DrinkKind, number>;
 
+// Legacy mirrors lack the server sequence; created/id provides stable order, not recovered request order.
+function newer(a: DrinkEntry, b: DrinkEntry): boolean {
+  if (a.at !== b.at) return a.at > b.at;
+  const aOrder = a.action_order ?? 0, bOrder = b.action_order ?? 0;
+  if (aOrder !== bOrder) return aOrder > bOrder;
+  if (a.created !== b.created) return (a.created ?? '') > (b.created ?? '');
+  return a.id > b.id;
+}
+
 export function tally(entries: DrinkEntry[], stopId: string, userId: string): Tally {
   const crew = zeroes(), mine = zeroes();
   let lastMine: DrinkEntry | null = null;
@@ -22,7 +31,7 @@ export function tally(entries: DrinkEntry[], stopId: string, userId: string): Ta
     crew[e.kind] += 1;
     if (e.user === userId) {
       mine[e.kind] += 1;
-      if (!lastMine || e.at > lastMine.at) lastMine = e;
+      if (!lastMine || newer(e, lastMine)) lastMine = e;
     }
   }
   return { crew, mine, lastMine };

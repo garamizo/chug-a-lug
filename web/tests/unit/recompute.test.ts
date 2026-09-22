@@ -1,8 +1,25 @@
+import { createClockService } from '$lib/server/sim/service';
+import type { ClockState } from '$lib/sim/clock';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { recomputeItinerary } from '$lib/server/recompute';
 import { fixtureSchedule } from '../fixtures/loadFixture';
 
 // Mutable state closed over by the mock factory (vi.hoisted runs before the mocks and the imports).
+const clockSlot = vi.hoisted(() => ({ current: null as ReturnType<typeof createClockService> | null }));
+vi.mock('$lib/server/sim/clock', () => ({ simulationClock: {
+  readContext: () => clockSlot.current!.readContext(),
+  withEventWrite: (...args: Parameters<ReturnType<typeof createClockService>['withEventWrite']>) => clockSlot.current!.withEventWrite(...args)
+} }));
+let simState: ClockState;
+function enableSim(at = '2026-12-26T18:00:00.000Z') {
+  simState = { runId: 'test', revision: 1, epochStart: at, wallStart: '2026-09-21T12:00:00.000Z',
+    rate: 0, resumeRate: 1, serviceDate: '2026-12-26', source: 'timetable', recordingId: null,
+    windowStart: '2026-12-25T06:00:00.000Z', windowEnd: '2026-12-28T06:00:00.000Z' };
+  clockSlot.current = createClockService({ enabled: () => true, runId: () => 'test',
+    read: async () => simState, write: async s => { simState = s; } });
+  vi.setSystemTime(new Date('2026-09-21T12:00:00.000Z'));
+}
+
 const state = vi.hoisted(() => ({
   itineraryError: null as { status: number; message: string } | null,
   stops: [] as unknown[],
@@ -33,6 +50,8 @@ vi.mock('$lib/server/metra', () => ({
 const { metra } = await import('$lib/server/metra');
 
 beforeEach(() => {
+  clockSlot.current = createClockService({ enabled: () => false, runId: () => '',
+    read: async () => { throw new Error('normal mode read clock'); }, write: async () => {} });
   state.itineraryError = null;
   state.stops = [];
   state.checkins = [];
@@ -123,3 +142,24 @@ describe('recomputeItinerary with an anchor', () => {
     expect(legs.find((l) => l.body.from_stop === 's2')).toMatchObject({ body: { kind: 'impossible', to_stop: 's3' } });
   });
 });
+
+
+it('leases autonomous recompute through publication across simulated midnight', async () => {
+  enableSim('2026-12-27T05:59:59.000Z');
+  vi.mocked(metra.getSchedule).mockImplementationOnce(async () => {
+    await expect(clockSlot.current!.change(1, { action: 'seek', at: '2026-12-27T06:00:00.000Z' })).rejects.toMatchObject({ status: 409 });
+    return fixtureSchedule();
+  });
+  await recomputeItinerary('midnight');
+  expect(state.created.find(c => c.collection === 'event_log')?.body.at).toBe(simState.epochStart);
+  await expect(clockSlot.current!.change(1, { action: 'seek', at: '2026-12-27T06:00:00.000Z' })).resolves.toMatchObject({ revision: 2 });
+});
+it('rejects an obsolete supplied recompute context without publishing', async () => {
+  enableSim();
+  const context = await clockSlot.current!.readContext();
+  await clockSlot.current!.change(1, { action: 'pause' });
+  await expect(recomputeItinerary('obsolete', context)).rejects.toMatchObject({ status: 409 });
+  expect(state.created).toEqual([]);
+});
+
+afterEach(() => { vi.useRealTimers(); });

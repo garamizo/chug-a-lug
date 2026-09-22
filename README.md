@@ -204,7 +204,7 @@ Sim mode has to exist before the live phase is considered done, because the real
 - **Shared position**: rehearse the same clock-derived stop and Conductor anchor as the live day. No GPS, waypoint player or per-person tracking.
 - **Schedule-only fallback**: use scheduled departures when no recording exists; do not invent vehicle positions.
 - **Isolation**: a rehearsal uses its own database and origin. Replay uses the recording's original service date and archived GTFS; operational timeouts and cache ages remain on wall time.
-- M4 is in progress: the server clock, isolated timetable launcher, and recording metadata/fixtures are implemented; replay, live-clock integration and UI controls are still pending. See the [design](docs/superpowers/specs/2026-09-21-m4-simulation-design.md) and [implementation plan](docs/superpowers/plans/2026-09-21-m4-simulation.md).
+- M4 is in progress: the server clock, isolated launcher, recording fixtures/replay, Metra endpoint integration, and server planning/event timestamps are implemented; browser clock synchronization and UI controls are still pending. See the [design](docs/superpowers/specs/2026-09-21-m4-simulation-design.md) and [implementation plan](docs/superpowers/plans/2026-09-21-m4-simulation.md).
 - A real dry run on a December Saturday with two or three phones, before the freeze.
 
 ### Isolated rehearsals (M4 in progress)
@@ -239,7 +239,10 @@ existing run. Legacy recordings must be explicitly indexed first (see recording 
 The Metra endpoints use Railroad Time and return `source` (`live`, `recording`, `timetable`), `revision`,
 and safe diagnostics alongside the existing modes/timestamps. A fresh recording still has
 `mode: live`; `source: recording` identifies its origin. Missing or incompatible simulation data
-returns 503 and never falls back to the live network. Client clock/UI and server event-write
+returns 503 and never falls back to the live network. Server preview, commit and recompute use captured Railroad Time. Simulation commits require the
+preview’s `clockRevision`; clock controls return 409 while a commit or recompute publishes changes.
+Bulletins and event logs use event time, while storage metadata keeps wall time. Server-issued action
+orders keep anchors and Tab Undo deterministic while paused. Browser clock synchronization and UI
 integration remain upcoming M4 tasks.
 
 The launcher discards inherited production settings and uses its own Compose project and network.
@@ -331,7 +334,7 @@ re-reads the feed rather than hard-coding it.
 | M1 Planning | end Oct | Diagram, stop picker, venue cards with Google photos, drafts with real train times, votes, comments, approval vote — done 2026-09-19 (see docs/superpowers/plans/2026-09-19-m1-planning.md) |
 | M2 Metra proxy | mid Nov | BNSF realtime proxy with recording, Departure Board with Last Call and All Aboard, service alerts and the header menu, schedule fallback — done 2026-09-20 (see docs/superpowers/plans/2026-09-20-m2-metra-proxy.md) |
 | M3 Live | end Nov | Clock-derived position with Conductor anchor, Crew Board, staged route edits, Bulletins, Tab, Freight, offline route mirror — done 2026-09-20 (see [plan](docs/superpowers/plans/2026-09-20-m3-live.md)) |
-| M4 Simulation | Sat Dec 5 | Shared sim clock, feed replay and timetable fallback, Conductor anchor; full rehearsal at home — [spec and plan](docs/superpowers/plans/2026-09-21-m4-simulation.md) in progress (clock, launcher, replay, and Metra endpoint integration implemented) |
+| M4 Simulation | Sat Dec 5 | Shared sim clock, feed replay and timetable fallback, Conductor anchor; full rehearsal at home — [spec and plan](docs/superpowers/plans/2026-09-21-m4-simulation.md) in progress (clock, launcher, replay, Metra endpoints, and server event-time integration implemented) |
 | M5 Wrap-up | Dec 12 | Album, scoreboard, awards, downloads |
 | Freeze + field test | Sat Dec 12 or 19 | Real train ride with 2-3 phones; bug fixes only after this |
 | Launch | Sat Dec 26 | Crawl |

@@ -45,7 +45,7 @@ export function createMetraProvider(config: ProviderConfig) {
     return selected;
   }
   return {
-    async getSchedule() { return (await load(await config.readContext())).schedule; },
+    async getSchedule(context?: ClockContext) { return (await load(context ?? await config.readContext())).schedule; },
     async snapshot(options: { startPolling?: boolean } = {}) {
       const context = await config.readContext();
       const loaded = await load(context);

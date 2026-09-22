@@ -87,7 +87,7 @@ export class LiveDay {
     try {
       const rows = await pb.collection('checkins').getList<Checkin>(1, 20, {
         filter: pb.filter('kind = "at_stop" && stop.itinerary = {:id}', { id: itineraryId }),
-        sort: '-at', expand: 'user'
+        sort: '-at,-action_order', expand: 'user'
       });
       const hit = rows.items.find((c) => c.expand?.user?.is_admin && c.stop);
       this.anchor = hit ? { stopId: hit.stop, at: hit.at } : null;

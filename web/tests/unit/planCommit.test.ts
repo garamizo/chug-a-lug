@@ -1,6 +1,23 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { createClockService } from '$lib/server/sim/service';
+import type { ClockState } from '$lib/sim/clock';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { fixtureSchedule } from '../fixtures/loadFixture';
 import { copy } from '../../src/lib/labels';
+
+const clockSlot = vi.hoisted(() => ({ current: null as ReturnType<typeof createClockService> | null }));
+vi.mock('$lib/server/sim/clock', () => ({ simulationClock: {
+  readContext: () => clockSlot.current!.readContext(),
+  withEventWrite: (...args: Parameters<ReturnType<typeof createClockService>['withEventWrite']>) => clockSlot.current!.withEventWrite(...args)
+} }));
+let simState: ClockState;
+function enableSim(at = '2026-12-26T18:00:00.000Z') {
+  simState = { runId: 'test', revision: 1, epochStart: at, wallStart: '2026-09-21T12:00:00.000Z',
+    rate: 0, resumeRate: 1, serviceDate: '2026-12-26', source: 'timetable', recordingId: null,
+    windowStart: '2026-12-25T06:00:00.000Z', windowEnd: '2026-12-28T06:00:00.000Z' };
+  clockSlot.current = createClockService({ enabled: () => true, runId: () => 'test',
+    read: async () => simState, write: async s => { simState = s; } });
+  vi.setSystemTime(new Date('2026-09-21T12:00:00.000Z'));
+}
 
 const state = vi.hoisted(() => ({
   user: { id: 'u1', is_admin: true },
@@ -68,6 +85,8 @@ const rideable = {
 const newStop = { id: 'abcdefghij01234', isNew: true, order: 3, name: 'Prairie Path Tap', kind: 'bar', station_id: 'CUS', station_name: 'Union Station', dwell_min: 45, walk_min: 6 };
 
 beforeEach(() => {
+  clockSlot.current = createClockService({ enabled: () => false, runId: () => '',
+    read: async () => { throw new Error('normal mode read clock'); }, write: async () => {} });
   state.user = { id: 'u1', is_admin: true };
   state.itinerary = { id: 'itinerary000001', status: 'locked', event_date: '2026-12-26', start_time: '11:00' };
   state.persisted = ['s2', 's3'];
@@ -156,7 +175,7 @@ describe('POST /api/plan/commit', () => {
     expect(order.slice(0, 2)).toEqual(['delete:stops', 'update:stops']);
     expect(order.indexOf('create:checkins')).toBeGreaterThan(order.lastIndexOf('create:stops'));
     expect(order[order.length - 1]).toBe('create:event_log');
-    expect(recomputeItinerary).toHaveBeenCalledWith('itinerary000001');
+    expect(recomputeItinerary).toHaveBeenCalledWith('itinerary000001', expect.objectContaining({ eventNow: '2026-12-26T18:00:00.000Z' }));
 
     // The new stop is written under the id the editor generated, not one PocketBase invents.
     expect(state.writes.find((w) => w.op === 'create' && w.collection === 'stops')!.body)
@@ -295,3 +314,49 @@ describe('POST /api/plan/commit', () => {
     expect(state.writes).toEqual([]);
   });
 });
+
+
+describe('simulation commit', () => {
+  it('uses the captured event day for validation, anchor, log and explicit recompute', async () => {
+    enableSim();
+    const res = await call({ ...rideable, clockRevision: 1 });
+    expect(res.status).toBe(200);
+    expect(state.writes.find(w => w.collection === 'checkins')?.body?.at).toBe(simState.epochStart);
+    expect(state.writes.find(w => w.collection === 'event_log')?.body?.at).toBe(simState.epochStart);
+    expect(recomputeItinerary).toHaveBeenCalledWith(rideable.itinerary, expect.objectContaining({ eventNow: simState.epochStart, revision: 1 }));
+  });
+  it.each([undefined, 0, 2])('refuses missing or stale revision %s without writes', async clockRevision => {
+    enableSim();
+    const res = await call({ ...rideable, clockRevision });
+    expect(res.status).toBe(409);
+    expect(state.writes).toEqual([]);
+  });
+  it('rechecks admission when a controller changes the clock during validation', async () => {
+    enableSim();
+    const { metra } = await import('$lib/server/metra');
+    vi.mocked(metra.getSchedule).mockImplementationOnce(async () => {
+      await clockSlot.current!.change(1, { action: 'seek', at: '2026-12-27T06:00:00.000Z' });
+      return fixtureSchedule();
+    });
+    expect((await call({ ...rideable, clockRevision: 1 })).status).toBe(409);
+    expect(state.writes).toEqual([]);
+  });
+  it('blocks a controller during publication and releases after failure', async () => {
+    enableSim();
+    vi.mocked(recomputeItinerary).mockImplementationOnce(async () => {
+      await expect(clockSlot.current!.change(1, { action: 'pause' })).rejects.toMatchObject({ status: 409 });
+      return clockSlot.current!.withEventWrite(1, async () => { throw new Error('publication failed'); });
+    });
+    await expect(call({ ...rideable, clockRevision: 1 })).rejects.toThrow('publication failed');
+    await expect(clockSlot.current!.change(1, { action: 'pause' })).resolves.toMatchObject({ revision: 2 });
+  });
+  it('does not treat an off-day position as history', async () => {
+    enableSim('2026-12-26T05:59:59.000Z');
+    const res = await call({ ...rideable, clockRevision: 1, anchorStopId: 's3',
+      stops: [{ ...rideable.stops[0], dwell_min: 600 }, rideable.stops[1]] });
+    expect(res.status).toBe(409);
+    expect(state.writes).toEqual([]);
+  });
+});
+
+afterEach(() => { vi.useRealTimers(); });

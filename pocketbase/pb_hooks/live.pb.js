@@ -31,6 +31,7 @@ onRecordCreateRequest((e) => {
 onRecordCreateRequest((e) => {
   const isCrew = !!e.auth && !e.auth.isSuperuser()
   if (isCrew) e.record.set('created_by', e.auth.id)
+  e.record.set('at', require(`${__hooks}/clock.js`).eventNow(e.app))
   e.next()
 }, 'broadcasts')
 
@@ -42,6 +43,6 @@ onRecordAfterCreateSuccess((e) => {
   log.set('kind', 'bulletin')
   log.set('payload', { broadcast: e.record.id, kind: e.record.getString('kind'), body: e.record.getString('body') })
   log.set('actor', e.record.getString('created_by'))
-  log.set('at', new Date().toISOString())
+  log.set('at', e.record.getString('at'))
   $app.save(log)
 }, 'broadcasts')

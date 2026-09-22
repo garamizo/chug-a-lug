@@ -557,3 +557,46 @@ Task 6 final gate: `npm test` (496 passed), `npm run check` (zero errors/warning
 Host tests used Node 25.9.0 (npm notes the repo's existing Node 22 engine requirement); the Docker
 production build/check used Node 22. No real Saturday recording or phone rehearsal was run.
 Task 7 — server planning, anchors and event timestamps — is next.
+
+
+### Task 7 implementation and evidence
+
+Implemented on `feat/m4-event-time`, in `.worktrees/m4-event-time`, from `a7bce9b`.
+
+Preview and commit capture one clock context before planning. Preview returns `clockRevision`;
+simulation commit rejects missing/stale revisions before writes and rechecks admission after
+validation. The captured event time drives the Chicago-date anchor gate, cohesion validation,
+anchor timestamp, Train Sheet entry and explicit recompute. Schedule reads accept that same context.
+Autonomous recomputes capture time inside a write lease after reaching the front of their itinerary
+queue. Nested same-revision leases permit hook-triggered recomputes without holding a mutex across
+callbacks; controls return 409 until publication finishes, and every failure releases its lease.
+
+PocketBase uses a local persisted-clock helper, tested against the shared clock vectors, without
+calling back into the web server. Bulletins receive authoritative `at` timestamps and their event
+logs reuse them; lock logs use event time. The incremental migration backfills Bulletin `at` from
+`created`. `created`, `updated`, `locked_at`, photo capture times and leg `computed_at` retain wall-time
+semantics. Normal-mode clock reads never access the singleton.
+
+A transactional persisted sequence assigns immutable `action_order` to checkins and drinks, ignores
+forged values even from superusers, rolls back failed saves and survives deletion of the latest row.
+The migration backfills historical rows by `(created, id)` with collection as a final deterministic
+tie-breaker. Both anchor readers request `-at,-action_order`; Tab Undo compares timestamp then order,
+with stable created/id fallback for legacy mirrors. The sequence is shared across both collections.
+
+Tests were added before implementation and reproduced wall-time planning, accepted stale commits,
+unleased publication, paused Undo ties and missing action orders. Coverage includes Chicago midnight,
+controller mutation during validation/publication, nested recompute queue completion, failed-write
+cleanup, concurrent PocketBase creates, forged/immutable order, counter rollback/persistence,
+repeated paused saves, reversed drink responses, and real database upgrades containing historical rows.
+The hook harness now runs normal and simulation checks sequentially on separate disposable databases.
+
+Task 8 — shared browser clock and offline synchronization — is next. Simulation editor readiness,
+client event timestamps and controls remain tasks 8–9; this does not complete the at-home rehearsal.
+
+Task 7 final gate: `npm test` (528 passed), `npm run check` (zero errors/warnings),
+`npm run test:e2e` (42 passed), and `bash scripts/test-hooks.sh` (47 normal/upgrade checks plus
+3 simulation checks passed), with harnesses run sequentially. The first full browser run timed out
+waiting for a three-photo upload to finish; all four Freight tests passed on the focused rerun,
+and the subsequent full browser gate passed without application or test changes. Host checks used
+Node 25.9.0 (npm reports the existing Node 22 engine requirement). No production deployment or
+complete phone rehearsal was performed.

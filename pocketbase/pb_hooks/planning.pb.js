@@ -43,6 +43,7 @@ onRecordUpdateRequest((e) => {
   if (original.getString('status') === 'locked' && e.record.getString('status') === 'draft') e.record.set('locked_at', '')
   const scheduleChanged = e.record.getString('start_time') !== original.getString('start_time') ||
     e.record.getString('event_date') !== original.getString('event_date')
+  const eventAt = locking ? require(`${__hooks}/clock.js`).eventNow(e.app) : null
   e.next()
   if (locking) {
     const others = $app.findRecordsByFilter('itineraries',
@@ -54,7 +55,7 @@ onRecordUpdateRequest((e) => {
     log.set('kind', 'locked')
     log.set('payload', { archived: others.map((o) => o.id) })
     log.set('actor', isCrew ? e.auth.id : '')
-    log.set('at', new Date().toISOString())
+    log.set('at', eventAt)
     $app.save(log)
   }
   if (scheduleChanged) require(`${__hooks}/recompute.js`)(e.record.id)

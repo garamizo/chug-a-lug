@@ -39,6 +39,7 @@ export type StopPhoto = RecordModel & { stop: string; file: string; source: 'goo
  * Crew Punch and a check-in roster are outside M3's scope.
  */
 export type Checkin = RecordModel & {
+  action_order?: number;
   user: string; stop: string; kind: 'at_stop' | 'on_train'; at: string;
   expand?: { user?: UserRecord };
 };
@@ -101,8 +102,8 @@ export type Alert = {
 export type AttachResult = { status: 'done' | 'failed'; photos: number; message?: string };
 
 export type BulletinKind = 'reroute' | 'hold' | 'annul' | 'extra' | 'message';
-export type Broadcast = RecordModel & { itinerary: string; kind: BulletinKind; body: string; created_by: string; expand?: { created_by?: UserRecord } };
+export type Broadcast = RecordModel & { at?: string; itinerary: string; kind: BulletinKind; body: string; created_by: string; expand?: { created_by?: UserRecord } };
 export type BroadcastAck = RecordModel & { broadcast: string; user: string };
 export type DrinkKind = 'beer' | 'wine' | 'cocktail' | 'shot' | 'water' | 'food';
-export type DrinkEntry = RecordModel & { user: string; stop: string; kind: DrinkKind; at: string };
+export type DrinkEntry = RecordModel & { action_order?: number; user: string; stop: string; kind: DrinkKind; at: string };
 export type Media = RecordModel & { user: string; file: string; kind: 'image' | 'video'; taken_at: string; stop: string; tagged_by: 'clock' | 'manual' | 'none' };
