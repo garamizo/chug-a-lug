@@ -2,11 +2,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Itinerary } from '$lib/types';
 
 const mocks = vi.hoisted(() => ({
-  getList: vi.fn(), filter: vi.fn((raw: string, _params: unknown) => raw),
+  getList: vi.fn(), getFullList: vi.fn(), filter: vi.fn((raw: string, _params: unknown) => raw),
   callbacks: new Map<string, () => void>(), unsubs: [] as ReturnType<typeof vi.fn>[]
 }));
 vi.mock('$lib/pb', () => ({
-  pb: { collection: () => ({ getList: mocks.getList }), filter: mocks.filter },
+  pb: { collection: () => ({ getList: mocks.getList, getFullList: mocks.getFullList }), filter: mocks.filter },
   subscribe: (name: string, _filter: string, callback: () => void) => {
     mocks.callbacks.set(name, callback);
     const unsub = vi.fn(); mocks.unsubs.push(unsub); return unsub;
@@ -95,5 +95,27 @@ describe('live anchor lookup', () => {
     await day.loadAnchor();
     expect(day.anchor).toBeNull();
     expect(mocks.getList).not.toHaveBeenCalled();
+  });
+});
+
+describe('live media reads', () => {
+  it('does not let an older empty read erase a newly uploaded photo', async () => {
+    const day = new LiveDay();
+    vi.spyOn(day, 'here', 'get').mockReturnValue({ stop: { id: 'stop' } } as never);
+    let finish!: (rows: unknown[]) => void;
+    mocks.getFullList.mockImplementationOnce(() => new Promise(resolve => { finish = resolve; }))
+      .mockResolvedValueOnce([{ id: 'photo' }]);
+    const older = day.loadMedia(); await day.loadMedia();
+    finish([]); await older;
+    expect(day.media.map(m => m.id)).toEqual(['photo']);
+  });
+  it('does not publish media for a stop the crew has left', async () => {
+    const day = new LiveDay();
+    const here = vi.spyOn(day, 'here', 'get').mockReturnValue({ stop: { id: 'old' } } as never);
+    let finish!: (rows: unknown[]) => void;
+    mocks.getFullList.mockImplementationOnce(() => new Promise(resolve => { finish = resolve; }));
+    const older = day.loadMedia(); here.mockReturnValue({ stop: { id: 'new' } } as never);
+    finish([{ id: 'old-photo' }]); await older;
+    expect(day.media).toEqual([]);
   });
 });

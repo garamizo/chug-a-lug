@@ -115,11 +115,15 @@ export class LiveDay {
     } catch { /* keep the last tally */ }
   }
 
+  private mediaRead = 0;
   async loadMedia() {
+    const read = ++this.mediaRead;
     const stopId = this.here?.stop?.id;
     if (!stopId) { this.media = []; return; }
     try {
-      this.media = await pb.collection('media').getFullList<Media>({ filter: pb.filter('stop = {:s}', { s: stopId }), sort: '-created' });
+      const media = await pb.collection('media').getFullList<Media>({ filter: pb.filter('stop = {:s}', { s: stopId }), sort: '-created' });
+      // An initial list can finish after the upload's refresh or after the crew changes stops.
+      if (read === this.mediaRead && this.here?.stop?.id === stopId) this.media = media;
     } catch { /* keep what we had */ }
   }
 
