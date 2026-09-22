@@ -1,10 +1,10 @@
 // Immutable, disk-backed snapshots at one captured event instant. No live loader or network fallback.
 import { readFile } from 'node:fs/promises';
 import Bindings from 'gtfs-realtime-bindings';
-import { recordingCopy } from '../../labels';
-import { servicesOn } from '../../metra/gtfs';
-import { utcInstant } from '../../sim/clock';
-import { loadRecording, recordingFile, RECORDING_FEEDS } from './recording';
+import { recordingCopy } from '../../labels.ts';
+import { servicesOn } from '../../metra/gtfs.ts';
+import { utcInstant } from '../../sim/clock.ts';
+import { loadRecording, recordingFile, RECORDING_FEEDS } from './recording.ts';
 import type { FeedMessage, FeedName, Feeds, FeedStatus, RealtimeStatus } from './realtime';
 
 export type ReplayDiagnostic = { code: 'unreadable_snapshot' | 'unmatched_trip' | 'legacy_freshness' | 'truncated_polls'; feed?: FeedName; epoch?: number; entityId?: string };
@@ -104,5 +104,5 @@ export async function createReplay(root: string, id: string, options: { cacheSiz
     const newest = RECORDING_FEEDS.map(f => feeds[f]?.fetchedAt).filter((s): s is string => !!s).sort().at(-1) ?? null;
     return freeze({ feeds, status: { ...statusOf(newest), feeds: perFeed }, diagnostics });
   }
-  return { snapshot, cachedFiles: () => cache.size };
+  return { schedule: index.schedule, manifest: index.manifest, snapshot, cachedFiles: () => cache.size };
 }

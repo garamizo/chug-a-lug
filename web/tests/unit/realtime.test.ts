@@ -103,3 +103,14 @@ describe('createRealtimeLoader', () => {
     rt.stop();
   });
 });
+
+it('captures feed contents and per-feed ages consistently for a request', async () => {
+  const stub = stubFetch(bytes(1798309200));
+  const rt = createRealtimeLoader({ base: 'https://x.test', token: 'S', fetchImpl: stub.impl });
+  await rt.refresh({ at: new Date('2026-12-26T18:20:00Z') });
+  const snap = rt.snapshot(new Date('2026-12-26T18:22:00Z'));
+  await rt.refresh({ at: new Date('2026-12-26T18:23:00Z') });
+  expect(snap.status.feeds.tripupdates.ageSec).toBe(120);
+  expect(snap.feeds.tripupdates?.fetchedAt).toBe('2026-12-26T18:20:00.000Z');
+  expect(Object.isFrozen(snap.feeds.tripupdates!.message.entity)).toBe(true);
+});

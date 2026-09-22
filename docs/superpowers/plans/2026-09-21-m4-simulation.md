@@ -412,7 +412,7 @@ leases. Service and storage behavior have dedicated unit suites in addition to t
 Tests were written and observed failing before implementation.
 
 Task 3 is also implemented: isolated Compose launcher/status/stop commands, private run credentials,
-strict ownership/config checks, and a clock-first timetable seed. Task 5 is implemented as recorded below; tasks 6–11 remain pending. In particular,
+strict ownership/config checks, and a clock-first timetable seed. Task 6 is implemented as recorded below; tasks 7–11 remain pending. In particular,
 action ordering and live-path write-lease integration are specified but still belong to task 7;
 this clock foundation does not yet change event timestamps, enable replay, or expose rehearsal UI.
 
@@ -505,3 +505,55 @@ Task 5 final gate: `npm test` (473 passed), `npm run check` (zero errors/warning
 The first sandboxed unit run could not bind the port-isolation test's loopback socket; the full
 gate then passed with loopback access. The environment uses Node 25.9.0; npm reported the existing
 Node 22 engine requirement during installation. No live service or real recording was used.
+
+
+### Task 6 implementation and evidence
+
+Implemented on `feat/m4-provider`, in `.worktrees/m3-live/.worktrees/m4-provider`, starting at
+`aa4b790`. The existing M4 specification and plan travel with this branch.
+
+One provider now selects both the static schedule and realtime snapshot from a captured clock
+context. Production retains the existing lazy poller and its independent feed failures; simulation
+never starts it, even with an accidental live token. The replay schedule comes from the hash-checked
+archive, timetable mode requires a local file with BNSF service on the selected date, and setup
+failures return safe 503 messages. Live request snapshots are deeply frozen so subsequent polls
+cannot change the selected feed/timestamp pair. All four Metra endpoints include source, revision
+and diagnostics; default departures and active alerts use event time. Existing explicit departure
+queries, feed modes and timestamp fields remain available.
+
+Launcher source handling adds `fixture-recording` and safe IDs under `data/recordings/`, preserving
+`fixture` as the existing timetable-only choice. The new CLI-only `server/sim/source.ts` validates
+and fingerprints the archive, stages regular files under the run's isolated fixtures directory,
+and derives a two-stop BNSF route that fits the original playback window. Archive files are read
+one at a time. Source contents, date/window and ports remain immutable when resuming a run.
+The seed writes the recording identity before any event-producing hooks.
+
+Tests were written first: provider/endpoint/snapshot tests and source/config/seed tests failed
+before their implementations. Added integration tests exercise all four real endpoint modules
+through recording, timetable and missing-source configurations, spying on both live start and
+fetch. Further tests cover September wall time vs December event time, explicit departure queries,
+alert expiry, per-feed ages, no-service dates, immutable live snapshots, archive copy isolation,
+changed files and symlink rejection. Client synchronization and server event-write integration
+remain tasks 7–9; this is not yet a complete at-home live rehearsal.
+
+The isolated Docker production build and recording-stack smoke test passed on 15174/18094:
+all four authenticated Metra endpoints returned recording source/revision, a forward seek showed
+positions stale while trip updates stayed fresh, BN1 retained its five-minute delay, BN3 was
+canceled, the expired alert disappeared, and a further seek made departures fall back to the
+timetable. Stop/start resumed the existing run without reseeding, and the rehearsal was shut down.
+The private run data remains under `.simulations/provider-smoke/`. No production service was changed.
+
+Final review added regressions for orphan trip snapshots (launcher now uses runtime replay's
+coverage rule) and normal station requests (they still do not start live polling).
+
+A later full-gate rerun exposed an existing Freight response-order race: the upload returned 200,
+but the initial empty media query finished after two newer queries and erased the uploaded photo.
+Two deterministic unit tests reproduced stale-read and changed-stop publication. `loadMedia` now
+publishes only the newest request for the still-current stop. This small regression fix accompanies
+task 6 because the required browser gate exposed it; no upload behavior or timestamp was changed.
+
+Task 6 final gate: `npm test` (496 passed), `npm run check` (zero errors/warnings),
+`npm run test:e2e` (42 passed), and `bash scripts/test-hooks.sh` (42 passed), run sequentially.
+Host tests used Node 25.9.0 (npm notes the repo's existing Node 22 engine requirement); the Docker
+production build/check used Node 22. No real Saturday recording or phone rehearsal was run.
+Task 7 — server planning, anchors and event timestamps — is next.

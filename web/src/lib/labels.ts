@@ -49,6 +49,8 @@ export function label(key: LabelKey): string {
 // UI copy lives alongside the glossary so it can be changed in one place.
 export const copy = {
   simDisabled: 'Shakedown Run is not enabled here.',
+  simFeedUnavailable: 'Rehearsal train data is unavailable. Check the recording and pinned timetable.',
+  metraUnavailable: 'Metra schedule is not available yet. Try again in a minute.',
   simUnavailable: 'Railroad Time is unavailable. Check the rehearsal setup and try again.',
   simInvalidControl: 'Choose a supported speed or a valid forward time while paused.',
   simClockConflict: 'Railroad Time changed. Check the current clock and try again.',
@@ -288,7 +290,8 @@ export const simSetup = {
   commandFailed: 'The rehearsal Docker command failed. Run data has been preserved.',
   timeout: 'The rehearsal did not become ready in time. Run data has been preserved.',
   invalidLegs: 'The planner did not persist a complete, feasible fixture route.',
-  usage: 'Usage: node web/scripts/sim.mjs start RUN fixture | status RUN | stop RUN',
+  seedStop: (name: string) => `Rehearsal ${name}`,
+  usage: 'Usage: node web/scripts/sim.mjs start RUN SOURCE | status RUN | stop RUN. SOURCE: fixture, fixture-recording, or an ID under data/recordings.',
   ready: 'Rehearsal ready. The live clock and UI integration are still pending.',
   credentials: 'Test passwords are in the private credentials.env file under this run directory.',
   identities: 'Test identities: Rehearsal Conductor and Rehearsal Crew.',

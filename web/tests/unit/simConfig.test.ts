@@ -19,7 +19,7 @@ describe('isolated rehearsal configuration', () => {
   it.each(['', '../live', '/tmp/run', 'Main', '-run', 'a'.repeat(41), 'a b', 'a\n'])('rejects unsafe run %j', run => {
     expect(() => buildSimConfig({ ...input, run })).toThrow();
   });
-  it.each(['../recording', '', 'some-recording'])('refuses unavailable sources instead of silently using the fixture: %s', source => {
+  it.each(['../recording', '', '/tmp/recording'])('refuses unsafe source identifiers: %s', source => {
     expect(() => buildSimConfig({ ...input, source })).toThrow();
   });
   it.each(['3000', '8090', '15173', '18093', '18090', '18095', '0', '65536', '1.5', '18094'])('rejects reserved, invalid or colliding web port %s', WEB_PORT => {
@@ -75,4 +75,9 @@ describe('isolated rehearsal configuration', () => {
     expect(environment.SIM_RUN_DIR).toBe('/checkout/.simulations/practice-1');
     expect(environment.PATH).toBe('/usr/bin');
   });
+});
+
+it('accepts immutable named recording sources', () => {
+  expect(buildSimConfig({ ...input, source: 'fixture-recording' }).source).toBe('fixture-recording');
+  expect(buildSimConfig({ ...input, source: 'saturday-dec-5' }).source).toBe('saturday-dec-5');
 });

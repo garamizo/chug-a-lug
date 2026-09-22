@@ -1,7 +1,10 @@
 import { error, json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import { requireUser } from '$lib/server/pb';
-import { metra, metraRt } from '$lib/server/metra';
+import { metra } from '$lib/server/metra';
+import { MetraSetupError } from '$lib/server/metra/provider';
+import { ClockServiceError } from '$lib/server/sim/service';
+import { copy } from '$lib/labels';
 import { readPredictions } from '$lib/server/metra/decode';
 import { DELAY_LOOKBACK_MIN, modeFor, selectDepartures } from '$lib/metra/live';
 import { PLANNER_ROUTE } from '$lib/lineMap';
@@ -11,12 +14,20 @@ import type { NextTrip } from '$lib/types';
 
 export const GET: RequestHandler = async ({ request, url }) => {
   await requireUser(request);
+  let snapshot;
+  try {
+    snapshot = await metra.snapshot();
+  } catch (e) {
+    throw error(503, e instanceof MetraSetupError ? copy.simFeedUnavailable : e instanceof ClockServiceError ? copy.simUnavailable : copy.metraUnavailable);
+  }
+  const s = snapshot.schedule;
+  const metadata = { source: snapshot.source, revision: snapshot.revision, diagnostics: snapshot.diagnostics };
   const from = url.searchParams.get('from') ?? '';
   const to = url.searchParams.get('to') ?? '';
-  const date = url.searchParams.get('date') ?? '2026-12-26';
+  const date = url.searchParams.get('date') ?? snapshot.serviceDate ?? '2026-12-26';
   if (!from || !to || !/^\d{4}-\d{2}-\d{2}$/.test(date)) throw error(400, 'from, to and date=YYYY-MM-DD are required.');
   const after = url.searchParams.get('after');
-  let afterDate = new Date();
+  let afterDate = new Date(snapshot.eventNow);
   if (after) {
     afterDate = new Date(after);
     if (Number.isNaN(afterDate.getTime())) throw error(400, 'after must be a valid ISO date-time.');
@@ -26,16 +37,9 @@ export const GET: RequestHandler = async ({ request, url }) => {
   if (Number.isNaN(limitNum)) throw error(400, 'limit must be a number.');
   const limit = Math.min(10, Math.max(1, limitNum));
   const afterMin = minutesOfDay(date, afterDate);
-  let s;
-  try {
-    s = await metra.getSchedule();
-  } catch {
-    throw error(503, 'Metra schedule is not available yet. Try again in a minute.');
-  }
-  metraRt.start();
   // Trip predictions are only as trustworthy as the tripupdates feed itself. A healthy positions or
   // alerts feed says nothing about whether departures are still being published.
-  const mode = modeFor(metraRt.statusOf('tripupdates'));
+  const mode = modeFor(snapshot.status.feeds.tripupdates);
 
   // Look back before `after` so a delayed train is still a candidate, and take more than the caller
   // asked for so cancellations cannot empty the result. Both are trimmed by selectDepartures.
@@ -46,9 +50,9 @@ export const GET: RequestHandler = async ({ request, url }) => {
     liveDepart: null, liveArrive: null, delayMin: null, status: 'scheduled'
   }));
   // Stale times are worse than none: fall back to the timetable rather than show old predictions.
-  const preds = mode === 'live' ? readPredictions(metraRt.feeds().tripupdates?.message ?? null, PLANNER_ROUTE, date) : {};
+  const preds = mode === 'live' ? readPredictions(snapshot.feeds.tripupdates?.message ?? null, PLANNER_ROUTE, date) : {};
   // The board shows this as "no live times since", so it must be the trip-update feed's own
   // timestamp — not the newest fetch across feeds, which a healthy alerts poll keeps refreshing.
-  const fetchedAt = metraRt.statusOf('tripupdates').fetchedAt;
-  return json({ mode, fetchedAt, trips: selectDepartures(candidates, preds, from, to, afterDate, limit) });
+  const fetchedAt = snapshot.status.feeds.tripupdates.fetchedAt;
+  return json({ ...metadata, mode, fetchedAt, trips: selectDepartures(candidates, preds, from, to, afterDate, limit) });
 };

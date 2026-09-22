@@ -15,6 +15,23 @@ export type FeedStatus = { fetchedAt: string | null; ageSec: number | null; enab
 /** The newest fetch across all feeds, plus each feed on its own. */
 export type RealtimeStatus = FeedStatus & { feeds: Record<FeedName, FeedStatus> };
 
+/** Request-local immutable view; polling can replace its source feeds after this returns. */
+export function freezeFeeds<T>(value: T): T {
+  if (value && typeof value === 'object' && !Object.isFrozen(value)) {
+    for (const child of Object.values(value)) freezeFeeds(child);
+    Object.freeze(value);
+  }
+  return value;
+}
+export function snapshotFeeds(feeds: Feeds, at: Date, enabled: boolean) {
+  const captured = { ...feeds };
+  const statusOf = (fetchedAt: string | null): FeedStatus => ({ fetchedAt,
+    ageSec: fetchedAt === null ? null : Math.max(0, Math.round((at.getTime() - Date.parse(fetchedAt)) / 1000)), enabled });
+  const perFeed = Object.fromEntries(FEED_NAMES.map(n => [n, statusOf(captured[n]?.fetchedAt ?? null)])) as Record<FeedName, FeedStatus>;
+  const newest = FEED_NAMES.map(n => captured[n]?.fetchedAt).filter((s): s is string => !!s).sort().at(-1) ?? null;
+  return freezeFeeds({ feeds: captured, status: { ...statusOf(newest), feeds: perFeed } });
+}
+
 export type RealtimeConfig = {
   base: string;
   token: string;
@@ -75,6 +92,7 @@ export function createRealtimeLoader(cfg: RealtimeConfig) {
 
   return {
     refresh,
+    snapshot: (at = now()) => snapshotFeeds(feeds, at, !!cfg.token),
     start,
     feeds: () => feeds,
     statusOf,

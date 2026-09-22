@@ -84,7 +84,9 @@ export type FeedMode = 'live' | 'stale' | 'schedule_only';
  * agrees with the board. `rtFetchedAt` / `rtAgeSec` are the newest fetch of any feed, and `feeds` breaks
  * it down so an operator can see which one is failing.
  */
+export type MetraSource = 'live' | 'recording' | 'timetable';
 export type MetraStatus = {
+  source?: MetraSource; revision?: number | null; diagnostics?: { code: string; feed?: string; epoch?: number; entityId?: string }[];
   staticPublishedAt: string; staticSource: string;
   rtFetchedAt: string | null; rtAgeSec: number | null; mode: FeedMode;
   feeds: Record<'positions' | 'tripupdates' | 'alerts', { fetchedAt: string | null; ageSec: number | null; mode: FeedMode }>;

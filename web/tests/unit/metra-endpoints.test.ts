@@ -11,18 +11,19 @@ const state = vi.hoisted(() => ({
     alerts: { fetchedAt: null, ageSec: null, enabled: false }
   } as Record<'positions' | 'tripupdates' | 'alerts', S>,
   overall: { fetchedAt: null, ageSec: null, enabled: false } as S,
+  eventNow: "2026-12-26T16:00:00.000Z",
+  alertFeed: null as unknown,
   feed: null as unknown
 }));
 
 vi.mock('$lib/server/pb', () => ({ requireUser: vi.fn(async () => ({ id: 'u1', is_admin: false })) }));
 vi.mock('$lib/server/metra', () => ({
-  metra: { getSchedule: vi.fn(async () => fixtureSchedule()), status: () => ({ publishedAt: 'P', loadedAt: 'L', source: 'file' }) },
-  metraRt: {
-    start: vi.fn(),
-    status: () => ({ ...state.overall, feeds: state.perFeed }),
-    statusOf: (name: 'positions' | 'tripupdates' | 'alerts') => state.perFeed[name],
-    feeds: () => ({ positions: null, tripupdates: state.feed, alerts: null })
-  }
+  metra: { snapshot: vi.fn(async () => ({
+    schedule: fixtureSchedule(), staticStatus: { publishedAt: 'P', loadedAt: 'L', source: 'file' },
+    source: 'recording', revision: 7, eventNow: state.eventNow, serviceDate: '2026-12-26', diagnostics: [],
+    status: { ...state.overall, feeds: state.perFeed },
+    feeds: { positions: null, tripupdates: state.feed, alerts: state.alertFeed }
+  })) }
 }));
 
 /** Marks every feed fresh at the same moment. */
@@ -42,7 +43,7 @@ const reset = () => {
   vi.resetModules();
   state.perFeed = { positions: { ...off }, tripupdates: { ...off }, alerts: { ...off } };
   state.overall = { ...off };
-  state.feed = null;
+  state.feed = null; state.alertFeed = null; state.eventNow = "2026-12-26T16:00:00.000Z";
 };
 
 describe('/api/metra/status', () => {
@@ -117,4 +118,29 @@ describe('/api/metra/next', () => {
     expect(body.trips.every((t: { status: string }) => t.status === 'scheduled')).toBe(true);
     expect(body.trips.every((t: { liveDepart: string; schedDepart: string }) => t.liveDepart === t.schedDepart)).toBe(true);
   });
+});
+
+it('defaults after to December event time while wall time is September, preserving explicit after', async () => {
+  reset(); vi.useFakeTimers(); vi.setSystemTime(new Date('2026-09-21T12:00:00Z'));
+  try {
+    state.eventNow = '2026-12-26T20:00:00Z';
+    const url = 'http://x/api/metra/next?from=LAGRANGE&to=CUS';
+    const body = await get('../../src/routes/api/metra/next/+server', url);
+    expect(body).toMatchObject({ source: 'recording', revision: 7 });
+    expect(body.trips.length).toBeGreaterThan(0);
+    expect(body.trips.every((t: { liveDepart: string }) => Date.parse(t.liveDepart) >= Date.parse(state.eventNow))).toBe(true);
+    const earlier = await get('../../src/routes/api/metra/next/+server', url + '&after=2026-12-26T16:00:00Z');
+    expect(Date.parse(earlier.trips[0].liveDepart)).toBeLessThan(Date.parse(body.trips[0].liveDepart));
+  } finally { vi.useRealTimers(); }
+});
+it('filters alert activity by event context, not wall time', async () => {
+  reset();
+  const { createReplay } = await import('../../src/lib/server/metra/replay');
+  const { resolve } = await import('node:path');
+  const replay = await createReplay(resolve('tests/fixtures/sim'), 'recording');
+  state.eventNow = '2026-12-26T18:21:00Z';
+  state.alertFeed = (await replay.snapshot({ eventNow: state.eventNow })).feeds.alerts;
+  expect((await get('../../src/routes/api/metra/alerts/+server', 'http://x/api/metra/alerts')).alerts).toHaveLength(1);
+  state.eventNow = '2026-12-26T18:22:00Z';
+  expect((await get('../../src/routes/api/metra/alerts/+server', 'http://x/api/metra/alerts')).alerts).toHaveLength(0);
 });

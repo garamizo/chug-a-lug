@@ -5,7 +5,7 @@ export type Scenario = ScenarioClock & { title: string; stops: {
 }[] };
 // The local launcher owns auth and checks HTTP errors. No response body is logged.
 export type SeedRequest = (method: string, path: string, body?: Record<string, unknown>) => Promise<any>;
-export async function seedTimetable(request: SeedRequest, clock: ScenarioClock & { runId: string }, scenario: Scenario,
+export async function seedTimetable(request: SeedRequest, clock: ScenarioClock & { runId: string; recordingId?: string | null }, scenario: Scenario,
   passwords: { crew: string; conductor: string }) {
   for (const collection of ['simulation_clock', 'users', 'itineraries', 'stops', 'checkins', 'drink_entries', 'broadcasts', 'media']) {
     const rows = await request('GET', `/api/collections/${collection}/records?perPage=1`);
@@ -14,7 +14,7 @@ export async function seedTimetable(request: SeedRequest, clock: ScenarioClock &
   await request('POST', '/api/collections/simulation_clock/records', {
     id: 'simulationclock', run_id: clock.runId, revision: 1, epoch_start: clock.epochStart,
     wall_start: new Date().toISOString(), rate: 0, resume_rate: 1, service_date: clock.serviceDate,
-    source: 'timetable', window_start: clock.windowStart, window_end: clock.windowEnd
+    source: clock.recordingId ? 'recording' : 'timetable', recording_id: clock.recordingId ?? '', window_start: clock.windowStart, window_end: clock.windowEnd
   });
   const owner = await request('POST', '/api/crawl/login', { name: 'Rehearsal Conductor', password: passwords.conductor });
   await request('POST', '/api/crawl/login', { name: 'Rehearsal Crew', password: passwords.crew });

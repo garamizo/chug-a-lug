@@ -40,3 +40,12 @@ it('requires actual planner legs covering every adjacent stop', () => {
   expect(verifySeedLegs(ids, [legs[0], { ...legs[1], kind: 'impossible' }], scenario)).toBe(false);
   expect(verifySeedLegs(ids, [legs[0], { ...legs[1], arrive_at: '2026-12-27T06:00:00Z' }], scenario)).toBe(false);
 });
+
+it('seeds the selected recording identity before event-producing writes', async () => {
+  const request = vi.fn(async (method: string, path: string) => method === 'GET' ? { totalItems: 0 } :
+    path === '/api/crawl/login' ? { record: { id: 'user' } } : { id: 'record' });
+  await seedTimetable(request, { ...clock, recordingId: 'recording' }, scenario, { crew: 'crew', conductor: 'boss' });
+  expect(request).toHaveBeenCalledWith('POST', '/api/collections/simulation_clock/records', expect.objectContaining({
+    source: 'recording', recording_id: 'recording', service_date: '2026-12-26'
+  }));
+});

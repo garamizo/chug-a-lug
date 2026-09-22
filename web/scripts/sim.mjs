@@ -1,19 +1,19 @@
 #!/usr/bin/env node
 // Requires Node 22.18+ (native TypeScript stripping). Never loads production .env.
 import { spawn } from 'node:child_process';
-import { createHash } from 'node:crypto';
-import { lstat, readFile, realpath, writeFile } from 'node:fs/promises';
+import { realpath } from 'node:fs/promises';
 import { join } from 'node:path';
 import { setTimeout } from 'node:timers/promises';
 import { fileURLToPath } from 'node:url';
 import { buildSimConfig, composeEnvironment } from '../src/lib/sim/config.ts';
 import { assertPortsAvailable, loadRun, optionalSettings, prepareRun, readCredentials, saveMarker, withRunLock } from '../src/lib/server/sim/setup.ts';
 import { seedTimetable, verifySeedLegs } from '../src/lib/server/sim/seed.ts';
+import { resolveSimSource, stageSimSource } from '../src/lib/server/sim/source.ts';
 import { simSetup } from '../src/lib/labels.ts';
 
 const root = await realpath(fileURLToPath(new URL('../../', import.meta.url)));
 const [action, run, source, ...extra] = process.argv.slice(2);
-if (!run || extra.length || !['start', 'status', 'stop'].includes(action) || (action === 'start' ? source !== 'fixture' : source !== undefined)) {
+if (!run || extra.length || !['start', 'status', 'stop'].includes(action) || (action === 'start' ? !source : source !== undefined)) {
   console.error(simSetup.usage); process.exit(1);
 }
 
@@ -59,24 +59,12 @@ async function authenticate(config, credentials) {
     headers: { 'Content-Type': 'application/json', Authorization: auth.token },
     ...(body === undefined ? {} : { body: JSON.stringify(body) }) }) };
 }
-async function copyFixture(config, bytes) {
-  const path = join(config.runDir, 'fixtures', 'gtfs.zip');
-  try {
-    const info = await lstat(path);
-    if (!info.isFile() || info.isSymbolicLink() || !(await readFile(path)).equals(bytes)) throw new Error(simSetup.runMismatch);
-  } catch (error) {
-    if (error.code !== 'ENOENT') throw error;
-    await writeFile(path, bytes, { mode: 0o600, flag: 'wx' });
-  }
-}
 try {
-  let marker, fixture, scenario;
+  let marker, selected;
   if (action === 'start') {
-    const scenarioBytes = await readFile(join(root, 'web/tests/fixtures/sim/timetable/scenario.json'));
-    scenario = JSON.parse(scenarioBytes);
-    fixture = await readFile(join(root, 'web/tests/fixtures/gtfs.zip'));
-    const fixtureHash = createHash('sha256').update(scenarioBytes).update(fixture).digest('hex');
-    const config = buildSimConfig({ root, run, source, scenario, fixtureHash, settings: await optionalSettings(root) });
+    selected = await resolveSimSource(root, source);
+    const config = buildSimConfig({ root, run, source, scenario: selected.scenario,
+      fixtureHash: selected.fixtureHash, settings: await optionalSettings(root) });
     marker = await prepareRun(config);
   } else marker = await loadRun(root, run);
   const config = marker.config, credentials = await readCredentials(config);
@@ -93,7 +81,7 @@ try {
       await docker(config, credentials, ['ps']); return;
     }
     if (marker.phase === 'seeding') throw new Error(simSetup.interruptedSeed);
-    await copyFixture(config, fixture);
+    await stageSimSource(config, selected);
     const running = (await docker(config, credentials, ['ps', '--status', 'running', '--services'], true)).split('\n').filter(Boolean);
     if (running.length > 0 && (running.length !== 2 || !running.includes('web') || !running.includes('pocketbase'))) throw new Error(simSetup.partialStack);
     if (!running.length) {
@@ -103,7 +91,7 @@ try {
     const { web, api } = await authenticate(config, credentials);
     if (marker.phase === 'prepared') {
       marker.phase = 'seeding'; await saveMarker(marker);
-      const seeded = await seedTimetable(api, { runId: run, ...config.scenario }, scenario,
+      const seeded = await seedTimetable(api, { runId: run, ...config.scenario, recordingId: selected.recordingId }, selected.scenario,
         { crew: credentials.CREW_PASSWORD, conductor: credentials.ADMIN_PASSWORD });
       await request(`${web}/api/internal/recompute?itinerary=${seeded.itineraryId}`, {
         method: 'POST', headers: { 'X-Internal-Secret': credentials.INTERNAL_SECRET }
@@ -113,7 +101,7 @@ try {
       await waitFor(async () => {
         const filter = encodeURIComponent(`itinerary="${seeded.itineraryId}" && kind="recompute"`);
         const logs = await api('GET', `/api/collections/event_log/records?perPage=1&filter=${filter}`);
-        return logs.totalItems >= scenario.stops.length + 1;
+        return logs.totalItems >= selected.scenario.stops.length + 1;
       });
       const filter = encodeURIComponent(`itinerary="${seeded.itineraryId}"`);
       const legs = await api('GET', `/api/collections/legs/records?perPage=100&filter=${filter}`);
@@ -123,7 +111,8 @@ try {
         kind: l.kind, departAt: l.depart_at, arriveAt: l.arrive_at })) }, null, 2));
     } else {
       const clock = await api('GET', '/api/collections/simulation_clock/records/simulationclock');
-      if (clock.run_id !== run || clock.source !== 'timetable' || clock.service_date !== config.scenario.serviceDate ||
+      if (clock.run_id !== run || clock.source !== (selected.recordingId ? 'recording' : 'timetable') ||
+        (clock.recording_id || null) !== selected.recordingId || clock.service_date !== config.scenario.serviceDate ||
         Date.parse(clock.window_start) !== Date.parse(config.scenario.windowStart) ||
         Date.parse(clock.window_end) !== Date.parse(config.scenario.windowEnd)) throw new Error(simSetup.clockMismatch);
     }
