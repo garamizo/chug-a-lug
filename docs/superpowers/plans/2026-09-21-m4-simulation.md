@@ -412,7 +412,7 @@ leases. Service and storage behavior have dedicated unit suites in addition to t
 Tests were written and observed failing before implementation.
 
 Task 3 is also implemented: isolated Compose launcher/status/stop commands, private run credentials,
-strict ownership/config checks, and a clock-first timetable seed. Task 4 is implemented as recorded below; tasks 5–11 remain pending. In particular,
+strict ownership/config checks, and a clock-first timetable seed. Task 5 is implemented as recorded below; tasks 6–11 remain pending. In particular,
 action ordering and live-path write-lease integration are specified but still belong to task 7;
 this clock foundation does not yet change event timestamps, enable replay, or expose rehearsal UI.
 
@@ -467,11 +467,41 @@ expiry, successful unchanged polls and UTC midnight. Optional protobuf fields re
 Regeneration was verified byte-identical. The checked-in fixture README records the exact file list.
 No real feed/token or train recording was used in this validation.
 
-Task 5 (disk-backed replay and independent freshness) is next. The application still has no replay
-provider or recording-backed launcher; tasks 5–11 and phone rehearsal remain pending.
+Task 5 progress is recorded below. Central provider integration, the recording-backed launcher,
+tasks 6–11 and phone rehearsal remain pending.
 
 Task 4 final validation: 461 unit tests, 42 browser e2e tests and 42 PocketBase hook tests passed;
 Svelte/type check reported zero errors and zero warnings. Fixture regeneration was byte-identical.
 A local CLI smoke test with synthetic HTTP feeds verified GTFS archiving, three successful poll
 observations, signal shutdown, and clean exit when the window expires during setup. No live service
 was started or changed by this task.
+
+
+### Task 5 implementation and evidence
+
+Implemented on `feat/m4-replay`, in `.worktrees/m3-live/.worktrees/m4-replay`, branched from
+`fc4ce18` because the active session was still in the older M3 checkout. This worktree carries the
+existing M4 spec and plan with the replay implementation.
+
+`createReplay` validates the archive once, indexes successful observations by feed, and selects
+only observations at or before the captured event instant. Legacy recordings use header time.
+Missing or corrupt snapshots fall back with their original observation age and a diagnostic.
+A bounded LRU holds deeply frozen decoded protobufs, preserving absent optional fields and all
+recorded timestamps. Concurrent calls retain their own captured time and immutable results.
+
+Setup checks reachable trip-update snapshots until it finds usable BNSF coverage; incompatible
+archives are rejected. It does not decode the rest of a compatible day's recording at startup.
+Each selected message filters mismatched service dates, route IDs and unknown trips and reports
+them as structured diagnostics. No live network loader is imported. The next task will connect
+this reader to the central provider and API context; current production endpoints are unchanged.
+
+Tests were added first and failed because the replay module did not exist. Twelve replay cases
+cover boundaries, unchanged polls, independent staleness, the 120-second threshold, missing and
+corrupt files, future headers, legacy ages, immutable results, bounded cache eviction, concurrent
+reads, incompatible metadata/trips, cancellation, catchable delay and alert expiry across UTC midnight.
+
+Task 5 final gate: `npm test` (473 passed), `npm run check` (zero errors/warnings),
+`npm run test:e2e` (42 passed), and `bash scripts/test-hooks.sh` (42 passed).
+The first sandboxed unit run could not bind the port-isolation test's loopback socket; the full
+gate then passed with loopback access. The environment uses Node 25.9.0; npm reported the existing
+Node 22 engine requirement during installation. No live service or real recording was used.
