@@ -15,6 +15,7 @@ test('one tap logs a drink at the current stop, and Undo takes it back', async (
   await page.clock.install({ time: new Date('2026-12-26T19:00:00.000Z') });
   await page.goto('/live');
 
+  await page.getByTestId('action-tab').click();
   const beer = page.getByTestId('drink-beer');
   await expect(beer).toContainText('0');
   await beer.click();

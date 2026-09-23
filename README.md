@@ -159,6 +159,10 @@ Goal: nobody misses a train, nobody is lost, and the plan can change without cha
   until that person taps "Got it". Plan edits and posted Bulletins go into the event log.
 - **Crew Board** shows shot / cocktail / beer / non-alcoholic / food counts and who acknowledged the latest
   Bulletin. Ranking uses shot + cocktail + beer, then non-alcoholic drinks, then food. It does not track individual locations.
+- **Live actions** sit below the compact ticket and current venue: the cup opens The Tab, the photo
+  opens the file picker (with a camera shortcut), and the speaker opens the Conductor’s Bulletin composer.
+  **Crew chat** at the bottom combines route-wide Tab activity and Bulletins with names and event times;
+  Undo removes the corresponding Tab entry. **Next stops** links to upcoming venues.
 - **The Tab** logs shot, cocktail, beer, non-alcoholic drinks or food at the current stop, with personal counters and undo for your own
   entries. The Tab and Freight are available only while the position source is `clock` or `override`;
   a stop still appears before and after the crawl, but those controls stay closed.

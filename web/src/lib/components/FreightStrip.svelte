@@ -4,13 +4,14 @@
   import { copy, labels } from '$lib/labels';
   import { pb } from '$lib/pb';
   import type { Media } from '$lib/types';
-  let { media, busy, onpick }: { media: Media[]; busy: boolean; onpick: (files: FileList | null) => void } = $props();
+  let { media, busy, onpick, showPicker = true }: { showPicker?: boolean; media: Media[]; busy: boolean; onpick: (files: FileList | null) => void } = $props();
   const thumb = (m: Media) => pb.files.getURL(m, m.file, { thumb: '400x300' });
   const full = (m: Media) => pb.files.getURL(m, m.file);
 </script>
 
 <section class="freight">
   <h2>{labels.media}</h2>
+  {#if showPicker}
   <label class="pick">
     {busy ? copy.uploading : copy.addFreight}
     <input type="file" accept="image/*,video/*" multiple disabled={busy}
@@ -21,6 +22,7 @@
     <input type="file" accept="image/*" capture="environment" disabled={busy}
       onchange={(e) => onpick(e.currentTarget.files)} data-testid="freight-camera" />
   </label>
+  {/if}
   {#if media.length === 0}
     <p data-testid="freight-empty">{copy.noFreightYet}</p>
   {:else}

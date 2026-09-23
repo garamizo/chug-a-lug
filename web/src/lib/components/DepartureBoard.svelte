@@ -40,7 +40,7 @@
         <div>
           <div class="cap">{copy.departLabel}</div>
           <div class="clock">{fmtTime(departIso)}</div>
-          <div class="where">{station}</div>
+
         </div>
         <div>
           <div class="cap">{copy.arriveLabel}</div>
@@ -71,8 +71,8 @@
 </div>
 
 <style>
-  .wrap { padding: 12px 16px 16px; }
-  .card { border-radius: 12px; padding: 16px 18px; display: flex; flex-direction: column; gap: 13px; }
+  .wrap { padding: 6px 16px 8px; }
+  .card { border-radius: 12px; padding: 10px 14px; display: flex; flex-direction: column; gap: 7px; }
   .calm { background: #f2efe6; color: #141413; --faint: #6b6862; --rule: #c9c4b5; --edge: #c0bbac; }
   .last { background: #ffb400; color: #111; --faint: rgba(17,17,17,.72); --rule: rgba(0,0,0,.28); --edge: rgba(0,0,0,.3); }
   .aboard { background: #c0261c; color: #fff; --faint: rgba(255,255,255,.82); --rule: rgba(0,0,0,.28); --edge: rgba(0,0,0,.3); }
@@ -80,17 +80,17 @@
     font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 11px; letter-spacing: .12em; text-transform: uppercase; }
   .head .agency { font-weight: 700; }
   .head .run { color: var(--faint); }
-  .station { margin: 0; font-size: 25px; font-weight: 750; line-height: 1.15; }
+  .station { margin: 0; font-size: 19px; font-weight: 750; line-height: 1.15; }
   .times { display: flex; gap: 18px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
   .times > div { flex-grow: 1; }
   .cap { font-size: 10px; letter-spacing: .1em; text-transform: uppercase; color: var(--faint); }
   .clock { font-size: 20px; font-weight: 700; font-variant-numeric: tabular-nums; }
   .where { font-size: 12px; color: var(--faint); }
-  .stale { margin: 0; padding: 9px 11px; border-radius: 8px; border: 1px solid var(--rule);
+  .stale { margin: 0; padding: 3px 7px; border-radius: 8px; border: 1px solid var(--rule);
     background: rgba(20,20,19,.07); font-size: 12px; line-height: 1.35; color: inherit; }
-  .lead { border-top: 1px dashed var(--rule); padding-top: 13px; margin: 0; }
-  .big { font-size: 24px; font-weight: 800; line-height: 1.1; }
-  .aboard .big { font-size: 27px; }
+  .lead { border-top: 1px dashed var(--rule); padding-top: 7px; margin: 0; }
+  .big { font-size: 20px; font-weight: 800; line-height: 1.1; }
+  .aboard .big { font-size: 22px; }
   .sub { font-size: 13px; margin-top: 4px; color: var(--faint); }
   .strip { display: flex; align-items: baseline; gap: 10px; padding: 9px 16px; font-size: 14px; font-weight: 650; }
   .strip .line { flex-grow: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

@@ -19,7 +19,7 @@ test('a photo uploads and appears in the strip for this stop', async ({ page }) 
   await page.clock.install({ time: new Date('2026-12-26T19:00:00.000Z') });
   await page.goto('/live');
 
-  await expect(page.getByTestId('freight-empty')).toBeVisible();
+  await expect(page.getByTestId('action-photo')).toBeEnabled();
   await page.getByTestId('freight-input').setInputFiles({ name: 'bar.gif', mimeType: 'image/gif', buffer: GIF });
   await expect(page.getByTestId('freight-strip').locator('img')).toHaveCount(1);
 });
@@ -42,7 +42,7 @@ test('a rejected middle upload still sends the last photo and reports the partia
     }
   });
   await page.goto('/live');
-  await expect(page.getByTestId('freight-empty')).toBeVisible();
+  await expect(page.getByTestId('action-photo')).toBeEnabled();
   await page.getByTestId('freight-input').setInputFiles(
     ['first.gif', 'middle.gif', 'last.gif'].map((name) => ({ name, mimeType: 'image/gif', buffer: GIF }))
   );

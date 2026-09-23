@@ -89,8 +89,10 @@ test('the route still reads when PocketBase cannot be reached', async ({ page })
   await expect(page.getByTestId('mirror-notice')).toHaveText(`${copy.showingMirror} 44 ${copy.minutesAgo}.`);
   await expect(page.getByTestId('departure-board')).toContainText('min walk from The Whistle Stop');
   await expect(page.getByTestId('departure-board')).toContainText('2:34 PM');
+  await page.getByTestId('action-tab').click();
   await page.getByTestId('drink-beer').click();
   await expect(page.getByRole('alert')).toHaveText(copy.noSignal);
+  await page.getByTestId('close-tab').click();
   await page.getByTestId('freight-input').setInputFiles({ name: 'tunnel.mp4', mimeType: 'video/mp4', buffer: Buffer.from('offline video') });
   await expect(page.getByRole('alert')).toContainText(copy.noSignal);
 

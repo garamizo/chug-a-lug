@@ -131,6 +131,7 @@ test('three sessions rehearse clock, replay, route edits, Tab, Freight and recon
     await expect(other.getByTestId('pinned-bulletin')).toBeHidden();
     await crew.goto('/live');
     await expect(crew.getByTestId('departure-board')).toBeVisible();
+    await crew.getByTestId('action-tab').click();
     await crew.getByTestId('drink-beer').click();
     await expect(crew.getByTestId('tab-undo')).toBeVisible();
     await crew.getByTestId('drink-water').click();
@@ -140,6 +141,7 @@ test('three sessions rehearse clock, replay, route edits, Tab, Freight and recon
     const drinks = await pb.collection('drink_entries').getFullList();
     expect(drinks).toHaveLength(1); expect(drinks[0].kind).toBe('beer');
     expect(new Date(drinks[0].at).toISOString()).toBe('2026-12-26T18:25:00.000Z');
+    await crew.getByTestId('close-tab').click();
     await crew.getByTestId('freight-input').setInputFiles({ name: 'rehearsal.gif', mimeType: 'image/gif', buffer: Buffer.from('R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7', 'base64') });
     await expect(crew.getByTestId('freight-strip').locator('img')).toHaveCount(1);
     expect(externalRequests).toEqual([]);
@@ -163,6 +165,7 @@ test('three sessions rehearse clock, replay, route edits, Tab, Freight and recon
     await crew.screenshot({ path: info.outputPath('board.png'), fullPage: true });
     await crewContext.setOffline(true);
     await expect(crew.getByTestId('simulation-status')).toContainText('Not synchronized');
+    await crew.getByTestId('action-tab').click();
     await crew.getByTestId('drink-beer').click();
     expect((await pb.collection('drink_entries').getFullList()).length).toBe(1);
     await change(page, { action: 'seek', at: '2026-12-26T18:26:00.000Z' });
