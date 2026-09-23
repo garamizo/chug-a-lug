@@ -157,9 +157,9 @@ Goal: nobody misses a train, nobody is lost, and the plan can change without cha
 - **Bulletins** are drafted from the route diff for the Conductor to send, edit or skip at Save; the
   Conductor can also compose a message. The newest unacknowledged Bulletin is pinned across screens
   until that person taps "Got it". Plan edits and posted Bulletins go into the event log.
-- **Crew Board** lists names, the Conductor role, today's drink count and who acknowledged the latest
-  Bulletin. It does not track individual locations.
-- **The Tab** logs beer, wine, cocktail, shot, water or food at the current stop, with undo for your own
+- **Crew Board** shows shot / cocktail / beer / non-alcoholic / food counts and who acknowledged the latest
+  Bulletin. Ranking uses shot + cocktail + beer, then non-alcoholic drinks, then food. It does not track individual locations.
+- **The Tab** logs shot, cocktail, beer, non-alcoholic drinks or food at the current stop, with personal counters and undo for your own
   entries. The Tab and Freight are available only while the position source is `clock` or `override`;
   a stop still appears before and after the crawl, but those controls stay closed.
 - **Freight** uploads photos and videos tagged with the stop the uploader's shared board shows. The
@@ -213,14 +213,24 @@ Sim mode has to exist before the live phase is considered done, because the real
 passwords. No extra startup target is needed. The login page and persistent header say
 **Rehearsal — practice only**. Everyone shares one practice route, clock and activity history.
 
-The first startup seeds a recorded two-stop BNSF route, paused at 12:20 Chicago time on December 26.
-Choose **Practice the live day** from the home page. Conductors can open **Shakedown Run** to resume,
-pause, change speed or advance while paused. Crew can read Railroad Time but cannot change it.
+Every `just up` starts a fresh rehearsal: it removes practice uploads, users/sessions and routes,
+then seeds twelve venues across Aurora, Naperville, Lisle, Downers Grove, Clarendon Hills and
+La Grange. Two venues per town balance bar and food stops. Photos, attributed Google reviews,
+ratings and opening hours are downloaded before resetting and cached under `data/rehearsal/source/venues`.
+The shared clock starts at **10×**, **one hour before the first train departure**, with practice
+Conductor Bulletins. Its date and time stay visible in the banner.
 
-Rehearsal database, uploads and caches live under `data/rehearsal/`, separately from real-event data.
-Repeated `just up` preserves practice activity and the clock. Set `REHEARSAL=0` in `.env` and run
-`just up` to switch to the real event; set it back to `1` to resume practice. Switching modes requires
-signing in again. Recorded playback never falls back to the real train feed.
+The launcher looks in `data/recordings/` for the previous Saturday's archived run and matching
+GTFS. Metra's current realtime API does not reconstruct historical observations. Without an
+archive, rehearsal uses Saturday timetable practice, clearly labeled **Timetable only**; schedule
+coverage is checked. Set `REHEARSAL_TIMETABLE=0` to require an actual recording. Preparation
+failures stop startup before clearing practice data.
+Google Places must be configured for the initial venue download. Run `npm install` in `web/`
+before the first host-side preparation.
+
+Choose **Practice the live day** from home. Conductors can pause or change speed in **Shakedown Run**.
+Each restart creates a new run identity so browser mirrors cannot leak between runs.
+Real-event data is separate; `REHEARSAL=0 just up` selects it without resetting it.
 
 See [operations](docs/OPERATIONS.md#shakedown-run-m4) for recovery and recording details.
 
@@ -288,7 +298,7 @@ bounds behind the append log, the complete poll rows remain authoritative. Incom
 ignored and reported; malformed complete rows are rejected.
 
 `just sim-fixture` regenerates the small [deterministic fixture](web/tests/fixtures/sim/recording/README.md).
-The default shared rehearsal plays this recording with its archived timetable.
+The isolated recording test plays this synthetic fixture with its archived timetable. Shared rehearsal uses the previous Saturday’s real archive when available, otherwise its published timetable.
 
 ---
 

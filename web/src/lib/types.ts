@@ -18,6 +18,7 @@ export type Place = RecordModel & {
   ref: string; source: 'google' | 'osm'; place_id: string; osm_id: string; name: string; kind: VenueKind;
   lat: number; lon: number; address: string; rating: number | null; rating_count: number | null; hours: Hours | null;
   phone: string; website: string; maps_url: string; station_id: string; distance_m: number | null;
+  reviews?: { text: string; author: string; rating: number; url: string }[];
   photos: string[]; photo_refs: string[] | null; photo_attributions: string[] | null; details_at: string; fetched_at: string;
 };
 export type PlaceLookup = RecordModel & { station_id: string; source: 'google' | 'osm'; count: number; fetched_at: string };

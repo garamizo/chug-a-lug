@@ -1,5 +1,5 @@
 // Pure trip planning over the static schedule. Minutes are since the service day's midnight.
-import { DOWNTOWN, servicesOn, type Schedule } from './gtfs';
+import { DOWNTOWN, servicesOn, type Schedule } from './gtfs.ts';
 
 export type Connection = { tripId: string; routeId: string; headsign: string; from: string; to: string; dep: number; arr: number };
 export type PlanSegment = ({ kind: 'train' } & Connection) | { kind: 'walk'; minutes: number; from: string; to: string };

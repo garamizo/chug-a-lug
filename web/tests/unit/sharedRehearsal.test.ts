@@ -43,3 +43,9 @@ it('does not mark the run ready when planner verification fails', async () => {
   expect(h.writeMarker).toHaveBeenCalledTimes(1);
   expect(h.writeMarker).toHaveBeenCalledWith({ phase: 'seeding', runId: 'shared-rehearsal' });
 });
+
+it('starts a verified shared route at ten times speed after seeding conductor bulletins', async () => {
+  const h = harness(); await initializeRehearsal(h);
+  expect(h.request).toHaveBeenLastCalledWith('PATCH', '/api/collections/simulation_clock/records/simulationclock', expect.objectContaining({ rate: 10, resume_rate: 10, revision: 2 }));
+  expect(h.request.mock.calls.filter(c => c[1].endsWith('/broadcasts/records'))).toHaveLength(3);
+});

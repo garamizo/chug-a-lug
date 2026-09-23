@@ -83,3 +83,12 @@ describe('places store', () => {
     expect(after.expand.place.photos).toHaveLength(2);
   });
 });
+
+it('stores attributed venue reviews for place details', async () => {
+  const response = await fetch(`${PB}/api/collections/_superusers/auth-with-password`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ identity: process.env.PB_ADMIN_EMAIL, password: process.env.PB_ADMIN_PASSWORD }) });
+  const { token } = await response.json();
+  const reviews = [{ text: 'A review supplied by the venue provider.', author: 'Reviewer', rating: 4, url: 'https://maps.google.com/' }];
+  const saved = await fetch(`${PB}/api/collections/places/records`, { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: token }, body: JSON.stringify({ ref: 'google:review-test', source: 'google', name: 'Review test', reviews }) });
+  expect(saved.ok).toBe(true);
+  expect((await saved.json()).reviews).toEqual(reviews);
+});

@@ -4,8 +4,8 @@ import type { ClockContext } from './sim/service';
 import { error } from '@sveltejs/kit';
 import type PocketBase from 'pocketbase';
 import { metra } from './metra';
-import { recomputeLegs } from '$lib/metra/plan';
-import { localToUtc, minutesOfDay, todayInTz } from '$lib/time';
+import { computeLegs as computeWithSchedule } from '$lib/metra/compute';
+import { todayInTz } from '$lib/time';
 import type { Checkin, Segment } from '$lib/types';
 
 export type PlanStop = { id: string; order: number; station_id: string; dwell_min: number; walk_min: number };
@@ -85,15 +85,5 @@ export async function computeLegs(opts: {
   context?: ClockContext; date: string; startMin: number; anchor?: { stopId: string; at: string } | null; stops: PlanStop[];
 }): Promise<PlannedLeg[]> {
   const schedule = await metra.getSchedule(opts.context);
-  const anchor = opts.anchor ? { stopId: opts.anchor.stopId, atMin: minutesOfDay(opts.date, opts.anchor.at) } : null;
-  const toIso = (m: number) => localToUtc(opts.date, m).toISOString();
-  return recomputeLegs(schedule, { date: opts.date, startMin: opts.startMin, anchor }, opts.stops).map((leg) => ({
-    fromStopId: leg.fromStopId,
-    toStopId: leg.toStopId,
-    kind: leg.kind,
-    readyAt: toIso(leg.readyMin),
-    departAt: toIso(leg.departMin),
-    arriveAt: toIso(leg.arriveMin),
-    segments: leg.segments.map((seg) => (seg.kind === 'train' ? { ...seg, dep: toIso(seg.dep), arr: toIso(seg.arr) } : seg)) as Segment[]
-  }));
+  return computeWithSchedule(schedule, opts);
 }

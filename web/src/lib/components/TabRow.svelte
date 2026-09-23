@@ -1,6 +1,6 @@
 <script lang="ts">
-  // One tap per drink at the stop the crawl is in. Crew totals, your own count in the corner.
-  import { copy } from '$lib/labels';
+  // One tap per drink at the stop the crawl is in. Personal counts only.
+  import { copy, drinkIcons } from '$lib/labels';
   import { DRINK_KINDS, tally } from '$lib/live/tab';
   import type { DrinkEntry, DrinkKind } from '$lib/types';
   let { entries, stopId, userId, onlog, onundo }: {
@@ -15,9 +15,9 @@
   <div class="grid">
     {#each DRINK_KINDS as kind (kind)}
       <button type="button" onclick={() => onlog(kind)} data-testid="drink-{kind}">
+        <span class="icon" aria-hidden="true">{drinkIcons[kind]}</span>
         <span class="name">{(copy as Record<string, string>)[`drink_${kind}`]}</span>
-        <span class="count">{counts.crew[kind]}</span>
-        {#if counts.mine[kind]}<span class="mine">{counts.mine[kind]}</span>{/if}
+        <span class="count">{counts.mine[kind]}</span>
       </button>
     {/each}
   </div>
@@ -34,5 +34,5 @@
     background: #1b1b1b; color: #eee; border: 1px solid #333; }
   .name { font-size: 13px; color: #aaa; font-weight: 600; }
   .count { font-size: 22px; font-weight: 800; font-variant-numeric: tabular-nums; }
-  .mine { position: absolute; top: 6px; right: 8px; font-size: 11px; font-weight: 700; color: #ffb400; }
+  .icon { font-size: 28px; }
 </style>

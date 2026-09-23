@@ -2,7 +2,7 @@
 // job, so nothing here looks past the current stop.
 import type { DrinkEntry, DrinkKind } from '$lib/types';
 
-export const DRINK_KINDS: DrinkKind[] = ['beer', 'wine', 'cocktail', 'shot', 'water', 'food'];
+export const DRINK_KINDS: DrinkKind[] = ['shot', 'cocktail', 'beer', 'water', 'food'];
 
 export type Tally = {
   crew: Record<DrinkKind, number>;

@@ -10,6 +10,13 @@ case "${REHEARSAL-1}" in
       [[ ! -L "$directory" ]] || { echo 'Rehearsal data cannot be a symlink.' >&2; exit 1; }
       mkdir -p "$directory"
     done
+    node web/scripts/prepare-rehearsal.mjs
+    export REHEARSAL_RUN_ID
+    REHEARSAL_RUN_ID="$(node -p "JSON.parse(require('fs').readFileSync('data/rehearsal/source/scenario.json', 'utf8')).runId")"
+    "${compose[@]}" down
+    # Only the isolated practice database: removes uploads and invalidates all old logins.
+    rm -rf -- data/rehearsal/pb_data data/rehearsal/initialized.json data/rehearsal/setup.lock
+    mkdir -p data/rehearsal/pb_data
     "${compose[@]}" up -d --build
     "${compose[@]}" run --build --rm --no-deps rehearsal-init
     ;;

@@ -18,7 +18,7 @@ describe('tally', () => {
     expect(t.crew.beer).toBe(2);
     expect(t.mine.beer).toBe(1);
     expect(t.crew.shot).toBe(1);
-    expect(t.crew.wine).toBe(0);
+    expect(DRINK_KINDS).not.toContain('wine');
   });
 
   it('names the caller’s newest entry here, for the undo', () => {

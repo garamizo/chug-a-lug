@@ -121,6 +121,13 @@
     {/if}
   </section>
 
+  {#if place?.reviews?.length}
+    <section><h2>{copy.venueReviews}</h2>
+      {#each place.reviews as review}
+        <blockquote><p>{review.text}</p><footer>★ {review.rating} · {review.author}</footer></blockquote>
+      {/each}
+    </section>
+  {/if}
   <section>
     <h2>{copy.hours}</h2>
     {#if stop.hours?.source === 'google'}

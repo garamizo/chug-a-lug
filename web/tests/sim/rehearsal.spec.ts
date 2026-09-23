@@ -156,7 +156,7 @@ test('three sessions rehearse clock, replay, route edits, Tab, Freight and recon
     const logs = await pb.collection('event_log').getFullList();
     expect(logs.some(row => new Date(row.at).toISOString() === '2026-12-26T18:25:00.000Z')).toBe(true);
     await other.goto('/crew');
-    await expect(other.getByTestId('crew-row').filter({ hasText: 'Rehearsal Crew One' }).locator('.tab')).toHaveText('1');
+    await expect(other.getByTestId('crew-row').filter({ hasText: 'Rehearsal Crew One' }).locator('.tab > span[title="Beer"]')).toContainText('1');
     await crew.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
     await expect(crew.getByTestId('simulation-status')).toBeInViewport();
     await crew.evaluate(() => window.scrollTo(0, 0));

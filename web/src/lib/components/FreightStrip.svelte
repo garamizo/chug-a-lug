@@ -16,6 +16,11 @@
     <input type="file" accept="image/*,video/*" multiple disabled={busy}
       onchange={(e) => onpick((e.currentTarget as HTMLInputElement).files)} data-testid="freight-input" />
   </label>
+  <label class="pick">
+    {copy.takePhoto}
+    <input type="file" accept="image/*" capture="environment" disabled={busy}
+      onchange={(e) => onpick(e.currentTarget.files)} data-testid="freight-camera" />
+  </label>
   {#if media.length === 0}
     <p data-testid="freight-empty">{copy.noFreightYet}</p>
   {:else}
@@ -33,7 +38,8 @@
   .freight { padding: 0 20px 18px; }
   .pick { display: block; text-align: center; background: #1b1b1b; border: 1px solid #333; border-radius: 10px;
     padding: 14px; font-weight: 700; color: #ffce5c; cursor: pointer; }
-  .pick input { display: none; }
+  .pick { position: relative; margin-bottom: 8px; }
+  .pick input { position: absolute; inset: 0; opacity: 0; width: 100%; height: 100%; cursor: pointer; }
   .strip { display: flex; gap: 8px; overflow-x: auto; padding-top: 10px; }
   .strip img { border-radius: 8px; object-fit: cover; }
   .video { display: grid; place-items: center; width: 120px; height: 90px; background: #222; border-radius: 8px; }

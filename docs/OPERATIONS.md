@@ -158,21 +158,19 @@ at the usual HTTPS app URL with the usual shared passwords. The persistent heade
 identify practice explicitly. Choose **Practice the live day** from the home page.
 
 Startup uses `compose.rehearsal.yml`, isolates the database/uploads/cache under `data/rehearsal/`,
-and seeds a paused recorded route once. Repeated startup preserves practice activity and clock state.
+and seeds a fresh twelve-stop route at 10×, one hour before its first train departure. Each `just up` clears rehearsal uploads, users/sessions and routes. It prefers the previous Saturday’s recording and otherwise uses the published Saturday timetable, labeled Timetable only. Source preparation and route validation happen before the reset.
 The normal real-event database stays at its existing path. Do not copy real-event data into rehearsal.
 `just logs` and `just down` use the regular stack lifecycle.
 
 Set `REHEARSAL=0` in `.env`, then run `just up` to switch to the real event. Set `REHEARSAL=1` and
-run it again to resume rehearsal. Mode switching rebuilds the frontend and requires a fresh login;
+run it again to start a fresh rehearsal. Mode switching rebuilds the frontend and requires a fresh login;
 separate auth cookies prevent identities from crossing databases. Do not run bare `docker compose up`
 for routine rehearsal deployment: it selects the base real-event configuration. Use `just up` after
 rotating credentials so both services and the rehearsal bootstrap receive the current settings.
 
-Initialization refuses an incomplete or mismatched saved run. Preserve and inspect `data/rehearsal/`
-before recovering it; startup never automatically deletes it. An interrupted initializer may leave
-`data/rehearsal/setup.lock`; remove that empty directory only after confirming no initializer is
-running. A `seeding` marker needs inspection, not blind deletion or another seed into occupied data.
-The source/date/window are fixed for the saved run; the UI offers no rewind/reset action.
+If initialization fails, inspect the error before retrying `just up`. A retry validates the source,
+then resets only rehearsal state and seeds again; it does not resume an incomplete practice run.
+The source/date/window are fixed within each run; the UI offers no rewind/reset action.
 
 Tests use disposable credentials/data and ports 15173/18093, one suite at a time. Never test against
 the regular stack ports 3000/8090. The advanced standalone launcher remains available through

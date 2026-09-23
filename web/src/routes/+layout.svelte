@@ -61,6 +61,8 @@
 
 <style>
   :global(*) { box-sizing: border-box; }
+  :global(a) { color: #ffce5c; }
+  :global(a:focus-visible), :global(button:focus-visible), :global(label:focus-within) { outline: 3px solid #fff; outline-offset: 3px; }
   :global(body) { margin: 0; font-family: system-ui, sans-serif; background: #111; color: #eee; }
   /* One readable column on every screen: fluid on phones, capped on desktop. */
   .col { width: 100%; max-width: 760px; margin: 0 auto; padding-inline: 20px; }

@@ -1,6 +1,6 @@
 import { simSetup } from '../../labels.ts';
 import type { ScenarioClock } from '../../sim/config.ts';
-export type Scenario = ScenarioClock & { title: string; stops: {
+export type Scenario = ScenarioClock & { title: string; runId?: string; recordingId?: string | null; stops: {
   name: string; station_id: string; station_name: string; kind: string; dwell_min: number; walk_min: number;
 }[] };
 // The local launcher owns auth and checks HTTP errors. No response body is logged.
@@ -27,7 +27,7 @@ export async function seedTimetable(request: SeedRequest, clock: ScenarioClock &
     stopIds.push(row.id);
   }
   await request('PATCH', `/api/collections/itineraries/records/${itinerary.id}`, { status: 'locked' });
-  return { itineraryId: itinerary.id as string, stopIds };
+  return { itineraryId: itinerary.id as string, stopIds, ownerId: owner.record.id as string };
 }
 export function verifySeedLegs(stopIds: string[], legs: { from_stop: string; to_stop: string; kind: string; depart_at: string; arrive_at: string }[], clock: ScenarioClock): boolean {
   if (legs.length !== stopIds.length - 1) return false;

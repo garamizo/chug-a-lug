@@ -207,13 +207,18 @@ export const copy = {
   stillToCome: 'Still to come',
   tabTitle: 'Tab',
   drink_beer: 'Beer',
-  drink_wine: 'Wine',
   drink_cocktail: 'Cocktail',
   drink_shot: 'Shot',
-  drink_water: 'Water',
+  drink_water: 'Non-alcoholic',
   drink_food: 'Food',
   undoDrink: 'Undo',
   tabClosed: 'The Tab opens when the crawl does.',
+  rehearsalRouteTitle: 'Saturday rehearsal — twelve stops along the BNSF',
+  postedAt: 'Posted',
+  effectiveAt: 'Effective',
+  notificationTimeUnknown: 'Time not supplied',
+  venueReviews: 'Reviews from Google',
+  takePhoto: 'Take a photo',
   addFreight: 'Add a photo',
   uploading: 'Sending…',
   uploadTooBig: 'That file is over 90 MB — the tunnel will not take it.',
@@ -332,3 +337,11 @@ export const recordingCopy = {
   indexed: 'Legacy recording indexed. Freshness is conservative because poll history is unavailable.',
   generated: 'Deterministic rehearsal recording generated.',
 } as const;
+
+export const drinkIcons: Record<string, string> = { shot: '🥃', cocktail: '🍸', beer: '🍺', water: '🧃', food: '🍽️' };
+
+export const rehearsalBulletins = [
+  'Practice Bulletin: Welcome aboard! Check The Route for today’s twelve stops and venue details.',
+  'Practice Bulletin: We have food and non-alcoholic breaks along the way. Log your own choices in The Tab.',
+  'Practice Bulletin: Meet at the first stop before departure. Watch Railroad Time — rehearsal runs at 10× speed.'
+];

@@ -58,3 +58,19 @@ describe('Crew Board Bulletin status', () => {
     expect(hasSeen([], 'one', 'current')).toBe(false);
   });
 });
+
+it('ranks alcohol first, then non-alcoholic, then food, ignoring wine and other days', async () => {
+  const { crewScore, compareScores } = await import('../../src/lib/live/crew');
+  const drinks = [
+    { ...entry('one', '2026-12-26T20:00:00Z'), kind: 'shot' },
+    { ...entry('one', '2026-12-26T20:00:00Z'), kind: 'water' },
+    { ...entry('one', '2026-12-26T20:00:00Z'), kind: 'food' },
+    { ...entry('one', '2026-12-26T20:00:00Z'), kind: 'wine' },
+    entry('one', '2026-12-25T20:00:00Z')
+  ] as DrinkEntry[];
+  const score = crewScore(drinks, 'one', '2026-12-26');
+  expect(score).toEqual({ shot: 1, cocktail: 0, beer: 0, water: 1, food: 1 });
+  expect(compareScores(score, { ...score, beer: 1, water: 0 })).toBeGreaterThan(0);
+  expect(compareScores(score, { ...score, water: 0, food: 9 })).toBeLessThan(0);
+  expect(compareScores(score, { ...score, food: 0 })).toBeLessThan(0);
+});

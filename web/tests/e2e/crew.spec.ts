@@ -34,9 +34,9 @@ test('the open Crew Board follows new users, drinks, undo and acknowledgements',
     await expect(row).toBeVisible();
     await crew.goto('/live');
     await crew.getByTestId('drink-beer').click();
-    await expect(row.locator('.tab')).toHaveText('1');
+    await expect(row.locator('.tab > span[title="Beer"]')).toContainText('1');
     await crew.getByTestId('tab-undo').click();
-    await expect(row.locator('.tab')).toHaveText('0');
+    await expect(row.locator('.tab > span[title="Beer"]')).toContainText('0');
     await page.getByTestId('menu').click();
     await page.getByTestId('menu-bulletin').click();
     await page.getByTestId('bulletin-body').fill('Crew Board acknowledgement test.');

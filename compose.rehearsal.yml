@@ -8,7 +8,7 @@ services:
   pocketbase:
     environment:
       SIM: "1"
-      SIM_RUN_ID: shared-rehearsal
+      SIM_RUN_ID: ${REHEARSAL_RUN_ID:-shared-rehearsal}
     command:
       - /bin/sh
       - -ec
@@ -26,15 +26,16 @@ services:
     environment:
       SIM: "1"
       PUBLIC_SIM: "1"
-      SIM_RUN_ID: shared-rehearsal
+      SIM_RUN_ID: ${REHEARSAL_RUN_ID:-shared-rehearsal}
       SIM_RECORDINGS_DIR: /app/rehearsal
       DATA_DIR: /data
-      GTFS_URL: file:///app/rehearsal/recording/schedule.zip
+      GTFS_URL: file:///app/rehearsal/schedule.zip
       GTFS_PUBLISHED_URL: ""
       METRA_API_TOKEN: ""
       GOOGLE_PLACES_KEY: ""
       OVERPASS_URL: http://127.0.0.1:9
     volumes:
+      - ./data/rehearsal/source:/app/rehearsal:ro
       - ./data/rehearsal/cache/gtfs:/data/gtfs
       - ./data/rehearsal/cache/places:/data/places
       - ./data/rehearsal/cache/recordings:/data/recordings
@@ -50,3 +51,4 @@ services:
     command: [node, scripts/shared-rehearsal.mjs]
     volumes:
       - ./data/rehearsal:/state
+      - ./data/rehearsal/source:/app/rehearsal:ro

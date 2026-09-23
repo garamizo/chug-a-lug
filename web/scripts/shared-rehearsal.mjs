@@ -8,7 +8,7 @@ if (process.env.SIM !== '1' || process.env.PB_URL !== 'http://pocketbase:8090' |
 const scenario = JSON.parse(await readFile('/app/rehearsal/scenario.json', 'utf8'));
 const state = '/state/initialized.json', lock = '/state/setup.lock';
 async function request(url, options = {}) {
-  const response = await fetch(url, { ...options, signal: AbortSignal.timeout(10_000), redirect: 'error' });
+  const response = await fetch(url, { signal: AbortSignal.timeout(10_000), ...options, redirect: 'error' });
   if (!response.ok) throw new Error(`Rehearsal setup HTTP ${response.status}`);
   return response.json();
 }
@@ -37,11 +37,30 @@ try {
     },
     async writeMarker(marker) { await writeFile(state + '.tmp', JSON.stringify(marker), { mode: 0o600 }); await rename(state + '.tmp', state); },
     async finish(itineraryId, stopIds) {
+      for (const [i, stopId] of stopIds.entries()) {
+        const venue = scenario.stops[i];
+        const form = new FormData();
+        for (const field of ['place_id', 'name', 'address', 'lat', 'lon', 'kind', 'rating', 'rating_count', 'phone', 'website', 'maps_url', 'station_id', 'fetched_at']) {
+          if (venue[field] !== undefined) form.set(field, String(venue[field]));
+        }
+        form.set('ref', `google:${venue.place_id}`); form.set('source', 'google');
+        form.set('hours', JSON.stringify(venue.hours)); form.set('reviews', JSON.stringify(venue.reviews));
+        form.set('details_at', venue.fetched_at);
+        form.set('photo_attributions', JSON.stringify(venue.photos.map(p => p.attribution)));
+        for (const photo of venue.photos) form.append('photos', new Blob([await readFile(`/app/rehearsal/venues/${photo.file}`)], { type: 'image/jpeg' }), photo.file);
+        const place = await request('http://pocketbase:8090/api/collections/places/records', { method: 'POST', headers: { Authorization: auth.token }, body: form });
+        await api('PATCH', `/api/collections/stops/records/${stopId}`, { place: place.id, photos_status: 'done' });
+      }
       await request(`http://web:3000/api/internal/recompute?itinerary=${itineraryId}`, { method: 'POST', headers: { 'X-Internal-Secret': process.env.INTERNAL_SECRET } });
       await waitFor(async () => {
         const rows = await api('GET', '/api/collections/legs/records?perPage=100&filter=' + encodeURIComponent(`itinerary="${itineraryId}"`));
         return verifySeedLegs(stopIds, rows.items, scenario);
       });
+      const legs = await api('GET', '/api/collections/legs/records?perPage=100&filter=' + encodeURIComponent(`itinerary="${itineraryId}"`));
+      const firstDeparture = Math.min(...legs.items.filter(l => l.kind === 'train').map(l => Date.parse(l.depart_at)));
+      const epoch = firstDeparture - 60 * 60_000;
+      if (!Number.isFinite(epoch) || epoch < Date.parse(scenario.windowStart) || epoch >= Date.parse(scenario.windowEnd)) throw new Error('Recording must cover one hour before departure.');
+      await api('PATCH', '/api/collections/simulation_clock/records/simulationclock', { epoch_start: new Date(epoch).toISOString() });
     }
   });
   console.log(copy.rehearsalReady);

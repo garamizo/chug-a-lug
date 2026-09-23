@@ -106,7 +106,7 @@
       {@const leg = liveDay.legs.find((l) => l.to_stop === stop.id)}
       <div class="row">
         <span class="when">{leg?.arrive_at ? fmtTime(leg.arrive_at) : ''}</span>
-        <span class="name">{stop.name}</span>
+        <a class="name" href="/plan/{liveDay.itinerary?.id}/stops/{stop.id}">{stop.name} →</a>
         <span class="where">{stop.station_name}</span>
       </div>
     {/each}
