@@ -26,3 +26,54 @@ test('a Freight photo opens in the viewer and back closes it without leaving Liv
   await expect(page).toHaveURL(/\/live$/);
   await expect(page.getByTestId('departure-board')).toBeVisible();
 });
+
+test('tapping the current stop opens its sheet over Live; back closes it', async ({ page }) => {
+  const ids = await liveDay(page, 'E2E Stop Sheet');
+  await page.getByTestId('current-stop').click();
+  await expect(page).toHaveURL(new RegExp(`/live\\?stop=${ids.firstStopId}$`));
+  await expect(page.getByTestId('sheet-name')).toHaveText('The Whistle Stop');
+  await expect(page.getByTestId('sheet-walk')).toHaveAttribute('href', /travelmode=walking/);
+  await expect(page.getByTestId('sheet-call')).toHaveCount(0);
+  await page.getByTestId('sheet-next').click();
+  await expect(page.getByTestId('sheet-name')).toHaveText('Berwyn Beer Hall');
+  await page.goBack();
+  await expect(page.getByTestId('stop-sheet')).toBeHidden();
+  await expect(page).toHaveURL(/\/live$/);
+  await expect(page.getByTestId('departure-board')).toBeVisible();
+});
+
+test('a photo opened from the sheet sits above it, and back steps out one layer at a time', async ({ page }) => {
+  await liveDay(page, 'E2E Sheet Photo');
+  await page.getByTestId('freight-input').setInputFiles({ name: 'bar.gif', mimeType: 'image/gif', buffer: GIF });
+  await expect(page.getByTestId('freight-open-0')).toBeVisible();
+  await page.getByTestId('current-stop').click();
+  await page.getByTestId('stop-sheet').locator('.gallery button').first().click();
+  await expect(page.getByTestId('lightbox')).toBeVisible();
+  await page.getByTestId('lightbox-close').click();          // the viewer's own control must be clickable
+  await expect(page.getByTestId('lightbox')).toBeHidden();
+  await expect(page.getByTestId('stop-sheet')).toBeVisible();
+  await page.getByTestId('stop-sheet').locator('.gallery button').first().click();
+  await page.goBack();
+  await expect(page.getByTestId('lightbox')).toBeHidden();
+  await expect(page.getByTestId('stop-sheet')).toBeVisible();
+  await page.goBack();
+  await expect(page.getByTestId('stop-sheet')).toBeHidden();
+  await expect(page).toHaveURL(/\/live$/);
+});
+
+test('a shared stop link opens the sheet, and closing it stays on Live', async ({ page }) => {
+  const ids = await liveDay(page, 'E2E Sheet Link');
+  await page.goto(`/live?stop=${ids.secondStopId}`);
+  await expect(page.getByTestId('sheet-name')).toHaveText('Berwyn Beer Hall');
+  await page.getByTestId('sheet-close').click();
+  await expect(page).toHaveURL(/\/live$/);
+  await expect(page.getByTestId('stop-sheet')).toBeHidden();
+});
+
+test('on the event day The Route opens stops in the sheet, not the planner', async ({ page }) => {
+  await liveDay(page, 'E2E Route Sheet');
+  await page.getByTestId('tab-route').click();
+  await page.getByTestId('stop-link-1').click();
+  await expect(page.getByTestId('sheet-name')).toHaveText('Berwyn Beer Hall');
+  await expect(page).toHaveURL(/\/route\?stop=/);
+});

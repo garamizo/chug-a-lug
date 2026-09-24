@@ -9,8 +9,10 @@
   import LineMap from './LineMap.svelte';
   import StopRow from './StopRow.svelte';
 
-  let { itinerary, stops, legs, editable, canManage, actions, onerror }: {
+  let { itinerary, stops, legs, editable, canManage, actions, onerror, onopenstop }: {
     itinerary: Itinerary; stops: StopLike[]; legs: Leg[]; editable: boolean; canManage: boolean; actions: PlanActions; onerror?: (message: string) => void;
+    /** When set, stop links open the stop sheet in place of navigating to the planning page. */
+    onopenstop?: (id: string) => void;
   } = $props();
 
   const sorted = $derived([...stops].sort((a, b) => a.order - b.order || (a.created ?? '').localeCompare(b.created ?? '')));
@@ -91,7 +93,7 @@
   <StopRow {stop} index={i} arriveAt={arriveAt(i)} leaveAt={leaveAt(i)} {editable} last={i === sorted.length - 1}
     side={placement.side[i]} leg={legAfter(i)} legReason={legReason(i)} {names} nextStationId={sorted[i + 1]?.station_id} date={itinerary.event_date}
     canUp={sameStation(i, i - 1)} canDown={sameStation(i, i + 1)}
-    href="/plan/{itinerary.id}/stops/{stop.id}"
+    href="/plan/{itinerary.id}/stops/{stop.id}" onopen={onopenstop}
     onupdate={(patch) => { if (patch.dwell_min !== undefined) return actions.setDwell(stop.id, patch.dwell_min); }}
     onmove={(dir) => actions.move(stop.id, dir)} onremove={() => actions.remove(stop.id)} />
   {#if actions.setAnchor}

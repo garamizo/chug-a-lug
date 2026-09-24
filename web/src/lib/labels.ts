@@ -313,6 +313,16 @@ export const copy = {
   photoViewer: 'Photo viewer',
   closeViewer: 'Close',
   downloadOriginal: 'Download original',
+  stopDetails: 'Stop details',
+  walkThere: 'Walk there',
+  callStop: 'Call',
+  editDetails: 'Edit details',
+  confirmedOpenBadge: 'Confirmed open on event day',
+  otherDays: 'Other days',
+  previousStop: 'Previous stop',
+  nextStop: 'Next stop',
+  closeSheet: 'Close',
+  googlePhoto: 'Photo via Google',
 } as const;
 
 // Operator-facing rehearsal setup messages; these never include passwords or tokens.

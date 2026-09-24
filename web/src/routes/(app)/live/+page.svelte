@@ -11,7 +11,9 @@
   import type { DrinkEntry, DrinkKind } from '$lib/types';
   import { liveDay } from '$lib/live/day.svelte';
   import { prepare, uploadBatch } from '$lib/live/upload';
+  import { openStop } from '$lib/nav';
   import CrewChat from '$lib/components/CrewChat.svelte';
+  import StopSheet from '$lib/components/StopSheet.svelte';
   let tabDialog = $state<HTMLDialogElement>();
   let tabOpen = $state(false);
   let fileInput = $state<HTMLInputElement>();
@@ -96,7 +98,8 @@
 {/if}
 
 {#if here?.stop}
-  <p class="current" data-testid="current-stop"><small>{copy.currentStop}</small><a href="/plan/{liveDay.itinerary?.id}/stops/{here.stop.id}">{here.stop.name}</a></p>
+  <p class="current"><small>{copy.currentStop}</small>
+    <button type="button" class="stopname" onclick={() => openStop(here.stop!.id)} data-testid="current-stop">{here.stop.name} <span aria-hidden="true">ⓘ</span></button></p>
 {/if}
 <div class="actions">
   <button class="action cup" data-testid="action-tab" disabled={!tabStop} onclick={() => { tabOpen = true; tabDialog?.showModal(); }}><span aria-hidden="true">☕</span>{copy.openTab}</button>
@@ -129,7 +132,7 @@
       {@const leg = liveDay.legs.find((l) => l.to_stop === stop.id)}
       <div class="row">
         <span class="when">{leg?.arrive_at ? fmtTime(leg.arrive_at) : ''}</span>
-        <a class="name" href="/plan/{liveDay.itinerary?.id}/stops/{stop.id}">{stop.name} →</a>
+        <button type="button" class="name" onclick={() => openStop(stop.id)}>{stop.name} →</button>
         <span class="where">{stop.station_name}</span>
       </div>
     {/each}
@@ -138,10 +141,15 @@
 
 {#if liveDay.itinerary}<CrewChat />{/if}
 
+{#if liveDay.itinerary}
+  <StopSheet stops={liveDay.stops} media={liveDay.feed.media} eventDate={liveDay.itinerary.event_date}
+    itineraryId={liveDay.itinerary.id} isAdmin={!!$auth.user?.is_admin} />
+{/if}
+
 <style>
   .current { margin: 2px 20px 12px; display: grid; gap: 2px; }
   .current small { color: #aaa; font-size: 11px; text-transform: uppercase; letter-spacing: .08em; }
-  .current a { font-size: 19px; font-weight: 750; text-decoration: none; }
+  .stopname { all: unset; cursor: pointer; font-size: 19px; font-weight: 750; color: #ffce5c; }
   .actions { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; padding: 0 20px 14px; align-items: start; }
   .action { display: flex; width: 100%; margin: 0; flex-direction: column; align-items: center; gap: 5px; border-radius: 16px; padding: 12px 5px; border: 1px solid #b5873b; color: #ffe3a3; background: linear-gradient(145deg, #443319, #211b13); box-shadow: 0 3px 0 #695024; font-size: 13px; }
   .action span { font-size: 30px; line-height: 1.2; }
@@ -160,6 +168,6 @@
   h2 { margin: 0 0 10px; font-size: 13px; letter-spacing: .09em; text-transform: uppercase; color: #9a9a9a; font-weight: 700; }
   .row { display: flex; align-items: baseline; gap: 12px; padding: 11px 0; border-bottom: 1px solid #2a2a2a; }
   .when { font-variant-numeric: tabular-nums; font-size: 15px; color: #9a9a9a; width: 68px; flex: none; }
-  .name { flex-grow: 1; font-size: 16px; }
+  .name { all: unset; cursor: pointer; flex-grow: 1; font-size: 16px; color: inherit; }
   .where { font-size: 13px; color: #9a9a9a; }
 </style>

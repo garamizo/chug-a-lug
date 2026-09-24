@@ -11,7 +11,7 @@
   import type { Side } from '$lib/lineMap';
   import LegRow from './LegRow.svelte';
 
-  let { stop, index, arriveAt, leaveAt, editable, last, href, side = 'left', leg, legReason, names, nextStationId, date, canUp = false, canDown = false, onupdate, onmove, onremove }: {
+  let { stop, index, arriveAt, leaveAt, editable, last, href, side = 'left', leg, legReason, names, nextStationId, date, canUp = false, canDown = false, onupdate, onmove, onremove, onopen }: {
     stop: StopLike; index: number; arriveAt: Date | null; leaveAt: Date | null; editable: boolean; last: boolean;
     href: string; side?: Side; leg: Leg | undefined; legReason?: string; names: Record<string, string>;
     /** Where the crawl goes next, so the departure options are that day's trains toward it. */
@@ -19,6 +19,8 @@
     /** Whether the previous / next stop is at the same station (the only moves allowed). */
     canUp?: boolean; canDown?: boolean;
     onupdate: (patch: Partial<Stop>) => void | Promise<void>; onmove?: (dir: -1 | 1) => void; onremove: () => void;
+    /** When set, tapping the name opens the stop sheet in place of the planning page link. */
+    onopen?: (id: string) => void;
   } = $props();
 
   const kind = $derived(copy[`kind_${stop.kind ?? 'other'}`]);
@@ -59,7 +61,7 @@
       <button type="button" class="tiny close" onclick={() => { if (confirm(copy.removeConfirm)) onremove(); }} aria-label={copy.remove} data-testid="remove-{index}">×</button>
     </div>
   {/if}
-  <a {href} class="head" data-testid="stop-link-{index}"><span class="num">{index + 1}</span><strong>{stop.name}</strong></a>
+  <a {href} class="head" data-testid="stop-link-{index}" onclick={(e) => { if (onopen) { e.preventDefault(); onopen(stop.id); } }}><span class="num">{index + 1}</span><strong>{stop.name}</strong></a>
   <p class="meta">{kind} · {names[stop.station_id] ?? stop.station_name ?? stop.station_id} · {stop.walk_min} {copy.walkMinutes}</p>
   <p class="times">
     {#if arriveAt}<span>{copy.arrive} <strong>{fmtTime(arriveAt)}</strong></span>{/if}
