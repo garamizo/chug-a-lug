@@ -1,16 +1,14 @@
 <script lang="ts">
-  import { onMount } from 'svelte';
   import { goto } from '$app/navigation';
   import { auth } from '$lib/pb';
   import { label, copy } from '$lib/labels';
   import { liveDay } from '$lib/live/day.svelte';
-  import { resolveCurrentRoute } from '$lib/live/route';
-  import type { Itinerary } from '$lib/types';
 
-  let locked = $state<Itinerary | null>(null);
-  onMount(async () => {
-    try { locked = await resolveCurrentRoute(); } catch { locked = null; }
-  });
+  // liveDay already resolves and follows the current route (the same newest-locked fallback, kept
+  // fresh by liveDay.start() in the layout); a one-shot onMount resolve here would go stale the
+  // moment the Conductor uses "Make current" and, offline, would show "no route" even though the
+  // Live link above it (driven by liveDay.hasRoute) still shows.
+  const locked = $derived(liveDay.itinerary);
   // On the day itself the app is the Departure Board; the planner is reached through the menu, not
   // a tab — the event-day TabBar links Live, The Route and the Crew Board only.
   $effect(() => { if (liveDay.isEventDay) void goto('/live', { replaceState: true }); });

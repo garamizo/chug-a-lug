@@ -161,11 +161,14 @@ Chicago time against that date's timetable, with a Practice badge, and nothing p
 day reaches the event day.
 
 `just practice-route` builds the canned route once, validating it while still a draft, then locks
-it and sets it current only if no route is already selected; a re-run replaces its own leftover
-draft and refuses if a locked canned route already exists, reusing its cached Places answers and
-photos under `data/practice-route/`. The Conductor makes any locked route current from its page in
-the planner with **Make current**. The old shared-rehearsal database, `data/rehearsal/`, is left on
-disk; nothing removes it automatically, so delete it by hand once you no longer need it.
+it; a re-run replaces its own leftover draft and refuses if a locked canned route already exists,
+reusing its cached Places answers and photos under `data/practice-route/`. It becomes current
+through the newest-locked fallback, not by writing `crawl_settings` itself. When a real route is
+later locked, that fallback takes over automatically — nobody has to press anything for the event
+day to stop being a practice day. The Conductor uses **Make current** on the canned route's page in
+the planner to return to practising on it afterward. The old shared-rehearsal database,
+`data/rehearsal/`, is left on disk; nothing removes it automatically, so delete it by hand once you
+no longer need it.
 
 Tests use disposable credentials/data and ports 15173/18093, one suite at a time. Never test against
 the regular stack ports 3000/8090. The advanced standalone launcher remains available through

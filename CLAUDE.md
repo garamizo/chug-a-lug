@@ -44,9 +44,10 @@ Never point a dev or test server at 8090 or 3000 — that is the live stack on t
 ## Deploying
 
 `just up` runs the one real stack (`docker compose up -d --build`). Production therefore tracks
-the working tree of the checkout you run it in, not `origin/main`. Check freshness with `docker images | grep chug` against your last edit, never against
-git. `pb_hooks/` and `pb_migrations/` are read-only bind mounts, so migrations apply on a PocketBase
-restart without a rebuild.
+the working tree of the checkout you run it in, not `origin/main`. Check freshness with
+`docker images | grep chug` against your last edit, never against git. `pb_hooks/` and
+`pb_migrations/` are read-only bind mounts, so migrations apply on a PocketBase restart without a
+rebuild.
 
 ## Traps worth knowing before you debug them
 

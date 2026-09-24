@@ -239,10 +239,11 @@ deletes it automatically.)
 
 `just practice-route` (`cd web && node --env-file=../.env scripts/practice-route.mjs`) builds a
 canned out-and-back route once against the real stack: it validates the route while still a
-draft, then locks it, and sets it current only if no route is already selected. A re-run replaces
-its own leftover draft and refuses if a locked canned route already exists; its Places answers and
-photos are cached under `data/practice-route/` so a retry does not spend the budget again. The
-Conductor makes any locked route current from its page in the planner with **Make current**.
+draft, then locks it. It becomes current through the newest-locked fallback until a real route is
+locked. A re-run replaces its own leftover draft and refuses if a locked canned route already
+exists; its Places answers and photos are cached under `data/practice-route/` so a retry does not
+spend the budget again. The Conductor makes any locked route current from its page in the planner
+with **Make current**.
 
 ### Shakedown Run
 

@@ -76,9 +76,7 @@ async function pocketbaseApi(pbUrl, email, password) {
       return json('POST', `/api/collections/${collection}/records`, body);
     },
     async update(collection, id, body) { return json('PATCH', `/api/collections/${collection}/records/${id}`, body); },
-    async remove(collection, id) { return json('DELETE', `/api/collections/${collection}/records/${id}`); },
-    async getSettings() { return json('GET', '/api/collections/crawl_settings/records/crawlsettings'); },
-    async setCurrent(id) { await json('PATCH', '/api/collections/crawl_settings/records/crawlsettings', { current_itinerary: id }); }
+    async remove(collection, id) { return json('DELETE', `/api/collections/${collection}/records/${id}`); }
   };
 }
 

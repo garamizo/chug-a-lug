@@ -1424,7 +1424,7 @@ Before the merge, from the main checkout (still at `4b159cc`, where the file exi
 Then merge and bring up the real stack:
 4. `git merge --ff-only feat/practice-days` in the main checkout.
 5. `just up` starts the real stack on `data/pb_data`, and migration `1758850000` applies on start. `docker compose ls` must show only `compose.yml` for `chug-a-lug`, and `docker images | grep chug` must show a fresh image.
-6. `just practice-route` builds the canned route and selects it as current, unless a route is already selected.
+6. `just practice-route` builds the canned route; it becomes current through the newest-locked fallback.
 7. Open `https://chugalug.app/live` on a phone. You should see the Practice badge and timetable trains, and the planner should show no Bulletin.
 
 **Rollback** (if step 5 or 7 fails and cannot be fixed forward):

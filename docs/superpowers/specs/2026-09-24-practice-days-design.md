@@ -175,7 +175,9 @@ Notifications (`/notifications`) still list the day's Bulletins, so nothing is h
   3. wait for the recompute to produce legs (it runs on drafts)
   4. check that every leg is `train` or `walk`
   5. only then lock the route by update
-  6. set `crawl_settings.current_itinerary` if it is empty
+- The script never touches `crawl_settings.current_itinerary`. Locking is enough: the newest-locked
+  fallback (above) makes the canned route current on its own until a real route is locked, and from
+  then on the real route takes over the same way, with nobody pressing anything.
 - If a leg is impossible or the planner times out, the script fails loudly and leaves the **draft**
   for inspection. Nobody sees a draft on Live.
 - A re-run replaces its own leftover draft, reusing the cached Places answers. It refuses only when a
