@@ -32,7 +32,8 @@
 ## Review Focus
 
 - **A phone whose clock is wrong or faked** (e2e installs 2026-12-26) must still see the server's rows for today. Pinned by Task 1 (server stamps) and Task 4 (`today` from `/api/day`), and asserted in the Task 6 e2e tests.
-- **A client open across Chicago midnight** empties its chat, Tab and Freight without a reload, and never shows yesterday's Bulletin pinned. Task 4 unit test "rolls over when the server day changes".
+- **A client open across Chicago midnight** empties its chat, Tab and Freight without a reload, and never shows yesterday's Bulletin pinned, **even when the reloads fail or the day endpoint is unreachable**. Task 4 unit tests "empties yesterday's activity at midnight even when every reload fails", "drops a read that started yesterday…" and "keeps counting the server's day…".
+- **A route switch** (Make current) never leaves the old route's trains, chat or Bulletins on screen, even for a moment while the reloads are slow or failing. Task 4 "switching the current route" tests and the Task 6 two-browser e2e.
 - **A Save in the locked-route editor on a practice day** must not treat the day as the event day. The editor's `cohesionBlockers` receives `realNow`, not plan time. Task 6 unit test in `cohesion.test.ts`.
 - **A stale `crawl_settings.current_itinerary`** that points at an archived or deleted route falls back to the newest locked route, both in the client resolver and in the media hook. Task 3 unit and hook tests.
 - **Pending (unsaved) drink taps** still count on the Tab immediately, even though their client `at` may be on another date than the server's `today`. Task 6 e2e: the existing `tab.spec.ts` tests must stay green unchanged.
@@ -72,7 +73,7 @@
 - Produces:
   - `nextDate(date: string): string`
   - `dayBounds(date: string): { start: string; end: string }` (UTC ISO strings, Chicago day, DST-safe)
-  - `GET /api/day` → `{ today: string }`
+  - `GET /api/day` → `{ today: string; now: string }` (`now` is the server's clock as UTC ISO)
   - drink rows whose `at` is always server time
 
 - [ ] **Step 1: Write the failing tests**
@@ -108,7 +109,7 @@ vi.mock('$lib/server/sim/service', async (orig) => ({
 it('answers with the Chicago date of the server clock, not UTC', async () => {
   const { GET } = await import('../../src/routes/api/day/+server');
   const res = await GET({ request: new Request('http://x/api/day') } as never);
-  expect(await res.json()).toEqual({ today: '2026-09-24' });
+  expect(await res.json()).toEqual({ today: '2026-09-24', now: '2026-09-25T04:30:00.000Z' });
   expect(res.headers.get('cache-control')).toBe('no-store');
 });
 ```
@@ -162,7 +163,8 @@ import { todayInTz } from '$lib/time';
 export const GET: RequestHandler = async ({ request }) => {
   await requireUser(request);
   const context = await simulationClock.readContext();
-  return json({ today: todayInTz(new Date(context.eventNow)) }, { headers: { 'cache-control': 'no-store' } });
+  // `now` lets the client keep counting the server's day between polls and while offline.
+  return json({ today: todayInTz(new Date(context.eventNow)), now: context.eventNow }, { headers: { 'cache-control': 'no-store' } });
 };
 ```
 (Use the same import path for `simulationClock` as `routes/api/plan/commit/+server.ts`.)
@@ -230,6 +232,22 @@ describe('plan clock', () => {
     const p = projectToPlanDate(new Date('2026-09-23T04:59:00Z'), '2026-12-26');
     expect(p.toISOString()).toBe('2026-12-27T05:59:00.000Z');
   });
+  it('keeps seconds, so 23:59:30 stays on the event date', () => {
+    const p = projectToPlanDate(new Date('2026-09-23T04:59:30.250Z'), '2026-12-26');
+    expect(p.toISOString()).toBe('2026-12-27T05:59:30.250Z');
+  });
+  it('uses the wall-clock time on DST transition days, not minutes since midnight', () => {
+    // 2026-03-08 spring forward: 14:00 CDT is 13 elapsed hours after midnight, but it is still 14:00
+    expect(projectToPlanDate(new Date('2026-03-08T19:00:00Z'), '2026-12-26').toISOString()).toBe('2026-12-26T20:00:00.000Z');
+    // 2026-11-01 fall back: 14:00 CST is 15 elapsed hours after midnight
+    expect(projectToPlanDate(new Date('2026-11-01T20:00:00Z'), '2026-12-26').toISOString()).toBe('2026-12-26T20:00:00.000Z');
+  });
+  it('resolves a time the route date skips or repeats the way localToUtc does', () => {
+    // Practising at 02:30 for a route on 2027-03-14 (02:00-03:00 does not exist): the transition instant
+    expect(projectToPlanDate(new Date('2026-09-22T07:30:00Z'), '2027-03-14').toISOString()).toBe('2027-03-14T08:00:00.000Z');
+    // Practising at 01:30 for a route on 2026-11-01 (01:00-02:00 happens twice): the first one, CDT
+    expect(projectToPlanDate(new Date('2026-09-22T06:30:00Z'), '2026-11-01').toISOString()).toBe('2026-11-01T06:30:00.000Z');
+  });
 });
 ```
 
@@ -244,14 +262,21 @@ Expected: FAIL, module not found.
 // Practice days: any day that is not the route's date runs the route at today's time of day on its
 // own date, so the board shows the trains the crew would catch then. Only the timetable follows
 // plan time; everything people post stays on real time.
-import { localToUtc, minutesOfDay, todayInTz } from '$lib/time';
+import { localToUtc, TZ, todayInTz } from '$lib/time';
+
+const clock = new Intl.DateTimeFormat('en-US', { timeZone: TZ, hourCycle: 'h23', hour: '2-digit', minute: '2-digit', second: '2-digit' });
 
 export function isEventDay(eventDate: string, realNow: Date): boolean {
   return todayInTz(realNow) === eventDate;
 }
 
+/** The Chicago wall-clock time of `realNow` on `eventDate`. Not `minutesOfDay`: that counts elapsed
+ *  minutes, which is an hour off on DST transition days, and it rounds away the seconds. A time the
+ *  event date skips or repeats resolves as `localToUtc` resolves it (transition instant, first occurrence). */
 export function projectToPlanDate(realNow: Date, eventDate: string): Date {
-  return localToUtc(eventDate, minutesOfDay(todayInTz(realNow), realNow));
+  const part = (type: string) => Number(clock.formatToParts(realNow).find((p) => p.type === type)!.value);
+  const base = localToUtc(eventDate, part('hour') * 60 + part('minute')).getTime();
+  return new Date(base + part('second') * 1000 + realNow.getUTCMilliseconds());
 }
 
 export function planNow(eventDate: string | null, realNow: Date): Date {
@@ -502,8 +527,10 @@ git commit -m "feat: crawl_settings current route, shared by the client and the 
 - Produces, on `LiveDay`:
   - `realNow: Date` ($state): the client clock (`clientClock.eventNow()`)
   - `now: Date` ($state): plan time
-  - `serverToday: string | null` ($state)
-  - `get today(): string`, which is `serverToday ?? todayInTz(realNow)`
+  - `serverOffset: number | null` ($state): server clock minus phone clock, in ms
+  - `get today(): string`, which is `todayInTz(realNow + (serverOffset ?? 0))`
+  - `enterScope(reload = true): void`, which clears activity and trains and, with `reload`, reloads them for the current route and day
+  - `checkScope(): Promise<void>`, which calls `enterScope()` when the route or `today` changed
   - `get hasRoute(): boolean`
   - `get isEventDay(): boolean`
   - `get practice(): boolean`, which is `hasRoute && !isEventDay`
@@ -511,9 +538,9 @@ git commit -m "feat: crawl_settings current route, shared by the client and the 
   - `syncPlan(): void`, which recomputes `now` from `realNow` (pure, used by tests)
   - `syncNow(): void`, which sets `realNow` from `clientClock.eventNow()`, then `syncPlan()`
   - `get effectiveAnchor()`, which is `isEventDay ? anchor : null` (the only anchor `here` uses)
-  - `loadDay(): Promise<void>`
+  - `loadDay(): Promise<void>`, which refreshes `serverOffset`, then `checkScope()`
 - `feed.ts`:
-  - `fetchDay(): Promise<{ today: string }>`
+  - `fetchDay(): Promise<{ today: string; now: string }>`
   - `fetchNext(from, to, date, after, practice = false)`
 
 - [ ] **Step 1: Write the failing tests** (append to `web/tests/unit/liveDay.test.ts`)
@@ -570,7 +597,7 @@ describe('one day at a time', () => {
   it('reads activity only inside the server day', async () => {
     mocks.getFullList.mockResolvedValue([]);
     const day = new LiveDay();
-    day.itinerary = route; day.serverToday = '2026-09-24';
+    day.itinerary = route; day.serverOffset = 0; day.realNow = new Date('2026-09-24T18:00:00Z');
     await day.loadFeed();
     const filters = mocks.filter.mock.calls.map((c) => [c[0], c[1]]);
     expect(filters).toContainEqual([expect.stringContaining('at >= {:start} && at < {:end}'), expect.objectContaining({ start: '2026-09-24T05:00:00.000Z', end: '2026-09-25T05:00:00.000Z' })]);
@@ -579,30 +606,88 @@ describe('one day at a time', () => {
   it('limits Bulletins to the day, and acks to those Bulletins', async () => {
     mocks.getFullList.mockResolvedValueOnce([{ id: 'b1' }]).mockResolvedValueOnce([]);
     const day = new LiveDay();
-    day.itinerary = route; day.serverToday = '2026-09-24';
+    day.itinerary = route; day.serverOffset = 0; day.realNow = new Date('2026-09-24T18:00:00Z');
     await day.loadBulletins();
     const texts = mocks.filter.mock.calls.map((c) => c[0]);
     expect(texts).toContainEqual(expect.stringContaining('itinerary = {:id} && at >= {:start} && at < {:end}'));
     expect(texts).toContainEqual(expect.stringContaining('broadcast.itinerary = {:id} && broadcast.at >= {:start}'));
   });
-  it('rolls over when the server day changes', async () => {
-    mocks.fetchDay.mockResolvedValueOnce({ today: '2026-09-24' }).mockResolvedValueOnce({ today: '2026-09-25' });
+  const yesterday = () => {
     const day = new LiveDay();
-    const feed = vi.spyOn(day, 'loadFeed').mockResolvedValue(undefined);
-    const bulletins = vi.spyOn(day, 'loadBulletins').mockResolvedValue(undefined);
+    day.itinerary = route; day.realNow = new Date('2026-09-25T04:58:00Z');   // 23:58 CDT on the 24th
+    day.serverOffset = 0; day.enterScope(false);
+    day.feed = { drinks: [{ id: 'd1' }], media: [{ id: 'm1' }], messages: [{ id: 'c1' }], reactions: [] } as never;
+    day.bulletins = [{ id: 'b1' }] as never;
+    return day;
+  };
+  it('empties yesterday’s activity at midnight even when every reload fails', async () => {
+    mocks.getFullList.mockRejectedValue(new Error('offline'));
+    const day = yesterday();
+    expect(day.pinnedBulletin?.id).toBe('b1');
+    day.realNow = new Date('2026-09-25T05:01:00Z');                          // 00:01 on the 25th
+    await day.checkScope();
+    expect(day.today).toBe('2026-09-25');
+    expect(day.feed.messages).toEqual([]);
+    expect(day.feed.drinks).toEqual([]);
+    expect(day.bulletins).toEqual([]);
+    expect(day.pinnedBulletin).toBeNull();
+  });
+  it('drops a read that started yesterday and answers after midnight', async () => {
+    let answer!: (rows: unknown[]) => void;
+    mocks.getFullList.mockImplementation(() => new Promise((r) => { answer = r; }));
+    const day = yesterday();
+    const late = day.loadBulletins();
+    day.realNow = new Date('2026-09-25T05:01:00Z'); day.enterScope(false);
+    answer([{ id: 'b-old' }]); await late;
+    expect(day.bulletins).toEqual([]);
+  });
+  it('keeps counting the server’s day while the day endpoint is unreachable', async () => {
+    // The phone is a day behind (e2e fakes it); the server said so once, then went quiet.
+    mocks.fetchDay.mockResolvedValueOnce({ today: '2026-09-24', now: '2026-09-24T18:00:00.000Z' }).mockRejectedValue(new Error('offline'));
+    const day = new LiveDay();
+    day.realNow = new Date('2026-09-23T18:00:00Z');
     await day.loadDay();
-    feed.mockClear(); bulletins.mockClear();
+    expect(day.today).toBe('2026-09-24');
+    day.realNow = new Date('2026-09-24T12:00:00Z');                          // 18 h later on the phone
     await day.loadDay();
     expect(day.today).toBe('2026-09-25');
-    expect(feed).toHaveBeenCalledTimes(1);
-    expect(bulletins).toHaveBeenCalledTimes(1);
   });
-  it('keeps the phone’s own date when the day endpoint cannot be reached', async () => {
+  it('uses the phone’s own date before the server has ever answered', async () => {
     mocks.fetchDay.mockRejectedValue(new Error('offline'));
     const day = new LiveDay();
     day.realNow = new Date('2026-09-24T18:00:00Z');
     await day.loadDay();
     expect(day.today).toBe('2026-09-24');
+  });
+});
+
+describe('switching the current route', () => {
+  const two = { id: 'r2', event_date: '2026-12-12', start_time: '11:00', status: 'locked' } as Itinerary;
+  it('clears the old route’s trains, feed and Bulletins before the new ones arrive', async () => {
+    mocks.getFullList.mockImplementation(() => new Promise(() => {}));   // reloads never answer
+    const day = new LiveDay();
+    day.itinerary = route; day.serverOffset = 0; day.realNow = new Date('2026-09-24T18:00:00Z'); day.enterScope(false);
+    day.trips = [{ tripId: 'old' }] as never; day.feed.messages = [{ id: 'c1' }] as never; day.bulletins = [{ id: 'b1' }] as never;
+    day.itinerary = two; day.enterScope(false);
+    expect(day.trips).toEqual([]);
+    expect(day.feed.messages).toEqual([]);
+    expect(day.bulletins).toEqual([]);
+  });
+  it('drops a train answer for the previous route', async () => {
+    let answer!: (v: unknown) => void;
+    mocks.fetchNext.mockImplementation(() => new Promise((r) => { answer = r; }));
+    const day = new LiveDay();
+    day.itinerary = route;
+    day.stops = [
+      { id: 'a', order: 1, station_id: 'LAGRANGE', dwell_min: 30, walk_min: 2 },
+      { id: 'b', order: 2, station_id: 'CUS', dwell_min: 30, walk_min: 2 }
+    ] as never;
+    day.legs = [{ from_stop: 'a', to_stop: 'b', kind: 'train', depart_at: '2026-12-26T20:34:00Z', arrive_at: '2026-12-26T20:49:00Z' }] as never;
+    day.realNow = new Date('2026-09-22T17:30:00Z'); day.syncPlan();
+    const late = day.loadTrains();
+    day.itinerary = two; day.enterScope(false);
+    answer({ trips: [{ tripId: 'old-route' }], mode: 'schedule_only', fetchedAt: null }); await late;
+    expect(day.trips).toEqual([]);
   });
 });
 ```
@@ -619,8 +704,6 @@ Fields and getters (replace `now`, `isToday` and `here`):
 ```ts
   realNow = $state(new Date());
   now = $state(new Date());
-  serverToday = $state<string | null>(null);
-  get today(): string { return this.serverToday ?? todayInTz(this.realNow); }
   get hasRoute(): boolean { return this.clockKnown && !!this.itinerary; }
   get isEventDay(): boolean { return this.hasRoute && isEventDay(this.itinerary!.event_date, this.realNow); }
   get practice(): boolean { return this.hasRoute && !this.isEventDay; }
@@ -663,27 +746,52 @@ Use `byStop` for drinks and media, `byRoute` for chat messages, and `reactionsTo
 `loadTrains`: pass `this.practice` as the new last argument to `fetchNext`.
 `loadAlerts`: begin with `if (this.practice) { this.alerts = []; return; }`.
 
-`loadDay`:
+**Scope.** Everything Live shows about activity belongs to one *scope*: the route id plus the Chicago day. When the scope changes, the old rows are wrong at once, whether or not the reload succeeds. So a scope change **clears first and reloads second**, and every read drops an answer that belongs to an earlier scope.
 ```ts
+  /** Server clock minus this phone's clock, from the last `/api/day`. Null until the server answers. */
+  serverOffset = $state<number | null>(null);
+  get today(): string {
+    return todayInTz(this.serverOffset === null ? this.realNow : new Date(this.realNow.getTime() + this.serverOffset));
+  }
+  private scopeKey = $state('');
+  private get currentScope() { return `${this.itinerary?.id ?? ''}|${this.today}`; }
+
+  /** Route or day changed: nothing on screen belongs to the new scope, so empty it now. */
+  enterScope(reload = true) {
+    this.scopeKey = this.currentScope;
+    this.feedRead++; this.bulletinRead++; this.trainRead++;
+    this.feed = { drinks: [], media: [], messages: [], reactions: [] };
+    this.bulletins = []; this.ackedIds = []; this.acking = []; this.trips = [];
+    if (reload && this.itinerary) { void this.loadAnchor(); void this.loadFeed(); void this.loadBulletins(); void this.loadTrains(); }
+  }
+  async checkScope() { if (this.currentScope !== this.scopeKey) this.enterScope(); }
+
   async loadDay() {
-    const before = this.today;
-    try { this.serverToday = (await fetchDay()).today; }
-    catch { /* offline: `today` falls back to this phone's own date */ }
-    if (this.today !== before && this.itinerary) { void this.loadFeed(); void this.loadBulletins(); }
+    const sent = this.realNow.getTime();
+    try {
+      // The round trip is ignored: a second's error does not matter to which day it is.
+      this.serverOffset = Date.parse((await fetchDay()).now) - sent;
+    } catch { /* offline: keep the last offset; with none yet, `today` is this phone's own date */ }
+    await this.checkScope();
   }
 ```
-The first call must not double-load. `start()` awaits `loadDay()` **before** its first `loadRoute().then(... loadFeed ...)` chain. Order it as `void this.loadDay().then(() => this.loadRoute()).then(...)`. On that first call `itinerary` is still null, so the rollover branch does not fire.
+- `today` is computed, not stored. Once the server has answered, the day rolls over on this phone's clock plus the offset, so midnight is caught **offline too** and between polls. Before the first answer it is the phone's date, as in the spec.
+- The offset is measured against `realNow` as it stood when the request was sent. `loadDay` does not call `syncNow()` itself; the tick keeps `realNow` current, and the unit tests set it explicitly.
+- Each loader captures `const scope = this.scopeKey` when it starts, and before publishing it checks `scope === this.scopeKey` as well as its request counter. On failure it publishes nothing, so an empty scope stays empty (`loadBulletins`' "keep whatever we had" now keeps only rows of the same scope). `loadTrains` also checks `scope` together with `clientClock.revision`.
+- `loadRoute` compares the resolved itinerary id (from the server or the mirror) with the one on screen. After assigning a **different** route, it calls `this.syncPlan()` and then `this.enterScope()`, which reloads the anchor, feed, Bulletins and trains. A same-route refresh does not clear.
+- `start()` orders the first load as `void this.loadDay().then(() => this.loadRoute()).then(...)`. The first `loadRoute` then enters a scope with the right day, and the existing `.then(...)` loaders stay as they are. The scope was already entered by `loadRoute`, so this does not double-load in a way that matters: the second call of each loader supersedes the first by request counter.
+- The run-ID reset at the top of `loadRoute` (sim harness) sets `this.scopeKey = ''`, so the next route load enters a fresh scope.
 
 `start()`:
 - Replace every `this.now = clientClock.eventNow() ?? this.now` with `this.syncNow()`, including the tick at line ~222.
 - Add `void this.loadDay()` to the 30 s `poll`.
-- In the tick, also call `void this.loadDay()` when `todayInTz(this.realNow) !== this.today`, so a midnight rollover is caught within one tick rather than 30 s.
-- Subscribe `crawl_settings` to `queueRefresh`: add `subscribe('crawl_settings', '', queueRefresh)` to `unsubs`.
+- In the tick, after `syncNow()`, call `void this.checkScope()`. `today` follows the phone's clock plus the server offset, so midnight is caught within one tick and needs no fetch.
+- Subscribe `crawl_settings` to `refreshRoute`, **not** `queueRefresh`. A route switch should not wait 750 ms, and `loadRoute` enters the new scope, which clears and reloads the trains, feed and Bulletins: `subscribe('crawl_settings', '', refreshRoute)` in `unsubs`.
 - In `revisionRefresh` (sim harness), also call `this.syncNow()`.
 
 `feed.ts`:
 ```ts
-export const fetchDay = (): Promise<{ today: string }> => authed('/api/day');
+export const fetchDay = (): Promise<{ today: string; now: string }> => authed('/api/day');
 export const fetchNext = (from: string, to: string, date: string, after: Date, practice = false): Promise<{ mode: FeedMode; fetchedAt: string | null; trips: NextTrip[] }> =>
   authed(`/api/metra/next?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}&date=${date}&after=${after.toISOString()}&limit=3${practice ? '&practice=1' : ''}`);
 ```
@@ -774,6 +882,7 @@ git commit -m "feat(metra): practice requests get the timetable only"
 - Modify: `web/src/routes/(app)/plan/[id]/edit/+page.svelte:140` (`now: liveDay.realNow`)
 - Modify: `web/src/lib/components/CrewChat.svelte:18` (`liveDay.today`)
 - Modify: `web/src/lib/live/day.svelte.ts` (delete the temporary `isToday`)
+- Modify: `web/tests/e2e/helpers.ts` (`seedLockedCrawl` takes an optional `firstStopName`, default `'The Whistle Stop'`)
 - Test: `web/tests/e2e/practice.spec.ts` (create), `web/tests/unit/cohesion.test.ts` (append)
 
 **Interfaces:**
@@ -861,16 +970,30 @@ test('a practice Bulletin pins on Live but not on the planner', async ({ page })
   await expect(page.getByTestId('banner')).toHaveCount(0);
 });
 
-test('the Conductor makes a route current and Live follows it', async ({ page }) => {
+test('the Conductor makes a route current and another phone’s Live follows it', async ({ page, browser }) => {
   const first = await practise(page, 'E2E Make Current');
-  const second = await seedLockedCrawl({ ownerName: 'E2E Make Current', eventDate: '2026-12-12', startTime: '12:00', departAt: '2026-12-12T20:34:00Z', arriveAt: '2026-12-12T20:49:00Z' });
+  // Locked later, so it is the newest-locked fallback until the Conductor chooses.
+  await seedLockedCrawl({ ownerName: 'E2E Make Current', eventDate: '2026-12-12', startTime: '12:00', departAt: '2026-12-12T20:34:00Z', arriveAt: '2026-12-12T20:49:00Z', firstStopName: 'The Switchyard' });
+  const crew = await (await browser.newContext()).newPage();
+  await crew.route('**/api/metra/alerts', (r) => r.fulfill({ json: { mode: 'schedule_only', fetchedAt: null, alerts: [] } }));
+  // Hold the crew phone's train reads for the first route, so a late answer would land after the switch.
+  let held: (() => void) | undefined;
+  await crew.route('**/api/metra/next**', async (r) => { if (!held) { await new Promise<void>((go) => { held = go; }); } await r.continue(); });
+  await login(crew, 'E2E Make Current Crew');
+  await crew.clock.install({ time: PRACTICE });
+  await crew.goto('/live');
+  await expect(crew.getByText('The Switchyard').first()).toBeVisible();
+
   await page.goto(`/plan/${first.itineraryId}`);
   await page.getByTestId('make-current').click();
   await expect(page.getByTestId('current-route')).toBeVisible();
-  await page.goto('/route');
-  await expect(page.getByTestId('stop-link-0')).toBeVisible();
-  await page.goto(`/plan/${second.itineraryId}`);
-  await expect(page.getByTestId('make-current')).toBeVisible();
+
+  await expect(crew.getByText('The Whistle Stop').first()).toBeVisible();
+  await expect(crew.getByText('The Switchyard')).toHaveCount(0);
+  held?.();                                                  // the old route's trains answer now
+  await expect(crew.getByTestId('departure-board')).toBeVisible();
+  await expect(crew.getByText('The Switchyard')).toHaveCount(0);
+  await crew.context().close();
 });
 
 test('yesterday’s activity is not on today’s Live', async ({ page }) => {
@@ -1044,9 +1167,10 @@ git commit -m "chore: remove shared rehearsal; just up runs the real stack only"
 
 **Files:**
 - Modify (renamed in Task 7): `web/scripts/practice-venues.mjs`, which exports pure selectors and a Places client
-- Create: `web/scripts/practice-route.mjs`
+- Create: `web/scripts/practice-build.mjs`: `buildCannedRoute(api, stops, opts)`, the database half, with no Places and no `fetch` of its own
+- Create: `web/scripts/practice-route.mjs`: the thin CLI that wires the real PocketBase, Places and GTFS into it
 - Modify: `justfile` (recipe `practice-route`)
-- Test: `web/tests/unit/practiceVenues.test.ts`
+- Test: `web/tests/unit/practiceVenues.test.ts`, `web/tests/unit/practiceBuild.test.ts`
 
 **Interfaces:**
 - Produces:
@@ -1056,6 +1180,7 @@ git commit -m "chore: remove shared rehearsal; just up runs the real stack only"
   - `CANNED_TITLE = 'Out and back on the BNSF — practice crawl'`
   - `PLAN = [{ station, role: 'bar'|'lunch'|'dinner', direction: 'out'|'in', dwell }]`
   - `nextFreeSaturday(today: string, taken: string[]): string`
+  - from `practice-build.mjs`: `buildCannedRoute(api, stops, { title, eventDate, startTime, ownerId, timeoutMs, pollMs }) → Promise<{ id, legs }>`, where `api` is `{ list(collection, predicate), create(collection, body), update(collection, id, body), remove(collection, id), getSettings(), setCurrent(id) }`. `list` takes a row predicate: the CLI's adapter reads the whole collection as superuser and filters in memory, since these collections are small. It throws `CannedRouteError` with a message for the person running it.
 
 All selectors are pure over the Places `searchNearby`/`searchText` result shape: `{ id, displayName: { text }, location: { latitude, longitude }, primaryType, types, businessStatus, rating, userRatingCount, regularOpeningHours }`.
 
@@ -1100,6 +1225,78 @@ describe('practice route plan', () => {
 });
 ```
 The e2e and harness tests never call Google. This test is the only automated coverage of the script's decisions.
+
+`web/tests/unit/practiceBuild.test.ts` covers the database half against an in-memory fake `api`. Legs appear only when the test says the recompute has answered:
+```ts
+import { describe, expect, it } from 'vitest';
+import { buildCannedRoute } from '../../scripts/practice-build.mjs';
+
+const TITLE = 'Out and back on the BNSF — practice crawl';
+const stops = [{ name: 'A bar', kind: 'bar', station_id: 'AURORA' }, { name: 'B bar', kind: 'bar', station_id: 'NAPERVILLE' }];
+const opts = { title: TITLE, eventDate: '2026-10-03', startTime: '11:00', ownerId: 'u1', timeoutMs: 50, pollMs: 5 };
+
+function fakeApi(legKind: 'train' | 'impossible' | null) {
+  const rows: Record<string, Record<string, unknown>[]> = { itineraries: [], stops: [], legs: [] };
+  let n = 0, current = '';
+  const api = {
+    rows, get current() { return current; },
+    async list(c: string, f: (r: Record<string, unknown>) => boolean) { return rows[c].filter(f); },
+    async create(c: string, body: Record<string, unknown>) {
+      const row = { id: `${c}${++n}`, ...body, ...(c === 'itineraries' ? { status: 'draft' } : {}) };
+      rows[c].push(row);
+      // The recompute hook runs on drafts: a stop write produces the legs between stops.
+      if (c === 'stops' && legKind && rows.stops.length > 1) rows.legs.push({ itinerary: body.itinerary, kind: legKind });
+      return row;
+    },
+    async update(c: string, id: string, body: Record<string, unknown>) { Object.assign(rows[c].find((r) => r.id === id)!, body); },
+    async remove(c: string, id: string) { rows[c] = rows[c].filter((r) => r.id !== id && r.itinerary !== id); },
+    async getSettings() { return { current_itinerary: current }; },
+    async setCurrent(id: string) { current = id; }
+  };
+  return api;
+}
+
+describe('buildCannedRoute', () => {
+  it('locks and selects the route only after every leg is a train or a walk', async () => {
+    const api = fakeApi('train');
+    const { id } = await buildCannedRoute(api, stops, opts);
+    expect(api.rows.itineraries.find((r) => r.id === id)?.status).toBe('locked');
+    expect(api.current).toBe(id);
+  });
+  it('leaves an impossible route as a draft that nobody sees', async () => {
+    const api = fakeApi('impossible');
+    await expect(buildCannedRoute(api, stops, opts)).rejects.toThrow(/impossible/i);
+    expect(api.rows.itineraries[0].status).toBe('draft');
+    expect(api.current).toBe('');
+  });
+  it('leaves a draft when the planner never answers', async () => {
+    const api = fakeApi(null);
+    await expect(buildCannedRoute(api, stops, opts)).rejects.toThrow(/timed out/i);
+    expect(api.rows.itineraries[0].status).toBe('draft');
+  });
+  it('replaces its own abandoned draft on a second run', async () => {
+    const api = fakeApi('impossible');
+    await expect(buildCannedRoute(api, stops, opts)).rejects.toThrow();
+    const failed = api.rows.itineraries[0].id;
+    const again = fakeApi('train');
+    again.rows.itineraries.push(...api.rows.itineraries);
+    await buildCannedRoute(again, stops, opts);
+    expect(again.rows.itineraries.map((r) => r.id)).not.toContain(failed);
+    expect(again.rows.itineraries).toHaveLength(1);
+  });
+  it('refuses when a locked canned route already exists', async () => {
+    const api = fakeApi('train');
+    api.rows.itineraries.push({ id: 'old', title: TITLE, status: 'locked' });
+    await expect(buildCannedRoute(api, stops, opts)).rejects.toThrow(/already exists/i);
+  });
+  it('does not take over from a route the Conductor already selected', async () => {
+    const api = fakeApi('train');
+    await api.setCurrent('real');
+    await buildCannedRoute(api, stops, opts);
+    expect(api.current).toBe('real');
+  });
+});
+```
 
 Before relying on these station ids, confirm them against the live GTFS (`stops.txt` in `data/gtfs/…`, or `unzip -p <zip> stops.txt | grep -i -E "hinsdale|westmont|route 59|naperville|aurora|lisle|main st|lagrange"`). Fix `PLAN` if an id differs, for example `ROUTE59` vs `ROUTE59-NAPERVILLE`. `LAGRANGE` and `MAINST-DG` are already used by `prepare-rehearsal.mjs`. Update the test's expected strings to the confirmed ids.
 
@@ -1150,13 +1347,21 @@ export function nextFreeSaturday(today, taken) {
 The deep-dish search is `places:searchText` with `textQuery: 'deep dish pizza'`, `locationBias` a 1500 m circle around each outbound station, then filtered to within 1000 m walking distance (`metres`). If the best result is not at the `PLAN` dinner station, the script uses the result's station and moves the dinner stop there, keeping its position in the order. Log that.
 
 `web/scripts/practice-route.mjs` (run with `node --env-file=../.env`, from `web/`):
-1. Refuse unless `PB_URL` (default `http://127.0.0.1:8090`), `PB_ADMIN_EMAIL`, `PB_ADMIN_PASSWORD` and `GOOGLE_PLACES_KEY` are set. Refuse if an itinerary titled `CANNED_TITLE` exists.
+1. Refuse unless `PB_URL` (default `http://127.0.0.1:8090`), `PB_ADMIN_EMAIL`, `PB_ADMIN_PASSWORD` and `GOOGLE_PLACES_KEY` are set. Refuse early, before spending Places budget, if a **locked** itinerary titled `CANNED_TITLE` exists. (A draft with that title is a failed earlier run; `buildCannedRoute` replaces it.)
 2. Load the station list with `buildSchedule(unzipGtfs(await readFile(<latest data/gtfs zip>)))` (`ls data/gtfs` to see the cached file name; the same loader as `prepare-rehearsal.mjs`). Resolve each `PLAN` station's lat/lon/name, and fail on a missing id.
 3. Pick venues in `PLAN` order through the selectors, with one `used` set, and cache the raw Places JSON and photos under `data/practice-route/`.
 4. Pick `event_date = nextFreeSaturday(todayInTz(), <locked routes' event_dates>)`. Check `servicesOn(schedule, event_date)` has BNSF trips, and walk forward a Saturday at a time (at most 8) until one does. Otherwise fail with "The timetable does not cover the next Saturdays".
-5. As superuser: create the itinerary (title, `event_date`, `start_time: '11:00'`, `created_by` = the first admin user, or fail if none). Create the stops in order (`name`, `kind` `bar`/`restaurant`, `station_id`, `station_name`, `dwell_min`, `walk_min` = `Math.max(2, Math.round(metres / 80))`, `direction`). Attach places exactly as `shared-rehearsal.mjs`'s `finish()` did (copy that block). Then `PATCH status: 'locked'`.
-6. Wait for the recompute legs (the same `waitFor` loop as `shared-rehearsal.mjs`) and require every leg to be `train` or `walk`. On failure, print the impossible legs and exit 1, leaving the route for inspection.
-7. If `crawl_settings.current_itinerary` is empty, set it to the new route. Print the route id, date and stop list.
+5. Build the stop list (`name`, `kind` `bar`/`restaurant`, `station_id`, `station_name`, `dwell_min`, `walk_min` = `Math.max(2, Math.round(metres / 80))`, `direction`, plus the place fields), and call `buildCannedRoute` with a superuser-backed `api` and `ownerId` = the first admin user (fail if none). Attaching places and photos exactly as `shared-rehearsal.mjs`'s `finish()` did (copy that block) happens per stop, right after its create, through `api.create('places', …)` / `api.update('stops', …)`. That keeps it inside the draft phase.
+
+`practice-build.mjs` `buildCannedRoute`, in this order. **Nothing is visible to users until step 5.**
+1. `list('itineraries', title === opts.title)`. If any row is `locked`, throw "already exists". Remove each draft/archived row with that title (`remove` cascades its stops and legs); these are the script's own failed runs.
+2. Create the itinerary (the hook makes it a draft), then create the stops in order.
+3. Poll `list('legs', itinerary === id)` every `pollMs` until there are `stops.length - 1` legs or `timeoutMs` passes (production: 60 s / 1 s). **The recompute hook runs on drafts** (`planning.pb.js:80-93`, the stop after-create hooks), so the legs arrive before locking. On timeout, throw "timed out waiting for the planner; the draft <id> is left for inspection".
+4. If any leg's `kind` is not `train` or `walk`, throw "impossible legs: …", naming each leg's stops. The route stays a draft, which only the planner's draft list shows.
+5. `update('itineraries', id, { status: 'locked' })`. Locking changes neither `start_time` nor `event_date`, so it does not trigger a recompute, and the checked legs stand.
+6. If `getSettings().current_itinerary` is empty, `setCurrent(id)`. Return `{ id, legs }`, and the CLI prints the route id, date and stop list.
+
+The fallback exposes the newest locked route whenever the setting is empty, so between steps 5 and 6 the canned route is already visible. That is the intended outcome, and it happens only after validation.
 
 `justfile`:
 ```
@@ -1166,12 +1371,12 @@ practice-route:
 
 - [ ] **Step 4: Run to verify the unit test passes**
 
-Run: `cd web && npx vitest run tests/unit/practiceVenues.test.ts` → PASS. Also `npm run check` (the `.mjs` import types) → green.
+Run: `cd web && npx vitest run tests/unit/practiceVenues.test.ts tests/unit/practiceBuild.test.ts` → PASS. Also `npm run check` (the `.mjs` import types) → green.
 
 - [ ] **Step 5: Commit**
 
 ```bash
-git add web/scripts web/tests/unit/practiceVenues.test.ts justfile
+git add web/scripts web/tests/unit/practiceVenues.test.ts web/tests/unit/practiceBuild.test.ts justfile
 git commit -m "feat: one-time canned practice route, out and back with lunch and deep dish"
 ```
 
@@ -1209,9 +1414,22 @@ git commit -m "docs: practice days replace shared rehearsal"
 
 - [ ] **Step 4: Cutover (after merge, with the user present)**
 
-This changes production and spends Places budget, so confirm with the user before each numbered action.
-1. `docker compose -f compose.yml -f compose.rehearsal.yml down` stops the rehearsal stack. `data/rehearsal/` stays on disk.
-2. `just up` starts the real stack on `data/pb_data`. Migration `1758850000` applies on start.
-3. `docker images | grep chug` confirms that the image is fresh.
-4. `just practice-route` builds the canned route and selects it as current.
-5. Open `https://chugalug.app/live` on a phone. You should see the Practice badge and timetable trains, and the planner should show no Bulletin.
+This changes production and spends Places budget, so confirm with the user before each numbered action. Production runs from the **main checkout's working tree** (`/home/garamizo/chug-a-lug`). Today it is Compose project `chug-a-lug`, built from `compose.yml` + `compose.rehearsal.yml` and mounting `data/rehearsal/pb_data`. Task 7 deletes `compose.rehearsal.yml`, so the old stack has to be stopped **before** main is fast-forwarded.
+
+Before the merge, from the main checkout (still at `4b159cc`, where the file exists):
+1. Record what is running: `docker compose ls`, and `docker compose -f compose.yml -f compose.rehearsal.yml config > ~/chug-a-lug-rehearsal-compose.$(date +%F).yml`, for reference and rollback.
+2. Back up the real database the new stack will open: `tar czf data/backups/pb_data-before-practice-days.$(date +%F).tgz -C data pb_data`. `data/pb_data` holds rows from the real stack's last run (2026-09-22). Before the migration applies, list its locked itineraries (`sqlite3 data/pb_data/data.db "select id,title,event_date,status from itineraries"`), because the newest one becomes the fallback current route. If there are leftover test routes, ask the user whether to archive them before step 6.
+3. `docker compose -f compose.yml -f compose.rehearsal.yml down` stops the rehearsal stack. `data/rehearsal/` stays on disk. If the checkout has moved on already, the file-free form works too: `docker compose -p chug-a-lug down`.
+
+Then merge and bring up the real stack:
+4. `git merge --ff-only feat/practice-days` in the main checkout.
+5. `just up` starts the real stack on `data/pb_data`, and migration `1758850000` applies on start. `docker compose ls` must show only `compose.yml` for `chug-a-lug`, and `docker images | grep chug` must show a fresh image.
+6. `just practice-route` builds the canned route and selects it as current, unless a route is already selected.
+7. Open `https://chugalug.app/live` on a phone. You should see the Practice badge and timetable trains, and the planner should show no Bulletin.
+
+**Rollback** (if step 5 or 7 fails and cannot be fixed forward):
+- `docker compose -p chug-a-lug down`
+- `git worktree add .worktrees/rollback 4b159cc`
+- copy `.env` into that worktree
+- run `just up` there, which is the old default: rehearsal on a freshly wiped `data/rehearsal`
+- restore `data/pb_data` from the step-2 tarball if the migration must be undone
