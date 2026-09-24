@@ -24,7 +24,7 @@ afterEach(() => { vi.useRealTimers(); vi.restoreAllMocks(); });
 function startDay() {
   const day = new LiveDay();
   const reload = vi.spyOn(day, 'loadRoute').mockResolvedValue(undefined);
-  for (const method of ['loadBulletins', 'loadTrains', 'loadDrinks', 'loadMedia', 'loadAlerts'] as const) {
+  for (const method of ['loadBulletins', 'loadTrains', 'loadFeed', 'loadAlerts'] as const) {
     vi.spyOn(day, method).mockResolvedValue(undefined);
   }
   return { day, reload, stop: day.start() };
@@ -98,28 +98,6 @@ describe('live anchor lookup', () => {
   });
 });
 
-describe('live media reads', () => {
-  it('does not let an older empty read erase a newly uploaded photo', async () => {
-    const day = new LiveDay();
-    vi.spyOn(day, 'here', 'get').mockReturnValue({ stop: { id: 'stop' } } as never);
-    let finish!: (rows: unknown[]) => void;
-    mocks.getFullList.mockImplementationOnce(() => new Promise(resolve => { finish = resolve; }))
-      .mockResolvedValueOnce([{ id: 'photo' }]);
-    const older = day.loadMedia(); await day.loadMedia();
-    finish([]); await older;
-    expect(day.media.map(m => m.id)).toEqual(['photo']);
-  });
-  it('does not publish media for a stop the crew has left', async () => {
-    const day = new LiveDay();
-    const here = vi.spyOn(day, 'here', 'get').mockReturnValue({ stop: { id: 'old' } } as never);
-    let finish!: (rows: unknown[]) => void;
-    mocks.getFullList.mockImplementationOnce(() => new Promise(resolve => { finish = resolve; }));
-    const older = day.loadMedia(); here.mockReturnValue({ stop: { id: 'new' } } as never);
-    finish([{ id: 'old-photo' }]); await older;
-    expect(day.media).toEqual([]);
-  });
-});
-
 it('requests paused anchors in server action order', async () => {
   const day = new LiveDay();
   mocks.getList.mockResolvedValue({ items: [
@@ -131,19 +109,6 @@ it('requests paused anchors in server action order', async () => {
   expect(day.anchor?.stopId).toBe('newest');
 });
 
-it('does not restore a stale Tab read after a newer action or stop change', async () => {
-  const day = new LiveDay();
-  const here = vi.spyOn(day, 'here', 'get').mockReturnValue({ stop: { id: 'stop' } } as never);
-  let finish!: (rows: unknown[]) => void;
-  mocks.getFullList.mockImplementationOnce(() => new Promise(resolve => { finish = resolve; })).mockResolvedValueOnce([{ id: 'new' }]);
-  const old = day.loadDrinks(); await day.loadDrinks(); finish([]); await old;
-  expect(day.drinks.map(d => d.id)).toEqual(['new']);
-  mocks.getFullList.mockImplementationOnce(() => new Promise(resolve => { finish = resolve; }));
-  const moved = day.loadDrinks(); here.mockReturnValue({ stop: { id: 'next' } } as never);
-  finish([{ id: 'old-stop' }]); await moved;
-  expect(day.drinks.map(d => d.id)).toEqual(['new']);
-});
-
 it('does not let an earlier anchor query overwrite a newer correction', async () => {
   const day = new LiveDay();
   let finish!: (value: unknown) => void;
@@ -151,4 +116,52 @@ it('does not let an earlier anchor query overwrite a newer correction', async ()
     .mockResolvedValueOnce({ items: [{ stop: 'new', at: 'now', expand: { user: { is_admin: true } } }] });
   const older = day.loadAnchor('route'); await day.loadAnchor('route');
   finish({ items: [] }); await older; expect(day.anchor?.stopId).toBe('new');
+});
+
+describe('live feed', () => {
+  it('loads the whole route’s drinks, media, messages and reactions, and derives the current stop’s rows', async () => {
+    const day = new LiveDay();
+    day.itinerary = { id: 'it', event_date: '2026-12-26', start_time: '12:00' } as Itinerary;
+    const rows: Record<string, unknown[]> = {
+      drinks: [{ id: 'd1', stop: 'a' }, { id: 'd2', stop: 'b' }],
+      media: [{ id: 'm1', stop: 'a', created: '1' }, { id: 'm2', stop: 'a', created: '2' }],
+      messages: [{ id: 'c1' }], reactions: [{ id: 'r1' }]
+    };
+    const order = ['drinks', 'media', 'messages', 'reactions'];
+    let call = 0;
+    mocks.getFullList.mockImplementation(async () => rows[order[call++]]);
+    Object.defineProperty(day, 'here', { get: () => ({ stop: { id: 'a' } }) });
+    await day.loadFeed();
+    expect(mocks.filter.mock.calls.map(c => c[0])).toEqual(expect.arrayContaining(['stop.itinerary = {:id}', 'itinerary = {:id}']));
+    expect(day.feed.messages).toHaveLength(1);
+    expect(day.drinks.map(d => d.id)).toEqual(['d1']);
+    expect(day.media.map(m => m.id)).toEqual(['m2', 'm1']);
+    expect(day.feedError).toBe(false);
+  });
+
+  it('applies a confirmed write at once and ignores a read that started before it', async () => {
+    const day = new LiveDay();
+    day.itinerary = { id: 'it' } as Itinerary;
+    let finish!: (rows: unknown[]) => void;
+    mocks.getFullList.mockImplementationOnce(() => new Promise((r) => { finish = r; })).mockResolvedValue([]);
+    const stale = day.loadFeed();
+    day.upsertDrink({ id: 'new', stop: 'a' } as never);
+    day.upsertDrink({ id: 'new', stop: 'a' } as never);
+    expect(day.feed.drinks.map((d) => d.id)).toEqual(['new']);
+    finish([]);
+    await stale;
+    expect(day.feed.drinks.map((d) => d.id)).toEqual(['new']);
+    day.dropDrink('new');
+    expect(day.feed.drinks).toEqual([]);
+  });
+
+  it('keeps the last good feed and flags the error when a reload fails', async () => {
+    const day = new LiveDay();
+    day.itinerary = { id: 'it' } as Itinerary;
+    day.feed = { drinks: [{ id: 'kept' }] as never, media: [], messages: [], reactions: [] };
+    mocks.getFullList.mockRejectedValue(new Error('offline'));
+    await day.loadFeed();
+    expect(day.feed.drinks.map(d => d.id)).toEqual(['kept']);
+    expect(day.feedError).toBe(true);
+  });
 });

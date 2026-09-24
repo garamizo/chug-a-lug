@@ -7,7 +7,7 @@ import { mirrorPayload, readMirror, saveMirror, scopeMirror } from '$lib/offline
 import { currentStop, type Current } from './current';
 import { pickTrip } from './board';
 import { fetchAlerts, fetchNext, fetchStatus } from './feed';
-import type { Alert, Broadcast, BroadcastAck, Checkin, DrinkEntry, FeedMode, Itinerary, Leg, Media, NextTrip, Stop } from '$lib/types';
+import type { Alert, Broadcast, BroadcastAck, ChatMessage, Checkin, DrinkEntry, FeedMode, Itinerary, Leg, Media, NextTrip, Reaction, Stop } from '$lib/types';
 
 export class LiveDay {
   itinerary = $state<Itinerary | null>(null);
@@ -20,8 +20,9 @@ export class LiveDay {
   alerts = $state<Alert[]>([]);
   bulletins = $state<Broadcast[]>([]);
   ackedIds = $state<string[]>([]);
-  drinks = $state<DrinkEntry[]>([]);
-  media = $state<Media[]>([]);
+  /** Everything the crew did on this route today: the chat, milestones, leaderboard and Tab read it. */
+  feed = $state<{ drinks: DrinkEntry[]; media: Media[]; messages: ChatMessage[]; reactions: Reaction[] }>({ drinks: [], media: [], messages: [], reactions: [] });
+  feedError = $state(false);
   // One flag, one owner: the root layout (which has no live day of its own) sets this from the
   // menu, and the `(app)` layout — the only place with a route to post to — reads it to render the
   // compose sheet. No prop drilling through a layout that has nothing else to do with a Bulletin.
@@ -50,6 +51,16 @@ export class LiveDay {
   get pinnedBulletin(): Broadcast | null {
     return this.bulletins.find((b) => !this.ackedIds.includes(b.id)) ?? null;
   }
+  /** The Tab at the stop the crawl is in. */
+  get drinks(): DrinkEntry[] {
+    const id = this.here?.stop?.id;
+    return id ? this.feed.drinks.filter((d) => d.stop === id) : [];
+  }
+  /** Freight from the stop the crawl is in, newest first. */
+  get media(): Media[] {
+    const id = this.here?.stop?.id;
+    return id ? this.feed.media.filter((m) => m.stop === id).sort((a, b) => (b.created ?? '').localeCompare(a.created ?? '')) : [];
+  }
 
   private routeRead = 0;
   private routeRun: string | undefined;
@@ -57,7 +68,7 @@ export class LiveDay {
     const request = ++this.routeRead, runId = clientClock.runId;
     if (clientClock.enabled && runId && this.routeRun !== runId) {
       this.itinerary = null; this.stops = []; this.legs = []; this.anchor = null;
-      this.bulletins = []; this.ackedIds = []; this.drinks = []; this.media = [];
+      this.bulletins = []; this.ackedIds = []; this.feed = { drinks: [], media: [], messages: [], reactions: [] };
       this.fromMirror = false; this.mirrorSavedAt = null; this.routeRun = runId;
       await scopeMirror(runId);
     }
@@ -73,7 +84,7 @@ export class LiveDay {
       }
       const filter = pb.filter('itinerary = {:id}', { id: itinerary.id });
       const [stops, legs] = await Promise.all([
-        pb.collection('stops').getFullList<Stop>({ filter, sort: 'order,created', cache: 'no-store' }),
+        pb.collection('stops').getFullList<Stop>({ filter, sort: 'order,created', expand: 'place', cache: 'no-store' }),
         pb.collection('legs').getFullList<Leg>({ filter, cache: 'no-store' })
       ]);
       if (request !== this.routeRead || runId !== clientClock.runId) return;
@@ -118,7 +129,7 @@ export class LiveDay {
     try {
       const filter = pb.filter('itinerary = {:id}', { id: this.itinerary.id });
       const [rows, acks] = await Promise.all([
-        pb.collection('broadcasts').getFullList<Broadcast>({ filter, sort: '-created' }),
+        pb.collection('broadcasts').getFullList<Broadcast>({ filter, sort: '-created', expand: 'created_by' }),
         pb.collection('broadcast_acks').getFullList<BroadcastAck>({ filter: pb.filter('user = {:u}', { u: pb.authStore.record?.id ?? '' }) })
       ]);
       if (request !== this.bulletinRead) return;
@@ -127,27 +138,35 @@ export class LiveDay {
     } catch { /* offline: keep whatever we had */ }
   }
 
-  private drinkRead = 0;
-  async loadDrinks() {
-    const request = ++this.drinkRead;
-    const stopId = this.here?.stop?.id;
-    if (!stopId) { this.drinks = []; return; }
+  private feedRead = 0;
+  async loadFeed() {
+    const request = ++this.feedRead;
+    const id = this.itinerary?.id;
+    if (!id) { this.feed = { drinks: [], media: [], messages: [], reactions: [] }; return; }
+    const byStop = pb.filter('stop.itinerary = {:id}', { id }), byRoute = pb.filter('itinerary = {:id}', { id });
     try {
-      const drinks = await pb.collection('drink_entries').getFullList<DrinkEntry>({ filter: pb.filter('stop = {:s}', { s: stopId }), sort: 'at' });
-      if (request === this.drinkRead && stopId === this.here?.stop?.id) this.drinks = drinks;
-    } catch { /* keep the last tally */ }
+      const [drinks, media, messages, reactions] = await Promise.all([
+        pb.collection('drink_entries').getFullList<DrinkEntry>({ filter: byStop, expand: 'user,stop', sort: 'at,action_order,created,id' }),
+        pb.collection('media').getFullList<Media>({ filter: byStop, expand: 'user', sort: 'at,created,id' }),
+        pb.collection('chat_messages').getFullList<ChatMessage>({ filter: byRoute, expand: 'user', sort: 'at,created,id' }),
+        pb.collection('reactions').getFullList<Reaction>({ filter: byRoute })
+      ]);
+      if (request !== this.feedRead || id !== this.itinerary?.id) return;
+      this.feed = { drinks, media, messages, reactions };
+      this.feedError = false;
+    } catch { if (request === this.feedRead) this.feedError = true; }
   }
 
-  private mediaRead = 0;
-  async loadMedia() {
-    const read = ++this.mediaRead;
-    const stopId = this.here?.stop?.id;
-    if (!stopId) { this.media = []; return; }
-    try {
-      const media = await pb.collection('media').getFullList<Media>({ filter: pb.filter('stop = {:s}', { s: stopId }), sort: '-created' });
-      // An initial list can finish after the upload's refresh or after the crew changes stops.
-      if (read === this.mediaRead && this.here?.stop?.id === stopId) this.media = media;
-    } catch { /* keep what we had */ }
+  /** Put a confirmed write into the feed now and discard any read that started before it. */
+  upsertDrink(row: DrinkEntry) {
+    this.feedRead++;
+    this.feed = { ...this.feed, drinks: [...this.feed.drinks.filter((d) => d.id !== row.id), row] };
+  }
+
+  /** Take a confirmed delete out of the feed now and discard any read that started before it. */
+  dropDrink(id: string) {
+    this.feedRead++;
+    this.feed = { ...this.feed, drinks: this.feed.drinks.filter((d) => d.id !== id) };
   }
 
   private trainRead = 0;
@@ -178,9 +197,9 @@ export class LiveDay {
     this.now = clientClock.eventNow() ?? this.now;
     const revisionRefresh = clientClock.onRevision(() => {
       this.now = clientClock.eventNow() ?? this.now;
-      this.anchorRead++; this.drinkRead++; this.mediaRead++; this.bulletinRead++;
+      this.anchorRead++; this.feedRead++; this.bulletinRead++;
       this.trainRead++; this.alertRead++; this.trips = []; this.alerts = [];
-      void this.loadRoute().then(() => { if (stopped) return; void this.loadBulletins(); void this.loadTrains(); void this.loadAlerts(); void this.loadDrinks(); void this.loadMedia(); }).catch(() => {});
+      void this.loadRoute().then(() => { if (stopped) return; void this.loadBulletins(); void this.loadTrains(); void this.loadAlerts(); void this.loadFeed(); }).catch(() => {});
     });
     const refreshRoute = () => void this.loadRoute()
       .then(() => { if (!stopped) return this.loadBulletins(); })
@@ -192,12 +211,15 @@ export class LiveDay {
       clearTimeout(refreshTimer);
       refreshTimer = setTimeout(() => { refreshTimer = undefined; refreshRoute(); }, 750);
     };
-    void this.loadRoute().then(() => { if (stopped) return; void this.loadBulletins(); void this.loadTrains(); void this.loadDrinks(); void this.loadMedia(); }).catch(() => {});
+    void this.loadRoute().then(() => { if (stopped) return; void this.loadBulletins(); void this.loadTrains(); void this.loadFeed(); }).catch(() => {});
     void this.loadAlerts();
     void fetchStatus().then((s) => { if (stopped) return; this.rtFetchedAt = s.feeds?.tripupdates?.fetchedAt ?? null; this.mode = s.mode; }).catch(() => {});
     const tick = setInterval(() => { this.wallNow = new Date(); this.now = clientClock.eventNow() ?? this.now; }, clientClock.enabled ? 250 : 15_000);
     const replayPoll = clientClock.enabled ? setInterval(() => { if (this.clockKnown) { void this.loadTrains(); void this.loadAlerts(); } }, 1000) : undefined;
-    const poll = setInterval(() => { refreshRoute(); void this.loadTrains(); void this.loadAlerts(); void this.loadDrinks(); void this.loadMedia(); }, 30_000);
+    const poll = setInterval(() => { refreshRoute(); void this.loadTrains(); void this.loadAlerts(); void this.loadFeed(); }, 30_000);
+    // Unit tests run under Node, where there is no window.
+    const online = () => void this.loadFeed();
+    if (typeof window !== 'undefined') window.addEventListener('online', online);
     const unsubs = [
       subscribe('itineraries', '', queueRefresh),
       subscribe('stops', '', queueRefresh),
@@ -205,12 +227,12 @@ export class LiveDay {
       subscribe('checkins', '', () => void this.loadAnchor()),
       subscribe('broadcasts', '', () => void this.loadBulletins()),
       subscribe('broadcast_acks', '', () => void this.loadBulletins()),
-      subscribe('drink_entries', '', () => void this.loadDrinks()),
-      subscribe('media', '', () => void this.loadMedia())
+      ...['drink_entries', 'media', 'chat_messages', 'reactions', 'users'].map((name) => subscribe(name, '', () => void this.loadFeed()))
     ];
     return () => {
-      stopped = true; this.routeRead++; this.anchorRead++; this.drinkRead++; this.mediaRead++; this.bulletinRead++; revisionRefresh(); this.trainRead++; this.alertRead++; clearInterval(replayPoll); clearTimeout(refreshTimer);
+      stopped = true; this.routeRead++; this.anchorRead++; this.feedRead++; this.bulletinRead++; revisionRefresh(); this.trainRead++; this.alertRead++; clearInterval(replayPoll); clearTimeout(refreshTimer);
       clearInterval(tick); clearInterval(poll); unsubs.forEach((u) => u());
+      if (typeof window !== 'undefined') window.removeEventListener('online', online);
     };
   }
 }

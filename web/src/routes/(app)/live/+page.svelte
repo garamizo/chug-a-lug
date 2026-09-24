@@ -36,13 +36,13 @@
       liveDay.now = clientClock.eventNow() ?? liveDay.now;
       if (tabStop?.id !== stop.id) throw new Error(copy.simClockConflict);
       await pb.collection('drink_entries').create({ user: user.id, stop: stop.id, kind, at: (clientClock.eventNow() ?? liveDay.now).toISOString() });
-      await liveDay.loadDrinks();
+      await liveDay.loadFeed();
     } catch { error = copy.noSignal; }
   }
 
   async function undoDrink(entry: DrinkEntry) {
     error = '';
-    try { await clientClock.ready(); await pb.collection('drink_entries').delete(entry.id); await liveDay.loadDrinks(); }
+    try { await clientClock.ready(); await pb.collection('drink_entries').delete(entry.id); await liveDay.loadFeed(); }
     catch { error = copy.noSignal; }
   }
 
@@ -69,7 +69,7 @@
         form.set('file', prepared.file);
         await clientClock.ready();
         await pb.collection('media').create(form);
-      }, () => liveDay.loadMedia());
+      }, () => liveDay.loadFeed());
     } catch { error = copy.noSignal; } finally { uploading = false; }
   }
 </script>
@@ -136,7 +136,7 @@
   </section>
 {/if}
 
-{#if liveDay.itinerary}<CrewChat itineraryId={liveDay.itinerary.id} />{/if}
+{#if liveDay.itinerary}<CrewChat />{/if}
 
 <style>
   .current { margin: 2px 20px 12px; display: grid; gap: 2px; }
