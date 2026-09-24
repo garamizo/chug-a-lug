@@ -119,19 +119,53 @@ describe('/api/metra/next', () => {
     expect(body.trips.every((t: { liveDepart: string; schedDepart: string }) => t.liveDepart === t.schedDepart)).toBe(true);
   });
 
-  it('ignores realtime for a practice-day request', async () => {
-    const first = fixtureSchedule().trips.find((t) => t.routeId === 'BNSF')!;
+  it('applies predictions when realtime feed is fresh (control)', async () => {
+    // First, get baseline trips to find what's actually returned.
+    const baseline = await get('../../src/routes/api/metra/next/+server',
+      'http://x/api/metra/next?from=LAGRANGE&to=CUS&date=2026-12-26');
+    expect(baseline.trips.length).toBeGreaterThan(0);
+    const firstTrip = baseline.trips[0];
+
+    // Now inject a prediction for this trip with +5 min delay.
     allFresh();
-    // Inject a prediction for the first BNSF trip. Without practice=1, predictions leak in.
-    state.feed = await decodeFeed(first.id, 4102444800);
-    // Request WITH practice=1 to suppress realtime.
+    const schedDepartMs = Date.parse(firstTrip.schedDepart);
+    const schedDepartSeconds = Math.floor(schedDepartMs / 1000);
+    state.feed = await decodeFeed(firstTrip.tripId, schedDepartSeconds + 300);
+
+    const body = await get('../../src/routes/api/metra/next/+server',
+      'http://x/api/metra/next?from=LAGRANGE&to=CUS&date=2026-12-26');
+    expect(body.mode).toBe('live');
+    const predicted = body.trips.find((t: { tripId: string }) => t.tripId === firstTrip.tripId);
+    expect(predicted).toBeDefined();
+    expect(predicted!.status).toBe('live');
+    expect(predicted!.delayMin).toBe(5);
+  });
+
+  it('ignores realtime for a practice-day request', async () => {
+    // First, get baseline trips to find what's actually returned.
+    const baseline = await get('../../src/routes/api/metra/next/+server',
+      'http://x/api/metra/next?from=LAGRANGE&to=CUS&date=2026-12-26');
+    expect(baseline.trips.length).toBeGreaterThan(0);
+    const firstTrip = baseline.trips[0];
+
+    // Inject a prediction for this trip with +5 min delay.
+    allFresh();
+    const schedDepartMs = Date.parse(firstTrip.schedDepart);
+    const schedDepartSeconds = Math.floor(schedDepartMs / 1000);
+    state.feed = await decodeFeed(firstTrip.tripId, schedDepartSeconds + 300);
+
+    // Request WITH practice=1. The prediction must be ignored.
     const body = await get('../../src/routes/api/metra/next/+server',
       'http://x/api/metra/next?from=LAGRANGE&to=CUS&date=2026-12-26&practice=1');
     expect(body.mode).toBe('schedule_only');
     expect(body.fetchedAt).toBeNull();
     expect(body.trips.length).toBeGreaterThan(0);
-    // All trips must be scheduled with zero delay (no live predictions applied, even though feed is fresh and contains predictions).
-    expect(body.trips.every((t: { status: string; delayMin: number | null }) => t.status === 'scheduled' && t.delayMin === 0)).toBe(true);
+
+    const predicted = body.trips.find((t: { tripId: string }) => t.tripId === firstTrip.tripId);
+    expect(predicted).toBeDefined();
+    expect(predicted!.status).toBe('scheduled');
+    expect(predicted!.delayMin).toBe(0);
+    expect(predicted!.liveDepart).toBe(predicted!.schedDepart);
   });
 });
 
