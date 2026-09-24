@@ -82,6 +82,17 @@ describe('drink_entries', () => {
     }, crew);
     expect(res.status).toBe(400);
   });
+
+  it('stamps a drink with server time, whatever time the phone sent', async () => {
+    const before = Date.now();
+    const res = await post('/api/collections/drink_entries/records', {
+      user: crewId, stop: stopId, kind: 'beer', at: '2020-01-01T00:00:00.000Z'
+    }, crew);
+    expect(res.status).toBe(200);
+    const at = Date.parse((await res.json()).at);
+    expect(at).toBeGreaterThanOrEqual(before - 5000);
+    expect(at).toBeLessThanOrEqual(Date.now() + 5000);
+  });
 });
 
 describe('anonymous access', () => {

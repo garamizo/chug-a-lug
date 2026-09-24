@@ -135,7 +135,8 @@ Every live-day read is limited to the current route **and** today's Chicago date
 - The IndexedDB mirror and the `seenAlerts` key stay as they are. The mirror holds the route, not the
   activity.
 - Server-stamped `at` fields (`live.pb.js`) already use `clock.js` `eventNow`, which is wall time in
-  production. The drink `at` comes from the client's wall time, and the drink rule does not change.
+  production. Drinks are stamped by a create hook with `clock.js` `eventNow`, like chat, photos and
+  Bulletins. `today` comes from `GET /api/day`, the server's Chicago date.
 
 ## Interruptions on practice days
 

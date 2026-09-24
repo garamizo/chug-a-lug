@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { localToUtc, minutesOfDay, parseHm, fmtHm, fmtTime, fmtDate, fmtDateTime, todayInTz } from '../../src/lib/time';
+import { localToUtc, minutesOfDay, parseHm, fmtHm, fmtTime, fmtDate, fmtDateTime, todayInTz, dayBounds, nextDate } from '../../src/lib/time';
 
 describe('time', () => {
   it('converts Chicago local minutes to UTC across DST', () => {
@@ -61,5 +61,20 @@ describe('todayInTz', () => {
   });
   it('rolls over at Chicago midnight', () => {
     expect(todayInTz(new Date('2026-12-27T06:30:00Z'))).toBe('2026-12-27');
+  });
+});
+
+describe('dayBounds', () => {
+  it('spans one Chicago calendar day in UTC', () => {
+    expect(dayBounds('2026-12-26')).toEqual({ start: '2026-12-26T06:00:00.000Z', end: '2026-12-27T06:00:00.000Z' });
+  });
+  it('is 25 hours on the fall-back day and 23 on spring-forward', () => {
+    const len = (d: string) => (Date.parse(dayBounds(d).end) - Date.parse(dayBounds(d).start)) / 3_600_000;
+    expect(len('2026-11-01')).toBe(25);
+    expect(len('2026-03-08')).toBe(23);
+  });
+  it('rolls months and years', () => {
+    expect(nextDate('2026-12-31')).toBe('2027-01-01');
+    expect(nextDate('2028-02-28')).toBe('2028-02-29');
   });
 });

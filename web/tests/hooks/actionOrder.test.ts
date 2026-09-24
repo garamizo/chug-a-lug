@@ -25,7 +25,9 @@ it.each(['checkins', 'drink_entries'])('%s orders concurrent paused actions and 
   await del(`${path(c)}/${latest.id}`, root);
   const next = await create(c);
   expect(next.action_order).toBeGreaterThan(latest.action_order);
-  expect(Date.parse(next.at)).toBe(Date.parse(at));
+  // drink_entries is stamped by the server (see live.pb.js); checkins still takes the client's `at`.
+  if (c === 'drink_entries') expect(Date.parse(next.at)).not.toBe(Date.parse(at));
+  else expect(Date.parse(next.at)).toBe(Date.parse(at));
 });
 it('rolls back the counter when record validation fails', async () => {
   const before = await (await get(`${path('action_sequence')}/eventactions001`, root)).json();

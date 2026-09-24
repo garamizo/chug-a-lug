@@ -55,3 +55,10 @@ onRecordCreateRequest((e) => {
   e.record.set('at', require(`${__hooks}/clock.js`).eventNow(e.app))
   e.next()
 }, 'chat_messages')
+
+// Drinks are stamped by the server like every other live row, so a phone's wrong clock cannot put a
+// round on the wrong day. The client's `at` is only its optimistic guess.
+onRecordCreateRequest((e) => {
+  e.record.set('at', require(`${__hooks}/clock.js`).eventNow(e.app))
+  e.next()
+}, 'drink_entries')

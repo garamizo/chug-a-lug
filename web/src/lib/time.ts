@@ -89,3 +89,14 @@ export function fmtWeekday(date: string, style: 'long' | 'short' = 'long'): stri
 export function todayInTz(now: Date = new Date()): string {
   return new Intl.DateTimeFormat('en-CA', { timeZone: TZ, year: 'numeric', month: '2-digit', day: '2-digit' }).format(now);
 }
+
+/** The calendar day after `date` (YYYY-MM-DD). */
+export function nextDate(date: string): string {
+  const [y, m, d] = date.split('-').map(Number);
+  return new Date(Date.UTC(y, m - 1, d + 1)).toISOString().slice(0, 10);
+}
+
+/** UTC bounds [start, end) of one Chicago calendar day; 23 or 25 hours across DST. */
+export function dayBounds(date: string): { start: string; end: string } {
+  return { start: localToUtc(date, 0).toISOString(), end: localToUtc(nextDate(date), 0).toISOString() };
+}
