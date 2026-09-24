@@ -43,10 +43,8 @@ Never point a dev or test server at 8090 or 3000 — that is the live stack on t
 
 ## Deploying
 
-`just up` selects shared rehearsal by default; `REHEARSAL=0` selects the real event. It runs
-`docker compose up -d --build` with the selected configuration, rebuilding from **whatever is on disk**,
-committed or not. Production therefore tracks the working tree of the checkout you run it in, not
-`origin/main`. Check freshness with `docker images | grep chug` against your last edit, never against
+`just up` runs the one real stack (`docker compose up -d --build`). Production therefore tracks
+the working tree of the checkout you run it in, not `origin/main`. Check freshness with `docker images | grep chug` against your last edit, never against
 git. `pb_hooks/` and `pb_migrations/` are read-only bind mounts, so migrations apply on a PocketBase
 restart without a rebuild.
 
@@ -83,8 +81,12 @@ restart without a rebuild.
 - **Simulation has event time and wall time.** Use the shared clock for the live day, Tab, anchors,
   planning and Bulletins. Cache ages, auth, timeouts, parked-edit expiry and file capture metadata
   stay on wall time. Unknown offline Railroad Time is not today's date.
-- **Keep practice and real-event data separate.** Regular `just up` uses `data/rehearsal/`;
-  tests use disposable data and credentials on test ports. Source/date are immutable. Replay selects original timestamps from an archived matching timetable.
+- **Practice is a day, not a database.** On any date that is not the current route's `event_date`,
+  Live runs the route's timetable at today's time (`planClock.ts`). Everything people post is
+  stamped by the server; Live reads only the server's today (`/api/day`, `dayBounds`). Never plan
+  legs from plan time, and never filter activity by plan time.
+- **The current route is `crawl_settings.current_itinerary`**, falling back to the newest locked
+  route. Client (`$lib/live/route.ts`) and hooks (`pb_hooks/current.js`) must agree.
 - **Capture clock context through preview/commit/recompute.** Save carries preview `clockRevision`;
   autonomous and nested recomputes use event-write leases. Never hold a clock mutex while awaiting
   the hook's itinerary queue.

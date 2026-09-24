@@ -153,28 +153,23 @@ it), so rotate it with `docker compose up -d --force-recreate pocketbase web`.
 
 ## Shakedown Run (M4)
 
-Run `just up` from `main`. Rehearsal is the default (`REHEARSAL=1` or unset), available to everyone
-at the usual HTTPS app URL with the usual shared passwords. The persistent header and login notice
-identify practice explicitly. Choose **Practice the live day** from the home page.
+Live runs every day on the one real stack; there is no separate rehearsal deployment or
+`REHEARSAL` switch (see README ["Practice days"](../README.md#practice-days)). `just up` runs
+`docker compose -f compose.yml up -d --build` against the real database, `data/pb_data`. On the
+current route's `event_date` it is the event day; any other day, Live shows the route at today's
+Chicago time against that date's timetable, with a Practice badge, and nothing people post that
+day reaches the event day.
 
-Startup uses `compose.rehearsal.yml`, isolates the database/uploads/cache under `data/rehearsal/`,
-and seeds a fresh twelve-stop route at 10×, one hour before its first train departure. Each `just up` clears rehearsal uploads, users/sessions and routes. It prefers the previous Saturday’s recording and otherwise uses the published Saturday timetable, labeled Timetable only. Source preparation and route validation happen before the reset.
-The normal real-event database stays at its existing path. Do not copy real-event data into rehearsal.
-`just logs` and `just down` use the regular stack lifecycle.
-
-Set `REHEARSAL=0` in `.env`, then run `just up` to switch to the real event. Set `REHEARSAL=1` and
-run it again to start a fresh rehearsal. Mode switching rebuilds the frontend and requires a fresh login;
-separate auth cookies prevent identities from crossing databases. Do not run bare `docker compose up`
-for routine rehearsal deployment: it selects the base real-event configuration. Use `just up` after
-rotating credentials so both services and the rehearsal bootstrap receive the current settings.
-
-If initialization fails, inspect the error before retrying `just up`. A retry validates the source,
-then resets only rehearsal state and seeds again; it does not resume an incomplete practice run.
-The source/date/window are fixed within each run; the UI offers no rewind/reset action.
+`just practice-route` builds the canned route once, validating it while still a draft, then locks
+it and sets it current only if no route is already selected; a re-run replaces its own leftover
+draft and refuses if a locked canned route already exists, reusing its cached Places answers and
+photos under `data/practice-route/`. The Conductor makes any locked route current from its page in
+the planner with **Make current**. The old shared-rehearsal database, `data/rehearsal/`, is left on
+disk; nothing removes it automatically, so delete it by hand once you no longer need it.
 
 Tests use disposable credentials/data and ports 15173/18093, one suite at a time. Never test against
 the regular stack ports 3000/8090. The advanced standalone launcher remains available through
-`node web/scripts/sim.mjs` for isolated developer runs; it is not needed for shared practice.
+`node web/scripts/sim.mjs` for isolated developer runs, independent of the real stack.
 
 To capture or index an archive, supply its service date and explicit UTC playback window:
 

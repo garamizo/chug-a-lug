@@ -220,36 +220,35 @@ Sim mode has to exist before the live phase is considered done, because the real
   Record on a **Saturday in December**, since Dec 26 runs the Saturday timetable.
 - **Shared position**: rehearse the same clock-derived stop and Conductor anchor as the live day. No GPS, waypoint player or per-person tracking.
 - **Schedule-only fallback**: use scheduled departures when no recording exists; do not invent vehicle positions.
-- **Isolation**: the shared rehearsal uses its own database and auth cookie at the regular origin. Replay uses the recording's original service date and archived GTFS; operational timeouts and cache ages remain on wall time.
+- **Isolation**: practice happens on the one real database (see "Practice days" below), not a
+  separate deployment. Only the isolated developer harness (`compose.sim.yml`) has its own database
+  and auth cookie, at its own origin. Replay uses the recording's original service date and archived
+  GTFS; operational timeouts and cache ages remain on wall time.
 - M4 implementation includes the shared browser/server clock, isolated launcher, recording replay, Conductor controls, and offline safeguards. Automated rehearsal coverage is included; physical-phone and real-recording acceptance remain pending. See the [design](docs/superpowers/specs/2026-09-21-m4-simulation-design.md) and [implementation plan](docs/superpowers/plans/2026-09-21-m4-simulation.md).
 - A real dry run on a December Saturday with two or three phones, before the freeze.
 
-### Shared rehearsal
+### Practice days
 
-`just up` opens rehearsal by default at the regular app URL, with the usual Crew and Conductor
-passwords. No extra startup target is needed. The login page and persistent header say
-**Rehearsal — practice only**. Everyone shares one practice route, clock and activity history.
+Live runs every day; there is no separate rehearsal deployment or `REHEARSAL` switch. On the
+current route's `event_date` it is the event day; any other day is a practice day, and Live shows
+the route at today's Chicago time against that date's timetable (no realtime, no alerts), with a
+small **Practice** badge. Nothing is deleted: drinks, chat, photos and Bulletins are all
+server-stamped and visible only on the day they were posted, so practice activity never lands on
+the event day. (The old shared-rehearsal database, `data/rehearsal/`, is left on disk; nothing
+deletes it automatically.)
 
-Every `just up` starts a fresh rehearsal: it removes practice uploads, users/sessions and routes,
-then seeds twelve venues across Aurora, Naperville, Lisle, Downers Grove, Clarendon Hills and
-La Grange. Two venues per town balance bar and food stops. Photos, attributed Google reviews,
-ratings and opening hours are downloaded before resetting and cached under `data/rehearsal/source/venues`.
-The shared clock starts at **10×**, **one hour before the first train departure**, with practice
-Conductor Bulletins. Its date and time stay visible in the banner.
+`just practice-route` (`cd web && node --env-file=../.env scripts/practice-route.mjs`) builds a
+canned out-and-back route once against the real stack: it validates the route while still a
+draft, then locks it, and sets it current only if no route is already selected. A re-run replaces
+its own leftover draft and refuses if a locked canned route already exists; its Places answers and
+photos are cached under `data/practice-route/` so a retry does not spend the budget again. The
+Conductor makes any locked route current from its page in the planner with **Make current**.
 
-The launcher looks in `data/recordings/` for the previous Saturday's archived run and matching
-GTFS. Metra's current realtime API does not reconstruct historical observations. Without an
-archive, rehearsal uses Saturday timetable practice, clearly labeled **Timetable only**; schedule
-coverage is checked. Set `REHEARSAL_TIMETABLE=0` to require an actual recording. Preparation
-failures stop startup before clearing practice data.
-Google Places must be configured for the initial venue download. Run `npm install` in `web/`
-before the first host-side preparation.
+### Shakedown Run
 
-Choose **Practice the live day** from home. Conductors can pause or change speed in **Shakedown Run**.
-Each restart creates a new run identity so browser mirrors cannot leak between runs.
-Real-event data is separate; `REHEARSAL=0 just up` selects it without resetting it.
-
-See [operations](docs/OPERATIONS.md#shakedown-run-m4) for recovery and recording details.
+The isolated developer simulation harness (`compose.sim.yml`, `/sim`) is a separate test tool: its
+own database, auth cookie and Compose project at their own origin and ports, independent of the
+real stack. See [operations](docs/OPERATIONS.md#shakedown-run-m4) for recovery and recording details.
 
 The Metra endpoints use Railroad Time and return `source` (`live`, `recording`, `timetable`), `revision`,
 and safe diagnostics alongside the existing modes/timestamps. A fresh recording still has
@@ -315,7 +314,8 @@ bounds behind the append log, the complete poll rows remain authoritative. Incom
 ignored and reported; malformed complete rows are rejected.
 
 `just sim-fixture` regenerates the small [deterministic fixture](web/tests/fixtures/sim/recording/README.md).
-The isolated recording test plays this synthetic fixture with its archived timetable. Shared rehearsal uses the previous Saturday’s real archive when available, otherwise its published timetable.
+The isolated recording test plays this synthetic fixture with its archived timetable. Practice days
+never use a recording; they always run on that date's published timetable, schedule-only.
 
 ---
 
