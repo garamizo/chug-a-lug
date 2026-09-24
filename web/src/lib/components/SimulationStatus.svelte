@@ -9,12 +9,12 @@
   const status = $derived(!sample ? copy.simUnavailable : [
     sample.source === 'recording' ? copy.simRecorded : copy.simTimetable,
     `${sample.rate || sample.resumeRate}×`,
-    liveDay.now.getTime() >= Date.parse(sample.windowEnd) ? copy.simEnded : sample.rate === 0 ? copy.simPaused : copy.simRunning,
+    liveDay.realNow.getTime() >= Date.parse(sample.windowEnd) ? copy.simEnded : sample.rate === 0 ? copy.simPaused : copy.simRunning,
     clientClock.synchronized ? copy.simSynced : copy.simUnsynced
   ].join(' · '));
 </script>
 {#if clientClock.enabled}
-  <small data-testid="rehearsal-badge">{copy.rehearsalTitle}{#if sample}{' — '}<time datetime={liveDay.now.toISOString()} data-testid="simulation-status" data-status={status} title={status}>{fmtTime(liveDay.now)}{#if !clientClock.synchronized} <span class="warn" aria-label={copy.simUnsynced}>⚠</span>{/if}</time>{/if}</small>
+  <small data-testid="rehearsal-badge">{copy.rehearsalTitle}{#if sample}{' — '}<time datetime={liveDay.realNow.toISOString()} data-testid="simulation-status" data-status={status} title={status}>{fmtTime(liveDay.realNow)}{#if !clientClock.synchronized} <span class="warn" aria-label={copy.simUnsynced}>⚠</span>{/if}</time>{/if}</small>
 {/if}
 <style>
   small { display: block; color: #ffb400; font-size: 12px; line-height: 16px; overflow: hidden; text-overflow: ellipsis; }

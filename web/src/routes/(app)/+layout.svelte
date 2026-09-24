@@ -25,8 +25,11 @@
     return () => { disposed = true; stopDay?.(); stopClock(); };
   });
   const here = $derived(liveDay.here);
+  const onLive = $derived(page.url.pathname === '/live');
+  // Practice interrupts only the screen that is practising; planning and voting stay quiet.
+  const quiet = $derived(liveDay.practice && !onLive);
   // /live already shows the full ticket; the compact banner is for every *other* screen.
-  const showBanner = $derived(!!here?.stop && page.url.pathname !== '/live');
+  const showBanner = $derived(!!here?.stop && !onLive && !quiet);
   // Re-ask for trains the instant the leg we are counting down changes — a Conductor's correction
   // or a saved route change must not wait out the 30 s poll, since the whole app now reads this
   // same board. `here` is a fresh object every time anything about the route reloads (a save
@@ -82,12 +85,12 @@
         mode={liveDay.mode} rtFetchedAt={liveDay.rtFetchedAt} />
     </a>
   {/if}
-  {#if liveDay.pinnedBulletin}
+  {#if liveDay.pinnedBulletin && !quiet}
     <PinnedBulletin bulletin={liveDay.pinnedBulletin} onack={() => void ack(liveDay.pinnedBulletin!.id)} />
   {/if}
   {#if error}<p role="alert">{error}</p>{/if}
   {@render children()}
-  {#if liveDay.isToday}<TabBar />{/if}
+  {#if liveDay.isEventDay}<TabBar />{/if}
   <Lightbox />
   {#if liveDay.composing}
     <BulletinSheet text="" onsend={(body) => void postBulletin(body)} onskip={() => (liveDay.composing = false)} />

@@ -54,4 +54,11 @@ describe('cohesionBlockers', () => {
     expect(cohesionBlockers({ ...input, now: new Date('2026-12-26T06:00:00Z') })).toEqual([]);
   });
 
+  it('treats a practice-day Save as off-day even though plan time falls on the route date', () => {
+    // The editor must pass real time. Plan time would land on eventDate and wrongly apply history rules.
+    const legs = [{ fromStopId: 'a', toStopId: 'b', kind: 'impossible' as const }, rideable[1]];
+    const input = { stops, legs, anchorStopId: 'b', eventDate: '2026-12-26' };
+    expect(cohesionBlockers({ ...input, now: new Date('2026-09-22T19:05:00Z') }).map((b) => b.code)).toEqual(['impossible_leg']);
+  });
+
 });

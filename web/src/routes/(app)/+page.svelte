@@ -1,22 +1,19 @@
 <script lang="ts">
-  import { clientClock } from '$lib/sim/clock.svelte';
   import { onMount } from 'svelte';
   import { goto } from '$app/navigation';
-  import { auth, pb } from '$lib/pb';
+  import { auth } from '$lib/pb';
   import { label, copy } from '$lib/labels';
   import { liveDay } from '$lib/live/day.svelte';
+  import { resolveCurrentRoute } from '$lib/live/route';
   import type { Itinerary } from '$lib/types';
 
   let locked = $state<Itinerary | null>(null);
   onMount(async () => {
-    try {
-      const list = await pb.collection('itineraries').getList<Itinerary>(1, 1, { filter: 'status = "locked"', sort: '-locked_at' });
-      locked = list.items[0] ?? null;
-    } catch { locked = null; }
+    try { locked = await resolveCurrentRoute(); } catch { locked = null; }
   });
   // On the day itself the app is the Departure Board; the planner is reached through the menu, not
   // a tab — the event-day TabBar links Live, The Route and the Crew Board only.
-  $effect(() => { if (liveDay.isToday) void goto('/live', { replaceState: true }); });
+  $effect(() => { if (liveDay.isEventDay) void goto('/live', { replaceState: true }); });
 </script>
 
 <h1>{copy.welcome} <span data-testid="name">{$auth.user?.name}</span></h1>
@@ -24,7 +21,7 @@
 <ul>
   <li><a href="/plan" data-testid="nav-plan"><strong><span aria-hidden="true">🗺️</span> {label('planningPhase')} →</strong><span>{copy.plannerTeaser}</span></a></li>
   <li><a href="/route" data-testid="nav-route"><strong><span aria-hidden="true">🚂</span> {label('lockedItinerary')} →</strong><span>{locked ? locked.title : copy.noRoute}</span></a></li>
-  {#if clientClock.enabled || liveDay.isToday}<li><a href="/live" data-testid="nav-live"><strong><span aria-hidden="true">🎟️</span> {clientClock.enabled ? copy.rehearsalLive : label('livePhase')} →</strong><span>{clientClock.enabled ? copy.rehearsalLiveHint : copy.liveHint}</span></a></li>
+  {#if liveDay.hasRoute}<li><a href="/live" data-testid="nav-live"><strong><span aria-hidden="true">🎟️</span> {label('livePhase')} →</strong><span>{copy.liveHint}</span></a></li>
   {:else}<li><strong>{label('livePhase')}</strong><span>{copy.comingSoon}</span></li>{/if}
   <li><strong>{label('wrapUpPhase')}</strong><span>{copy.comingSoon}</span></li>
 </ul>

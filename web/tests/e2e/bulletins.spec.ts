@@ -4,6 +4,8 @@ import { clearLockedCrawls, login, seedLockedCrawl } from './helpers';
 const ADMIN = process.env.ADMIN_PASSWORD ?? 'admin-test-password';
 const CREW = process.env.CREW_PASSWORD ?? 'crew-test-password';
 const DATE = '2026-12-26';
+// Pinning everywhere is the event day's behaviour; on a practice day a Bulletin pins only on Live.
+const EVENT_DAY = new Date('2026-12-26T19:00:00Z');
 
 test('a plan change drafts a Bulletin the crew has to tap away', async ({ page, context }) => {
   page.on('dialog', (d) => d.accept());
@@ -32,6 +34,7 @@ test('a plan change drafts a Bulletin the crew has to tap away', async ({ page, 
   const crewContext = await context.browser()!.newContext();
   const crewPage = await crewContext.newPage();
   await login(crewPage, 'E2E Bulletin Crew', CREW);
+  await crewPage.clock.install({ time: EVENT_DAY });
   await crewPage.goto('/plan');
   const pinned = crewPage.getByTestId('pinned-bulletin');
   await expect(pinned).toContainText('The Second Round is annulled.');
@@ -93,6 +96,7 @@ test('the Conductor can post a Bulletin without changing the plan', async ({ pag
     ownerName: 'E2E Plain Conductor', eventDate: DATE, startTime: '12:00',
     departAt: '2026-12-26T20:34:00.000Z', arriveAt: '2026-12-26T20:49:00.000Z'
   });
+  await page.clock.install({ time: EVENT_DAY });
 
   await page.goto('/plan');
   await page.getByTestId('menu').click();
@@ -141,6 +145,7 @@ async function pinBulletin(page: import('@playwright/test').Page, name: string) 
     ownerName: name, eventDate: DATE, startTime: '12:00',
     departAt: '2026-12-26T20:34:00.000Z', arriveAt: '2026-12-26T20:49:00.000Z'
   });
+  await page.clock.install({ time: EVENT_DAY });
   await page.goto('/plan');
   await page.getByTestId('menu').click();
   await page.getByTestId('menu-bulletin').click();

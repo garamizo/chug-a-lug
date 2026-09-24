@@ -203,8 +203,12 @@ export const copy = {
   loadError: 'Could not load this. Check your connection and try again.',
   // Live day
   live: 'Live',
-  noActiveRoute: 'No route is locked for today yet.',
+  noActiveRoute: 'No route is locked yet.',
   backToLive: 'Back to Live',
+  practiceBadge: 'Practice',
+  practiceHint: 'Timetable for the route’s date, at today’s time',
+  makeCurrent: 'Make current',
+  currentRoute: 'Current route',
   routeProgress: 'Route progress',
   tabTitle: 'Tab',
   drink_beer: 'Beer',

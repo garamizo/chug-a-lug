@@ -6,7 +6,7 @@
   import { pb, subscribe } from '$lib/pb';
   import { liveDay } from '$lib/live/day.svelte';
   import { crewScore, compareScores, hasSeen as seenBulletin } from '$lib/live/crew';
-  import { todayInTz } from '$lib/time';
+  import { dayBounds } from '$lib/time';
   import type { BroadcastAck, DrinkEntry, UserRecord } from '$lib/types';
 
   let crew = $state<UserRecord[]>([]);
@@ -15,22 +15,29 @@
   let error = $state('');
 
   const current = $derived(liveDay.bulletins[0] ?? null);
-  const date = $derived(liveDay.clockKnown ? todayInTz(liveDay.now) : '');
+  const date = $derived(liveDay.clockKnown ? liveDay.today : '');
   const ranked = $derived(crew.map(person => ({ person, score: crewScore(drinks, person.id, date) })).sort((a, b) => compareScores(a.score, b.score) || a.person.name.localeCompare(b.person.name)));
   const categories = ['shot', 'cocktail', 'beer', 'water', 'food'] as const;
   const hasSeen = (userId: string) => seenBulletin(acks, userId, current?.id ?? null);
 
+  // The board is today's, on the current route: reload when either changes.
+  const routeId = $derived(liveDay.itinerary?.id ?? '');
+  const day = $derived(liveDay.today);
+
   $effect(() => {
     void clientClock.revision;
+    const id = routeId, today = day;
     let active = true;
     let version = 0;
     const load = async () => {
       const request = ++version;
       try {
+        // Dates, not ISO strings: pb.filter writes a Date in PocketBase's stored datetime form.
+        const bounds = dayBounds(today), start = new Date(bounds.start), end = new Date(bounds.end);
         const rows = await Promise.all([
           pb.collection('users').getFullList<UserRecord>({ sort: 'name' }),
-          pb.collection('drink_entries').getFullList<DrinkEntry>(),
-          pb.collection('broadcast_acks').getFullList<BroadcastAck>()
+          pb.collection('drink_entries').getFullList<DrinkEntry>({ filter: pb.filter('stop.itinerary = {:id} && at >= {:start} && at < {:end}', { id, start, end }) }),
+          pb.collection('broadcast_acks').getFullList<BroadcastAck>({ filter: pb.filter('broadcast.itinerary = {:id} && broadcast.at >= {:start} && broadcast.at < {:end}', { id, start, end }) })
         ]);
         if (!active || request !== version) return;
         [crew, drinks, acks] = rows;
@@ -51,7 +58,7 @@
 
 <svelte:head><title>{labels.userRoster}</title></svelte:head>
 
-{#if !liveDay.isToday}<p><a href="/live">← {copy.backToLive}</a></p>{/if}
+{#if !liveDay.isEventDay}<p><a href="/live">← {copy.backToLive}</a></p>{/if}
 <h1>{labels.userRoster}</h1>
 {#if error}<p class="error" role="alert">{error}</p>{/if}
 

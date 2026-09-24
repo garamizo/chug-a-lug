@@ -15,17 +15,21 @@
 
   $effect(() => {
     seen = readSeen();
+    // Realtime alerts belong to today's trains, not the route's date: a practice day lists none.
+    if (liveDay.practice) { alerts = []; loaded = true; return; }
     if (clientClock.enabled) { alerts = liveDay.alerts; markSeen(alerts.map(a => a.id)); loaded = true; return; }
+    let active = true;
     void fetchAlerts()
-      .then((r) => { alerts = r.alerts; markSeen(r.alerts.map((a) => a.id)); })
-      .catch(() => { alerts = []; })
-      .finally(() => { loaded = true; });
+      .then((r) => { if (!active) return; alerts = r.alerts; markSeen(r.alerts.map((a) => a.id)); })
+      .catch(() => { if (active) alerts = []; })
+      .finally(() => { if (active) loaded = true; });
+    return () => { active = false; };
   });
 </script>
 
 <svelte:head><title>{copy.notifications}</title></svelte:head>
 
-{#if !liveDay.isToday}<p><a href="/live">← {copy.backToLive}</a></p>{/if}
+{#if !liveDay.isEventDay}<p><a href="/live">← {copy.backToLive}</a></p>{/if}
 <h1>{copy.notifications}</h1>
 
 <h2>{copy.serviceAlerts}</h2>

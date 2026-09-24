@@ -1,6 +1,6 @@
 import { expect, type Page } from '@playwright/test';
 
-const PB = process.env.PB_URL ?? 'http://127.0.0.1:18093';
+export const PB = process.env.PB_URL ?? 'http://127.0.0.1:18093';
 const SU_EMAIL = process.env.PB_ADMIN_EMAIL ?? 'tests@chugalug.invalid';
 const SU_PASSWORD = process.env.PB_ADMIN_PASSWORD ?? 'local-test-password-only';
 
@@ -34,7 +34,7 @@ export async function login(page: Page, name: string, password: string) {
   }
 }
 
-async function superuserToken(): Promise<string> {
+export async function superuserToken(): Promise<string> {
   const res = await fetch(`${PB}/api/collections/_superusers/auth-with-password`, {
     method: 'POST', headers: { 'content-type': 'application/json' },
     body: JSON.stringify({ identity: SU_EMAIL, password: SU_PASSWORD })
@@ -69,6 +69,8 @@ export async function seedLockedCrawl(opts: {
   ownerName: string; eventDate: string; startTime: string; departAt: string; arriveAt: string;
   /** Adds a second bar at the first stop's station, joined by a walk: the same-station case. */
   extraVenueAtFirstStation?: boolean;
+  /** Names the first bar, so two seeded routes can be told apart on screen. */
+  firstStopName?: string;
 }) {
   const token = await superuserToken();
   const users = await fetch(`${PB}/api/collections/users/records?filter=${encodeURIComponent(`name_key="${opts.ownerName.toLowerCase()}"`)}`, {
@@ -91,7 +93,7 @@ export async function seedLockedCrawl(opts: {
   const itinerary = await lockRes.json();
 
   const first = await create('stops', {
-    itinerary: itinerary.id, order: 1, name: 'The Whistle Stop', kind: 'bar',
+    itinerary: itinerary.id, order: 1, name: opts.firstStopName ?? 'The Whistle Stop', kind: 'bar',
     station_id: 'LAGRANGE', station_name: 'La Grange Road', dwell_min: 90, walk_min: 5, direction: 'out'
   }, token);
   // Optionally a second bar at the SAME station, reached on foot, before the train leaves.

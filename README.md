@@ -58,6 +58,8 @@ users see. Bars and restaurants keep their plain names.
 | Approval vote on the final plan | **Highball** | Rail all-clear signal; also the cocktail | |
 | Like / dislike | **Cheers / Pass** | Bar | |
 | Live phase | **Live** | Plain | |
+| Practice day | **Practice** | Plain | Any day that is not the current route's date; Live runs the route's timetable at today's time |
+| Current route | **Current route** | Plain | The locked route the Conductor selected ("Make current"); Live, The Route and photos follow it |
 | Wrap-up phase | **Closing Time** | Bar | |
 | Admin | **Conductor** | Rail | |
 | Users | **Crew** | Rail | |

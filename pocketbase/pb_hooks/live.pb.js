@@ -48,7 +48,9 @@ onRecordAfterCreateSuccess((e) => {
 }, 'broadcasts')
 
 // Crew chat: the author is whoever is signed in, and the time is the event's, whatever the body says.
+// A superuser may supply the time, so a fixture can put a line on an earlier day.
 onRecordCreateRequest((e) => {
+  if (e.auth?.isSuperuser() && e.record.getString('at')) return e.next()
   const isCrew = !!e.auth && !e.auth.isSuperuser()
   if (isCrew) e.record.set('user', e.auth.id)
   e.record.set('at', require(`${__hooks}/clock.js`).eventNow(e.app))

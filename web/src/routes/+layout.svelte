@@ -1,6 +1,7 @@
 <script lang="ts">
   import { clientClock } from '$lib/sim/clock.svelte';
   import { onMount } from 'svelte';
+  import { page } from '$app/state';
   import { copy } from '$lib/labels';
   import { auth } from '$lib/pb';
   import AppMenu from '$lib/components/AppMenu.svelte';
@@ -14,11 +15,14 @@
   // Kept apart from the Bulletin count so a failed alerts read only zeroes its own half of the
   // dot: `unread` below stays live off `liveDay`'s own state either way.
   let alertsUnread = $state(0);
-  const unread = $derived(alertsUnread + liveDay.bulletins.filter((b) => !liveDay.isAcked(b.id)).length);
+  // On a practice day a Bulletin interrupts only Live, so the dot leaves it out everywhere else.
+  const bulletinUnread = $derived(liveDay.practice && page.url.pathname !== '/live' ? 0
+    : liveDay.bulletins.filter((b) => !liveDay.isAcked(b.id)).length);
+  const unread = $derived(alertsUnread + bulletinUnread);
 
   // The dot is best-effort: a failed alerts read simply leaves that half off.
   $effect(() => {
-    if (!$auth.user) { alertsUnread = 0; return; }
+    if (!$auth.user || liveDay.practice) { alertsUnread = 0; return; }
     if (clientClock.enabled) { alertsUnread = unseenCount(liveDay.alerts, readSeen()); return; }
     const check = () => void fetchAlerts()
       .then((r) => { alertsUnread = unseenCount(r.alerts, readSeen()); })

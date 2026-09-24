@@ -20,10 +20,10 @@
   <p><a href="/plan">{copy.backToPlanner}</a></p>
 {:else}
   <ItineraryView itinerary={liveDay.itinerary} stops={liveDay.stops} legs={liveDay.legs} editable={false} canManage={false} actions={recordActions(liveDay.itinerary.id, () => {})}
-    onopenstop={liveDay.isToday ? openStop : undefined} />
+    onopenstop={liveDay.hasRoute ? openStop : undefined} />
   {#if liveDay.itinerary.locked_at}<p class="meta" data-testid="locked-on">{copy.lockedOn} {fmtDateTime(liveDay.itinerary.locked_at)}</p>{/if}
   {#if $auth.user?.is_admin}<p><a class="button" href="/plan/{liveDay.itinerary.id}/edit" data-testid="edit-route">{copy.editDraft}</a></p>{/if}
-  {#if liveDay.isToday}<StopSheet stops={liveDay.stops} media={liveDay.feed.media} eventDate={liveDay.itinerary.event_date} itineraryId={liveDay.itinerary.id} isAdmin={!!$auth.user?.is_admin} />{/if}
+  {#if liveDay.hasRoute}<StopSheet stops={liveDay.stops} media={liveDay.feed.media} eventDate={liveDay.itinerary.event_date} itineraryId={liveDay.itinerary.id} isAdmin={!!$auth.user?.is_admin} />{/if}
 {/if}
 
 <style>

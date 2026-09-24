@@ -17,7 +17,6 @@
   import { withPending } from '$lib/live/tab';
   import { drinkCount } from '$lib/live/crew';
   import { topLine } from '$lib/live/leaderboard';
-  import { todayInTz } from '$lib/time';
   import { newRecordId } from '$lib/live/staged';
   import CrewChat from '$lib/components/CrewChat.svelte';
   import StopSheet from '$lib/components/StopSheet.svelte';
@@ -44,8 +43,10 @@
   let toastTimer: ReturnType<typeof setTimeout> | undefined;
   const me = $derived($auth.user?.id ?? '');
   const tabEntries = $derived(withPending(liveDay.feed.drinks, pending));
-  const dayTotal = $derived(drinkCount(tabEntries, me, todayInTz(liveDay.now)));
-  const leaders = $derived($auth.user ? topLine(liveDay.feed.drinks, { id: $auth.user.id, name: $auth.user.name }, todayInTz(liveDay.now)) : []);
+  // Saved rows count by the server's day; a tap in flight is today's by definition (the server stamps it).
+  const dayTotal = $derived(drinkCount(liveDay.feed.drinks, me, liveDay.today)
+    + pending.filter((p) => p.user === me && !liveDay.feed.drinks.some((d) => d.id === p.id)).length);
+  const leaders = $derived($auth.user ? topLine(liveDay.feed.drinks, { id: $auth.user.id, name: $auth.user.name }, liveDay.today) : []);
   const showToast = (id: string, kind: DrinkKind) => {
     clearTimeout(toastTimer);
     toast = { id, kind, failed: false };
@@ -56,7 +57,9 @@
     const stop = tabStop, user = $auth.user;
     if (!stop || !user) return;
     error = '';
-    const at = (clientClock.eventNow() ?? liveDay.now).toISOString();
+    // Only an optimistic guess at wall time: the server stamps the saved row.
+    liveDay.syncNow();
+    const at = liveDay.realNow.toISOString();
     const draft = { id: newRecordId(), user: user.id, stop: stop.id, kind, at } as DrinkEntry;
     pending = [...pending, draft];
     clinking = kind;
@@ -69,10 +72,10 @@
     toast = null;
     try {
       await clientClock.ready();
-      liveDay.now = clientClock.eventNow() ?? liveDay.now;
+      liveDay.syncNow();
       if (tabStop?.id !== stop.id) throw new Error(copy.simClockConflict);
       const row = await pb.collection('drink_entries').create<DrinkEntry>(
-        { id: draft.id, user: user.id, stop: stop.id, kind, at: (clientClock.eventNow() ?? liveDay.now).toISOString() },
+        { id: draft.id, user: user.id, stop: stop.id, kind, at: liveDay.realNow.toISOString() },
         { expand: 'user,stop' });
       liveDay.upsertDrink(row);
       showToast(row.id, kind);
@@ -115,7 +118,7 @@
     uploading = true;
     try {
       await clientClock.ready();
-      liveDay.now = clientClock.eventNow() ?? liveDay.now;
+      liveDay.syncNow();
       if (tabStop?.id !== stop.id) throw new Error(copy.simClockConflict);
       error = await uploadBatch(selected, async (file) => {
         const prepared = await prepare(file, async (f) => {
@@ -141,7 +144,7 @@
   <p class="stale" data-testid="mirror-notice">{copy.showingMirror} {mirrorSavedWhen(liveDay.mirrorSavedAt, liveDay.wallNow)}.</p>
 {/if}
 
-{#if !liveDay.itinerary || !liveDay.isToday}
+{#if !liveDay.hasRoute}
   <p data-testid="no-active-route">{copy.noActiveRoute} <a href="/plan">{copy.backToPlanner}</a></p>
 {:else if here?.stop}
   {#if here?.stop}<RouteStrip items={strip} onopen={openStop} />{/if}
@@ -156,6 +159,7 @@
     mode={liveDay.mode}
     rtFetchedAt={liveDay.rtFetchedAt} />
 {/if}
+{#if liveDay.practice}<p class="practice" data-testid="practice-badge" title={copy.practiceHint}>{copy.practiceBadge}</p>{/if}
 
 {#if here?.stop}
   <p class="current"><small>{copy.currentStop}</small>
@@ -197,6 +201,7 @@
 {/if}
 
 <style>
+  .practice { margin: 8px 16px 0; font-size: 12px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: #9ad; }
   .current { margin: 2px 20px 12px; display: grid; gap: 2px; }
   .current small { color: #aaa; font-size: 11px; text-transform: uppercase; letter-spacing: .08em; }
   .stopname { all: unset; cursor: pointer; font-size: 19px; font-weight: 750; color: #ffce5c; }

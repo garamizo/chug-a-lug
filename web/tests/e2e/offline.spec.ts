@@ -101,7 +101,9 @@ test('the route still reads when PocketBase cannot be reached', async ({ page })
   await expect(page.getByTestId('stop-row-0')).toContainText('The Whistle Stop');
   await page.goto('/live');
   await expect(page.getByTestId('mirror-notice')).toHaveText(`${copy.showingMirror} ${fmtDateTime(NOW)}.`);
-  await expect(page.getByTestId('no-active-route')).toBeVisible();
+  // Off the route's date the mirrored route is a practice day, not a missing one.
+  await expect(page.getByTestId('practice-badge')).toBeVisible();
+  await expect(page.getByTestId('no-active-route')).toHaveCount(0);
 
   await page.unroute(isPocketBase);
   await page.goto('/route');

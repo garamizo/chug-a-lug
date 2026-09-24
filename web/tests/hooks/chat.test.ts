@@ -1,6 +1,6 @@
 // Crew chat: anyone may talk, nobody may talk as someone else, and a Cheers counts once.
 import { beforeAll, describe, expect, it } from 'vitest';
-import { ADMIN_LOGIN_PASSWORD, PB, del, loginToken, patch, post, truncate } from './setup';
+import { ADMIN_LOGIN_PASSWORD, PB, del, loginToken, patch, post, superuserToken, truncate } from './setup';
 
 let conductor = '', crew = '', conductorId = '', crewId = '', itineraryId = '', stopId = '';
 const path = (c: string) => `/api/collections/${c}/records`;
@@ -22,6 +22,19 @@ describe('chat_messages', () => {
   it('lets the Crew post, stamped with the server clock whatever the body says', async () => {
     const before = Date.now();
     const res = await post(path('chat_messages'), { itinerary: itineraryId, user: crewId, body: 'Round on me', at: '2000-01-01T00:00:00Z' }, crew);
+    expect(res.status).toBe(200);
+    expect(Math.abs(Date.parse((await res.json()).at) - before)).toBeLessThan(10_000);
+  });
+
+  it('keeps a superuser-supplied time, so a fixture can backdate a line', async () => {
+    const res = await post(path('chat_messages'), { itinerary: itineraryId, user: crewId, body: 'From yesterday', at: '2026-09-01T12:00:00Z' }, await superuserToken());
+    expect(res.status).toBe(200);
+    expect((await res.json()).at).toBe('2026-09-01 12:00:00.000Z');
+  });
+
+  it('still stamps a superuser line that gives no time', async () => {
+    const before = Date.now();
+    const res = await post(path('chat_messages'), { itinerary: itineraryId, user: crewId, body: 'Now' }, await superuserToken());
     expect(res.status).toBe(200);
     expect(Math.abs(Date.parse((await res.json()).at) - before)).toBeLessThan(10_000);
   });

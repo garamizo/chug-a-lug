@@ -53,8 +53,6 @@ export class LiveDay {
   get hasRoute(): boolean { return this.clockKnown && !!this.itinerary; }
   get isEventDay(): boolean { return this.hasRoute && onEventDate(this.itinerary!.event_date, this.realNow); }
   get practice(): boolean { return this.hasRoute && !this.isEventDay; }
-  // removed in Task 6
-  get isToday(): boolean { return this.isEventDay; }
   /** A Conductor's correction steers the board only on the event day; practice runs the timetable. */
   get effectiveAnchor() { return this.isEventDay ? this.anchor : null; }
   /** Recomputes plan time from `realNow`. Pure: reads no clock. */

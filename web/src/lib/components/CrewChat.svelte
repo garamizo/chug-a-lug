@@ -6,7 +6,7 @@
   import { pb } from '$lib/pb';
   import { clientClock } from '$lib/sim/clock.svelte';
   import { copy, drinkIcons, labels } from '$lib/labels';
-  import { fmtTime, todayInTz } from '$lib/time';
+  import { fmtTime } from '$lib/time';
   import { chatEntries, reactionSummary, type ChatEntry } from '$lib/live/chat';
   import { milestones } from '$lib/live/milestones';
   import { liveDay } from '$lib/live/day.svelte';
@@ -15,7 +15,7 @@
 
   let { itineraryId, userId }: { itineraryId: string; userId: string } = $props();
   let draft = $state(''), sending = $state(false), sendError = $state(''), shown = $state(40);
-  const marks = $derived(milestones(liveDay.feed.drinks, liveDay.feed.media, liveDay.stops, todayInTz(liveDay.now)));
+  const marks = $derived(milestones(liveDay.feed.drinks, liveDay.feed.media, liveDay.stops, liveDay.today));
   const all = $derived(chatEntries(liveDay.feed.drinks, liveDay.bulletins, { messages: liveDay.feed.messages, media: liveDay.feed.media, milestones: marks }));
   const entries = $derived(all.slice(-shown));
   const cheers = $derived(reactionSummary(liveDay.feed.reactions, userId));
