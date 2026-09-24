@@ -113,3 +113,5 @@ export type ChatMessage = RecordModel & { itinerary: string; user: string; body:
 export type Reaction = RecordModel & { user: string; target_kind: ReactionTarget; target_id: string; itinerary: string };
 /** One item in the full-screen viewer. `url` is what is shown, `full` the original for download. */
 export type LightboxItem = { url: string; full: string; kind: 'image' | 'video'; caption?: string };
+
+export type CrawlSettings = RecordModel & { current_itinerary: string; expand?: { current_itinerary?: Itinerary } };

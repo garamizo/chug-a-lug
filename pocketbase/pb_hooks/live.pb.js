@@ -1,8 +1,8 @@
 // Live-day guards. Note: top-level consts are not visible inside these callbacks (each one is
 // re-instantiated without the file scope), so everything a hook needs is computed inside it.
 
-// Freight: the client sends the stop its board is showing. Trust it only when that stop really
-// belongs to the locked route; a photo is never lost over a tagging disagreement.
+// Freight: the client sends the stop its board is showing. Trust it only when that stop belongs
+// to the current route; a photo is never lost over a tagging disagreement.
 onRecordCreateRequest((e) => {
   const r = e.record
   const isCrew = !!e.auth && !e.auth.isSuperuser()
@@ -12,8 +12,7 @@ onRecordCreateRequest((e) => {
   if (stopId) {
     try {
       const stop = $app.findRecordById('stops', stopId)
-      const itinerary = $app.findRecordById('itineraries', stop.getString('itinerary'))
-      ok = itinerary.getString('status') === 'locked'
+      ok = stop.getString('itinerary') === require(`${__hooks}/current.js`).currentItineraryId($app)
     } catch (_) {
       ok = false
     }

@@ -1,12 +1,15 @@
 // The live collections' rules against a live PocketBase: Bulletins are the Conductor's alone, acks
 // and drinks belong to whoever wrote them, and everyone can read all of it.
 import { beforeAll, describe, expect, it } from 'vitest';
-import { ADMIN_LOGIN_PASSWORD, del, get, loginToken, patch, post, truncate, PB } from './setup';
+import { ADMIN_LOGIN_PASSWORD, del, get, loginToken, patch, post, superuserToken, truncate, PB } from './setup';
 
 let conductor = '', crew = '', conductorId = '', crewId = '', itineraryId = '', stopId = '';
 
 beforeAll(async () => {
   for (const c of ['broadcast_acks', 'broadcasts', 'drink_entries', 'media']) await truncate(c);
+  // An earlier test file may have left a Conductor selection in `crawl_settings`; this file's media
+  // tagging assumes the fallback (the newest locked route), so clear any stale pick first.
+  await patch('/api/collections/crawl_settings/records/crawlsettings', { current_itinerary: '' }, await superuserToken());
   ({ token: conductor, id: conductorId } = await loginToken('Live Conductor', ADMIN_LOGIN_PASSWORD));
   ({ token: crew, id: crewId } = await loginToken('Live Crew'));
 
