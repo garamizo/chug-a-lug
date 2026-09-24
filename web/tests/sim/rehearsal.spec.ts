@@ -1,6 +1,7 @@
 import { expect, test, devices, type Page } from '@playwright/test';
 import { login } from '../e2e/helpers';
 import { admin } from './setup';
+import { copy } from '../../src/lib/labels';
 async function token(page: Page) {
   const cookie = (await page.context().cookies()).find(c => c.name === 'pb_auth_rehearsal');
   return JSON.parse(decodeURIComponent(cookie!.value)).token;
@@ -164,6 +165,7 @@ test('three sessions rehearse clock, replay, route edits, Tab, Freight and recon
     await crewContext.setOffline(true);
     await expect(crew.getByTestId('simulation-status')).toContainText('Not synchronized');
     await crew.getByTestId('drink-beer').click();
+    await expect(crew.getByRole('alert')).toHaveText(copy.noSignal);
     expect((await pb.collection('drink_entries').getFullList()).length).toBe(1);
     await change(page, { action: 'seek', at: '2026-12-26T18:26:00.000Z' });
     await crewContext.setOffline(false);

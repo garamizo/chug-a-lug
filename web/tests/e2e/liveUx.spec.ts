@@ -1,5 +1,6 @@
 import { expect, test, type Page } from '@playwright/test';
 import { clearLockedCrawls, login, seedLockedCrawl } from './helpers';
+import { copy } from '../../src/lib/labels';
 
 const ADMIN = process.env.ADMIN_PASSWORD ?? 'admin-test-password';
 const CREW = process.env.CREW_PASSWORD ?? 'crew-test-password';
@@ -110,10 +111,42 @@ test('the crew can talk and Cheers each other across phones', async ({ page, bro
   } finally { await context.close(); }
 });
 
+test('a photo shared in chat gets an accessible open label', async ({ page }) => {
+  await liveDay(page, 'E2E Chat Photo Label');
+  await page.getByTestId('freight-input').setInputFiles({ name: 'bar.gif', mimeType: 'image/gif', buffer: GIF });
+  await expect(page.getByTestId('crew-chat').getByRole('button', { name: copy.openFreightPhoto })).toBeVisible();
+});
+
 test('the crew chat celebrates the first beer', async ({ page }) => {
   await liveDay(page, 'E2E Milestone');
   await page.getByTestId('drink-beer').click();
   await expect(page.getByTestId('crew-chat').locator('article.milestone')).toContainText('First of the day: Beer · E2E Milestone');
+});
+
+test('a fast double tap on close never pops past Live', async ({ page }) => {
+  await liveDay(page, 'E2E Double Close');
+  await page.getByTestId('freight-input').setInputFiles({ name: 'bar.gif', mimeType: 'image/gif', buffer: GIF });
+  await page.getByTestId('freight-open-0').click();
+  await expect(page.getByTestId('lightbox')).toBeVisible();
+  await page.getByTestId('lightbox-close').dblclick();
+  await expect(page.getByTestId('lightbox')).toBeHidden();
+  await expect(page).toHaveURL(/\/live$/);
+  await expect(page.getByTestId('departure-board')).toBeVisible();
+
+  await page.getByTestId('current-stop').click();
+  await expect(page.getByTestId('stop-sheet')).toBeVisible();
+  await page.getByTestId('sheet-close').dblclick();
+  await expect(page.getByTestId('stop-sheet')).toBeHidden();
+  await expect(page).toHaveURL(/\/live$/);
+  await expect(page.getByTestId('departure-board')).toBeVisible();
+});
+
+test('the Conductor reaches the locked-route editor from Live, not a direct link to the planner', async ({ page }) => {
+  const ids = await liveDay(page, 'E2E Route Edit');
+  await page.getByTestId('tab-route').click();
+  await page.getByTestId('edit-route').click();
+  await expect(page).toHaveURL(new RegExp(`/plan/${ids.itineraryId}/edit$`));
+  await expect(page.getByTestId('live-route-warning')).toBeVisible();
 });
 
 test('the leaderboard line puts me on the podium and opens the Crew Board', async ({ page }) => {

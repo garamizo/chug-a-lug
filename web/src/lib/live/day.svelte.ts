@@ -146,10 +146,10 @@ export class LiveDay {
     const byStop = pb.filter('stop.itinerary = {:id}', { id }), byRoute = pb.filter('itinerary = {:id}', { id });
     try {
       const [drinks, media, messages, reactions] = await Promise.all([
-        pb.collection('drink_entries').getFullList<DrinkEntry>({ filter: byStop, expand: 'user,stop', sort: 'at,action_order,created,id' }),
-        pb.collection('media').getFullList<Media>({ filter: byStop, expand: 'user', sort: 'at,created,id' }),
-        pb.collection('chat_messages').getFullList<ChatMessage>({ filter: byRoute, expand: 'user', sort: 'at,created,id' }),
-        pb.collection('reactions').getFullList<Reaction>({ filter: byRoute })
+        pb.collection('drink_entries').getFullList<DrinkEntry>({ filter: byStop, expand: 'user,stop', sort: 'at,action_order,created,id', cache: 'no-store' }),
+        pb.collection('media').getFullList<Media>({ filter: byStop, expand: 'user', sort: 'at,created,id', cache: 'no-store' }),
+        pb.collection('chat_messages').getFullList<ChatMessage>({ filter: byRoute, expand: 'user', sort: 'at,created,id', cache: 'no-store' }),
+        pb.collection('reactions').getFullList<Reaction>({ filter: byRoute, cache: 'no-store' })
       ]);
       if (request !== this.feedRead || id !== this.itinerary?.id) return;
       this.feed = { drinks, media, messages, reactions };

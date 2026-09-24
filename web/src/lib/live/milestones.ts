@@ -55,7 +55,7 @@ export function milestones(drinks: DrinkEntry[], media: Media[], stops: Pick<Sto
   for (const m of dayMedia) {
     if (firstPhoto.has(m.stop)) continue;
     firstPhoto.add(m.stop);
-    out.push(note(`photo:${m.stop}`, { at: m.at || m.created, created: m.created, order: 0 },
+    out.push(note(`photo:${m.stop}`, { at: m.at || m.created, created: m.created, order: 0.5 },
       `📸 ${copy.milestonePhoto} ${names.get(m.stop) ?? ''} · ${m.expand?.user?.name || copy.chatCrew}`));
   }
   return out;

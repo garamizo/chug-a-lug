@@ -85,7 +85,8 @@
         {:else if entry.kind === 'message' || entry.kind === 'milestone'}<p>{entry.body}</p>
         {:else if entry.kind === 'photo' && entry.media}
           <p>{copy.chatPhoto}</p>
-          <button type="button" class="photo" onclick={() => openLightbox(viewer, photos.findIndex((p) => p.id === entry.id))}>
+          <button type="button" class="photo" aria-label={entry.media.kind === 'image' ? copy.openFreightPhoto : copy.openFreightVideo}
+            onclick={() => openLightbox(viewer, photos.findIndex((p) => p.id === entry.id))}>
             {#if entry.media.kind === 'image'}<img src={pb.files.getURL(entry.media, entry.media.file, { thumb: '400x300' })} alt="" width="160" height="120" loading="lazy" />{:else}<span class="video">▶</span>{/if}
           </button>
         {:else}<p><span aria-hidden="true">{drinkIcons[entry.kind] ?? '☕'}</span> {copy.chatAdded} {(copy as Record<string, string>)[`drink_${entry.kind}`] ?? copy.chatDrink}{#if entry.stop} · {entry.stop}{/if}</p>{/if}
@@ -125,7 +126,10 @@
   .photo { width: auto; min-height: 0; margin: 6px 0 0; padding: 0; background: none; border: 0; }
   .photo img { border-radius: 10px; object-fit: cover; display: block; }
   .video { display: grid; place-items: center; width: 160px; height: 120px; background: #222; border-radius: 10px; color: #fff; }
-  .composer { display: flex; gap: 8px; margin: 14px 0 0; position: sticky; bottom: calc(64px + env(safe-area-inset-bottom)); background: #111; padding-block: 8px; }
+  .composer { display: flex; gap: 8px; margin: 14px 0 0; position: sticky; bottom: 0; background: #111; padding-block: 8px; }
+  /* The TabBar only mounts on the event day (see (app)/+layout.svelte); without it there is nothing
+     to clear, so the composer sits flush with the viewport bottom instead of leaving a phantom gap. */
+  :global(body:has(.tabbar)) .composer { bottom: calc(64px + env(safe-area-inset-bottom)); }
   .composer input { margin: 0; flex: 1; }
   .composer button { width: auto; margin: 0; }
   .more { width: auto; margin: 8px 0; }

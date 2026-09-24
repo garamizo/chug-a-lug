@@ -105,6 +105,37 @@ test('a failed Undo keeps its button so it can be retried', async ({ page }) => 
   await expect(page.getByTestId('tab-toast')).toBeHidden();
 });
 
+test('a 404 on Undo (already removed elsewhere) is treated as done, not a failure', async ({ page }) => {
+  await tabDay(page, 'E2E Tab Undo Already Gone');
+  await page.getByTestId('drink-beer').click();
+  await expect(page.getByTestId('tab-toast')).toBeVisible();
+  await page.route('**/api/collections/drink_entries/records/**', r => r.request().method() === 'DELETE'
+    ? r.fulfill({ status: 404, contentType: 'application/json', body: JSON.stringify({ code: 404, message: 'not found', data: {} }) })
+    : r.continue());
+  await page.getByTestId('tab-undo').click();
+  await expect(page.getByTestId('tab-toast')).toBeHidden();
+  await expect(page.getByRole('alert')).toHaveCount(0);
+  await expect(page.getByTestId('drink-beer').locator('.count')).toHaveText('0');
+});
+
+test('a repeat Undo tap while one is in flight is ignored, not sent twice', async ({ page }) => {
+  await tabDay(page, 'E2E Tab Undo Inflight');
+  await page.getByTestId('drink-beer').click();
+  await expect(page.getByTestId('tab-toast')).toBeVisible();
+  let deletes = 0;
+  await page.route('**/api/collections/drink_entries/records/**', async r => {
+    if (r.request().method() !== 'DELETE') return r.continue();
+    deletes++;
+    await new Promise((res) => setTimeout(res, 500));
+    await r.continue();
+  });
+  await page.getByTestId('tab-undo').click();
+  await page.getByTestId('tab-undo').click();
+  await page.waitForTimeout(700);
+  expect(deletes).toBe(1);
+  await expect(page.getByTestId('drink-beer').locator('.count')).toHaveText('0');
+});
+
 test('after the toast is gone, your newest drink here can still be undone', async ({ page }) => {
   await tabDay(page, 'E2E Tab Undo Last');
   await page.getByTestId('drink-food').click();

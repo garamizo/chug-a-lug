@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { milestones } from '../../src/lib/live/milestones';
+import { chatEntries } from '../../src/lib/live/chat';
 import { copy } from '../../src/lib/labels';
 import type { DrinkEntry, Media } from '../../src/lib/types';
 
@@ -45,6 +46,21 @@ describe('milestones', () => {
     const rows = milestones([drink('a', 'beer', 1)].map((d) => ({ ...d, at: '2026-12-25T20:00:00Z' })), media, [{ id: 's1', name: 'Tap' }, { id: 's2', name: 'Hall' }], DATE);
     expect(ids(rows)).toEqual(['milestone:photo:s1']);
     expect(rows[0].body).toContain('Tap');
+  });
+
+  it('places the photo milestone right after its own photo once merged through chatEntries', () => {
+    // Regression: the photo milestone shares its photo's `at`/`created`, so only `order` breaks
+    // the tie. Both `id.localeCompare` ("milestone:…" < "photo:…") would otherwise put it first.
+    const media = [{
+      id: 'p1', stop: 's1', at: '2026-12-26T20:10:00Z', created: '2026-12-26T20:10:00Z',
+      user: 'a', kind: 'image', file: 'x', expand: { user: { name: 'A' } }
+    }] as unknown as Media[];
+    const marks = milestones([], media, [{ id: 's1', name: 'Tap' }], DATE);
+    const entries = chatEntries([], [], { media, milestones: marks });
+    const photoIndex = entries.findIndex((e) => e.kind === 'photo');
+    const milestoneIndex = entries.findIndex((e) => e.kind === 'milestone');
+    expect(photoIndex).toBeGreaterThanOrEqual(0);
+    expect(milestoneIndex).toBe(photoIndex + 1);
   });
 
   it('gives the same answer every time and drops a milestone when its drink is undone', () => {

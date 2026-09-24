@@ -22,10 +22,12 @@
   <ItineraryView itinerary={liveDay.itinerary} stops={liveDay.stops} legs={liveDay.legs} editable={false} canManage={false} actions={recordActions(liveDay.itinerary.id, () => {})}
     onopenstop={liveDay.isToday ? openStop : undefined} />
   {#if liveDay.itinerary.locked_at}<p class="meta" data-testid="locked-on">{copy.lockedOn} {fmtDateTime(liveDay.itinerary.locked_at)}</p>{/if}
+  {#if $auth.user?.is_admin}<p><a class="button" href="/plan/{liveDay.itinerary.id}/edit" data-testid="edit-route">{copy.editDraft}</a></p>{/if}
   {#if liveDay.isToday}<StopSheet stops={liveDay.stops} media={liveDay.feed.media} eventDate={liveDay.itinerary.event_date} itineraryId={liveDay.itinerary.id} isAdmin={!!$auth.user?.is_admin} />{/if}
 {/if}
 
 <style>
   .stale { margin: 12px 20px; padding: 10px 12px; border: 1px solid #555; border-radius: 9px; font-size: 13px; color: #cfcfcf; }
   .meta { color: #aaa; font-size: 14px; margin-top: 24px; }
+  .button { display: block; text-align: center; background: transparent; color: #ffce5c; border: 1px solid #555; font-weight: 700; padding: 12px; border-radius: 10px; text-decoration: none; min-height: 48px; }
 </style>

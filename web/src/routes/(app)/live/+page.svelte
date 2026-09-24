@@ -2,6 +2,8 @@
   // The live day: where the crawl is, the run it has to catch, and what Metra is saying about it.
   // The shared `liveDay` owns the data so a Tab tap reaches every screen through the same tally.
   import compressionWorkerUrl from 'browser-image-compression/dist/browser-image-compression.js?url';
+  import { ClientResponseError } from 'pocketbase';
+  import { SvelteSet } from 'svelte/reactivity';
   import { clientClock } from '$lib/sim/clock.svelte';
   import { goto } from '$app/navigation';
   import { copy, drinkIcons } from '$lib/labels';
@@ -79,13 +81,20 @@
     finally { pending = pending.filter((p) => p.id !== draft.id); }
   }
 
+  // Mirrors CrewChat's reaction guard: a target already being undone ignores a repeat tap outright,
+  // and a 404 on delete means another tab already undid it — the reload below shows the true state.
+  const undoing = new SvelteSet<string>();
+
   async function undoDrink(target: { id: string; kind: DrinkKind }) {
+    if (undoing.has(target.id)) return;
+    undoing.add(target.id);
     error = '';
     clearTimeout(toastTimer);
     if (toast?.id === target.id) toast = { ...toast, failed: false };
     try {
       await clientClock.ready();
-      await pb.collection('drink_entries').delete(target.id);
+      try { await pb.collection('drink_entries').delete(target.id); }
+      catch (err) { if (!(err instanceof ClientResponseError && err.status === 404)) throw err; }
       liveDay.dropDrink(target.id);
       if (toast?.id === target.id) toast = null;
       void liveDay.loadFeed();
@@ -93,6 +102,8 @@
       error = copy.noSignal;
       // Keep the button: the entry is still saved and the person still wants it gone.
       if (toast?.id === target.id) toast = { ...toast, failed: true };
+    } finally {
+      undoing.delete(target.id);
     }
   }
 

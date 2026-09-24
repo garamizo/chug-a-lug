@@ -14,7 +14,8 @@
       locked = list.items[0] ?? null;
     } catch { locked = null; }
   });
-  // On the day itself the app is the Departure Board; the planner is a tab away.
+  // On the day itself the app is the Departure Board; the planner is reached through the menu, not
+  // a tab — the event-day TabBar links Live, The Route and the Crew Board only.
   $effect(() => { if (liveDay.isToday) void goto('/live', { replaceState: true }); });
 </script>
 

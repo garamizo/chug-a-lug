@@ -24,8 +24,8 @@
     <div class="track" bind:this={track}>
       {#each box.items as item, i (i)}
         <figure>
-          {#if item.kind === 'video'}<!-- svelte-ignore a11y_media_has_caption --><video src={item.full} controls playsinline preload="metadata"></video>
-          {:else}<img src={item.url} alt="" />{/if}
+          {#if item.kind === 'video'}<!-- svelte-ignore a11y_media_has_caption --><video src={item.full} controls playsinline preload={i === box.index ? 'metadata' : 'none'}></video>
+          {:else}<img src={item.url} alt="" loading="lazy" decoding="async" />{/if}
           <figcaption>{#if item.caption}{item.caption} · {/if}<a href={item.full} target="_blank" rel="noopener" download>{copy.downloadOriginal}</a></figcaption>
         </figure>
       {/each}

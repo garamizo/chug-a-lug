@@ -24,6 +24,9 @@
     <button type="button" class="item" onclick={() => go('/route')}>
       <span class="label">{copy.theRoute}</span>
     </button>
+    <button type="button" class="item" onclick={() => go('/plan')} data-testid="menu-plan">
+      <span class="label">{labels.planningPhase}</span>
+    </button>
     {#if $auth.user?.is_admin}
       {#if clientClock.enabled}<button type="button" class="item" onclick={() => go('/sim')}>{labels.simulationMode}</button>{/if}
       <button type="button" class="item" onclick={() => { onclose(); oncompose(); }} data-testid="menu-bulletin">

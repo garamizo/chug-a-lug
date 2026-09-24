@@ -129,10 +129,14 @@ describe('live feed', () => {
     };
     const order = ['drinks', 'media', 'messages', 'reactions'];
     let call = 0;
-    mocks.getFullList.mockImplementation(async () => rows[order[call++]]);
+    const opts: unknown[] = [];
+    mocks.getFullList.mockImplementation(async (o: unknown) => { opts.push(o); return rows[order[call++]]; });
     Object.defineProperty(day, 'here', { get: () => ({ stop: { id: 'a' } }) });
     await day.loadFeed();
     expect(mocks.filter.mock.calls.map(c => c[0])).toEqual(expect.arrayContaining(['stop.itinerary = {:id}', 'itinerary = {:id}']));
+    // A stale Workbox NetworkFirst read must never undo a confirmed Tab tap or clear feedError.
+    expect(opts).toHaveLength(4);
+    for (const o of opts) expect(o).toMatchObject({ cache: 'no-store' });
     expect(day.feed.messages).toHaveLength(1);
     expect(day.drinks.map(d => d.id)).toEqual(['d1']);
     expect(day.media.map(m => m.id)).toEqual(['m2', 'm1']);

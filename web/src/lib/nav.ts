@@ -20,10 +20,27 @@ export const sheetStopId = (): string | null =>
   'stop' in page.state ? (page.state.stop ?? null) : page.url.searchParams.get('stop');
 export function openStop(id: string) { pushState(withStop(id), { ...page.state, stop: id, sheet: true }); }
 export function pageStop(id: string) { replaceState(withStop(id), { ...page.state, stop: id }); }
+
+/**
+ * `page.state` only updates once the browser has actually processed the `popstate` from a prior
+ * `history.back()` — not the instant it's called — so a fast double tap on a close control calls
+ * `history.back()` twice before the first one has taken effect, popping two entries instead of one
+ * and leaving the app somewhere behind the screen it meant to close. This guard makes every
+ * `history.back()` in this module a no-op while one is already pending, clearing itself on the
+ * next `popstate` regardless of which close triggered it.
+ */
+let backPending = false;
+function guardedBack() {
+  if (backPending) return;
+  backPending = true;
+  if (typeof window !== 'undefined') window.addEventListener('popstate', () => { backPending = false; }, { once: true });
+  history.back();
+}
+
 /** A pushed sheet goes back; a deep-linked one has nothing behind it in this app, so it is replaced. */
 export function closeStop() {
-  if (page.state.sheet) history.back();
+  if (page.state.sheet) guardedBack();
   else replaceState(withStop(null), { ...page.state, stop: null, sheet: undefined });
 }
 export function openLightbox(items: LightboxItem[], index: number) { pushState('', { ...page.state, lightbox: { items, index } }); }
-export function closeLightbox() { if (page.state.lightbox) history.back(); }
+export function closeLightbox() { if (page.state.lightbox) guardedBack(); }
