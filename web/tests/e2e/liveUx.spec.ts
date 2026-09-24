@@ -120,6 +120,7 @@ test('the leaderboard line puts me on the podium and opens the Crew Board', asyn
   await liveDay(page, 'E2E Podium');
   await page.getByTestId('drink-beer').click();
   await expect(page.getByTestId('leaderboard')).toContainText('you 1');
+  await expect(page.getByRole('link', { name: /Leaderboard: .*you 1/ })).toBeVisible();
   await page.getByTestId('leaderboard').click();
   await expect(page).toHaveURL(/\/crew$/);
 });

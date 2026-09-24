@@ -5,8 +5,9 @@
 </script>
 
 {#if leaders.length}
-  <a class="podium" href="/crew" aria-label={copy.leaderboard} data-testid="leaderboard">
+  <a class="podium" href="/crew" data-testid="leaderboard">
     <span aria-hidden="true">🏆</span>
+    <span class="sr">{copy.leaderboard}:</span>
     <span class="names">{#each leaders as l, i (l.userId)}{#if i} · {/if}<span class:me={l.me}>{l.me ? copy.you : l.name} {l.total}</span>{/each}</span>
     <span aria-hidden="true">→</span>
   </a>
@@ -17,4 +18,5 @@
     background: #1b1b1b; border: 1px solid #333; color: #ddd; text-decoration: none; font-weight: 650; font-size: 14px; }
   .names { flex-grow: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .me { color: #ffce5c; }
+  .sr { position: absolute; left: -9999px; }
 </style>
