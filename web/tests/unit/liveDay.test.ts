@@ -336,3 +336,54 @@ it('asks for trains, the feed and Bulletins once when the first route load enter
     for (const load of loads) expect(load).toHaveBeenCalledOnce();
   } finally { stop(); }
 });
+
+describe('alerts stay empty on a practice day', () => {
+  it('drops alerts fetched before the route turned out to be a practice day', async () => {
+    let answer!: (v: unknown) => void;
+    mocks.fetchAlerts.mockImplementation(() => new Promise((r) => { answer = r; }));
+    const day = new LiveDay();
+    day.realNow = new Date('2026-09-22T17:30:00Z'); day.syncPlan();
+    const early = day.loadAlerts();                       // no route yet: not a practice day
+    day.itinerary = route; day.syncPlan();
+    answer({ alerts: [{ id: 'a1' }] }); await early;
+    expect(day.alerts).toEqual([]);
+  });
+  it('clears event-day alerts when the route becomes a practice route', async () => {
+    mocks.resolve.mockResolvedValue(route);
+    mocks.getFullList.mockResolvedValue([]);
+    const day = new LiveDay();
+    day.realNow = new Date('2026-09-22T17:30:00Z');
+    day.itinerary = { ...route, id: 'today', event_date: '2026-09-22' }; day.syncPlan();
+    day.alerts = [{ id: 'a1' }] as never;
+    await day.loadRoute();
+    expect(day.practice).toBe(true);
+    expect(day.alerts).toEqual([]);
+  });
+  it('starts on a practice route with no alerts even though the feed has some', async () => {
+    mocks.resolve.mockResolvedValue(route);
+    mocks.getFullList.mockResolvedValue([]);
+    mocks.fetchDay.mockRejectedValue(new Error('offline'));
+    mocks.fetchAlerts.mockResolvedValue({ alerts: [{ id: 'a1' }] });
+    vi.setSystemTime(new Date('2026-09-22T17:30:00Z'));
+    const day = new LiveDay();
+    const stop = day.start();
+    try {
+      await vi.advanceTimersByTimeAsync(0);
+      expect(day.practice).toBe(true);
+      expect(day.alerts).toEqual([]);
+    } finally { stop(); }
+  });
+});
+
+describe('the Conductor’s position belongs to its route', () => {
+  it('forgets the old route’s anchor on a switch, but keeps it across midnight', () => {
+    mocks.getList.mockImplementation(() => new Promise(() => {}));
+    const day = new LiveDay();
+    day.itinerary = route; day.serverOffset = 0; day.realNow = new Date('2026-09-25T04:58:00Z'); day.enterScope(false);
+    day.anchor = { stopId: 's1', at: '2026-09-25T04:00:00Z' };
+    day.realNow = new Date('2026-09-25T05:01:00Z'); day.enterScope(false);
+    expect(day.anchor).toEqual({ stopId: 's1', at: '2026-09-25T04:00:00Z' });
+    day.itinerary = { ...route, id: 'r2' }; day.enterScope(false);
+    expect(day.anchor).toBeNull();
+  });
+});

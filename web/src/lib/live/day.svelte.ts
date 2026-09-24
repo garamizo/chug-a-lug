@@ -102,6 +102,7 @@ export class LiveDay {
   // When the scope changes the old rows are wrong at once, whether or not a reload succeeds, so a
   // scope change clears first and reloads second, and every read drops an answer from an earlier scope.
   private scopeKey = $state('');
+  private scopeRoute = '';
   /** Scope entries that reloaded everything: a caller about to reload the same things skips it. */
   private scopeReloads = 0;
   private get currentScope() { return `${this.itinerary?.id ?? ''}|${this.today}`; }
@@ -112,11 +113,19 @@ export class LiveDay {
   /** Route or day changed: nothing on screen belongs to the new scope, so empty it now. */
   enterScope(reload = true) {
     this.scopeKey = this.currentScope;
+    // The Conductor's position belongs to a route, not a day: it survives midnight, not a switch.
+    const route = this.itinerary?.id ?? '';
+    if (route !== this.scopeRoute) { this.anchorRead++; this.anchor = null; this.scopeRoute = route; }
     if (reload && this.itinerary) this.scopeReloads++;
     this.feedRead++; this.bulletinRead++; this.trainRead++;
     this.feed = { drinks: [], media: [], messages: [], reactions: [] };
     this.bulletins = []; this.ackedIds = []; this.acking = []; this.trips = [];
-    if (reload && this.itinerary) { void this.loadAnchor(); void this.loadFeed(); void this.loadBulletins(); void this.loadTrains(); }
+    // A practice day shows no alerts, whatever an earlier event-day route or read left behind.
+    if (this.practice) { this.alertRead++; this.alerts = []; }
+    if (reload && this.itinerary) {
+      void this.loadAnchor(); void this.loadFeed(); void this.loadBulletins(); void this.loadTrains();
+      if (!this.practice) void this.loadAlerts();
+    }
   }
   async checkScope() { if (this.currentScope !== this.scopeKey) this.enterScope(); }
 
@@ -268,7 +277,8 @@ export class LiveDay {
     const request = ++this.alertRead, revision = clientClock.revision;
     // Realtime alerts belong to today, not to the route's date: a practice day shows none.
     if (this.practice) { this.alerts = []; return; }
-    try { const res = await fetchAlerts(); if (request === this.alertRead && revision === clientClock.revision) this.alerts = res.alerts; } catch { if (request === this.alertRead && revision === clientClock.revision) this.alerts = []; }
+    // The route can turn out to be a practice one while this read is in flight.
+    try { const res = await fetchAlerts(); if (request === this.alertRead && revision === clientClock.revision) this.alerts = this.practice ? [] : res.alerts; } catch { if (request === this.alertRead && revision === clientClock.revision) this.alerts = []; }
   }
 
   /** Starts the pollers and subscriptions. Returns the teardown; safe to call once per layout.
@@ -286,8 +296,7 @@ export class LiveDay {
       const reloads = this.scopeReloads;
       void this.loadRoute().then(() => {
         if (stopped) return;
-        void this.loadAlerts();
-        if (this.scopeReloads === reloads) { void this.loadBulletins(); void this.loadTrains(); void this.loadFeed(); }
+        if (this.scopeReloads === reloads) { void this.loadBulletins(); void this.loadTrains(); void this.loadAlerts(); void this.loadFeed(); }
       }).catch(() => {});
     });
     const refreshRoute = () => void this.loadRoute()
