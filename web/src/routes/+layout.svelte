@@ -14,7 +14,7 @@
   // Kept apart from the Bulletin count so a failed alerts read only zeroes its own half of the
   // dot: `unread` below stays live off `liveDay`'s own state either way.
   let alertsUnread = $state(0);
-  const unread = $derived(alertsUnread + liveDay.bulletins.filter((b) => !liveDay.ackedIds.includes(b.id)).length);
+  const unread = $derived(alertsUnread + liveDay.bulletins.filter((b) => !liveDay.isAcked(b.id)).length);
 
   // The dot is best-effort: a failed alerts read simply leaves that half off.
   $effect(() => {
@@ -58,7 +58,6 @@
 </header>
 <AppMenu open={ui.menuOpen} {unread} onclose={() => (ui.menuOpen = false)} oncompose={() => (liveDay.composing = true)} />
 <main class="col">{@render children()}</main>
-<footer class="col">{copy.footer}</footer>
 
 <style>
   :global(*) { box-sizing: border-box; }
@@ -78,7 +77,6 @@
   .dot { position: absolute; top: 5px; right: 5px; width: 9px; height: 9px; border-radius: 50%;
     background: #ffb400; border: 2px solid #111; }
   main { padding-block: 24px 0; }
-  footer { color: #aaa; font-size: 13px; padding-block: 44px 24px; }
   :global(h1) { font-size: 30px; line-height: 1.2; }
   :global(p) { line-height: 1.6; color: #bbb; }
   :global(form) { margin: 24px 0; }

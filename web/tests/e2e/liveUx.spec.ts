@@ -98,6 +98,10 @@ test('the route strip shows where the crew is and opens any stop', async ({ page
   await liveDay(page, 'E2E Route Strip');
   await expect(page.getByTestId('strip-stop-0')).toHaveAttribute('aria-current', 'step');
   await expect(page.getByTestId('strip-stop-1')).not.toHaveAttribute('aria-current', 'step');
+  // The seeded crawl rides a train to its second bar: track, not a walking line, and a beer for a bar.
+  await expect(page.getByTestId('strip-stop-1')).toHaveAttribute('data-arrive', 'train');
+  await expect(page.getByTestId('strip-stop-0')).toHaveAttribute('data-leave', 'train');
+  await expect(page.getByTestId('strip-stop-1').locator('.dot')).toHaveText('🍺');
   await page.getByTestId('strip-stop-1').click();
   await expect(page.getByTestId('sheet-name')).toHaveText('Berwyn Beer Hall');
 });

@@ -133,3 +133,43 @@ test('retrying a lost save response preserves the edited Bulletin without postin
   await expect(page.getByTestId('bulletin-list').locator('article')).toHaveCount(1);
   await expect(page.getByTestId('bulletin-list')).toContainText('Wait under the clock.');
 });
+
+async function pinBulletin(page: import('@playwright/test').Page, name: string) {
+  await login(page, name, ADMIN);
+  await clearLockedCrawls();
+  await seedLockedCrawl({
+    ownerName: name, eventDate: DATE, startTime: '12:00',
+    departAt: '2026-12-26T20:34:00.000Z', arriveAt: '2026-12-26T20:49:00.000Z'
+  });
+  await page.goto('/plan');
+  await page.getByTestId('menu').click();
+  await page.getByTestId('menu-bulletin').click();
+  await page.getByTestId('bulletin-body').fill('Last call at the Whistle Stop.');
+  await page.getByTestId('bulletin-send').click();
+  await expect(page.getByTestId('pinned-bulletin')).toBeVisible();
+}
+
+test('Got it closes the Bulletin at once, without waiting for the server', async ({ page }) => {
+  await pinBulletin(page, 'E2E Snappy Ack');
+  let release!: () => void;
+  const held = new Promise<void>((r) => (release = r));
+  await page.route('**/api/collections/broadcast_acks/records', async (route) => {
+    if (route.request().method() !== 'POST') return route.fallback();
+    await held;
+    await route.fallback();
+  });
+  await page.getByTestId('bulletin-ack').click();
+  await expect(page.getByTestId('pinned-bulletin')).toBeHidden({ timeout: 500 });
+  release();
+  await page.reload();
+  await expect(page.getByTestId('pinned-bulletin')).toBeHidden();
+});
+
+test('a Got it that cannot be saved puts the Bulletin back', async ({ page }) => {
+  await pinBulletin(page, 'E2E Lost Ack');
+  await page.route('**/api/collections/broadcast_acks/records', (route) =>
+    route.request().method() === 'POST' ? route.abort('failed') : route.fallback());
+  await page.getByTestId('bulletin-ack').click();
+  await expect(page.getByTestId('pinned-bulletin')).toBeVisible();
+  await expect(page.getByRole('alert')).toBeVisible();
+});

@@ -55,13 +55,8 @@
   async function ack(broadcastId: string) {
     if (!$auth.user) return;
     error = '';
-    try {
-      await clientClock.ready();
-      await pb.collection('broadcast_acks').create({ broadcast: broadcastId, user: $auth.user.id });
-    } catch { error = copy.noSignal; }
-    await liveDay.loadBulletins();
-    // Another tab may already have acknowledged it; a successful refresh settles that case.
-    if (liveDay.ackedIds.includes(broadcastId)) error = '';
+    // liveDay hides it immediately; only a Got it that could not be saved brings it back.
+    if (!(await liveDay.ack(broadcastId, $auth.user.id))) error = copy.noSignal;
   }
 
   async function postBulletin(body: string) {

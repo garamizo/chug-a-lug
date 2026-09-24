@@ -20,6 +20,8 @@ export class LiveDay {
   alerts = $state<Alert[]>([]);
   bulletins = $state<Broadcast[]>([]);
   ackedIds = $state<string[]>([]);
+  /** Got it taps still being saved: hidden now, so a reload racing the save cannot bring one back. */
+  acking = $state<string[]>([]);
   /** Everything the crew did on this route today: the chat, milestones, leaderboard and Tab read it. */
   feed = $state<{ drinks: DrinkEntry[]; media: Media[]; messages: ChatMessage[]; reactions: Reaction[] }>({ drinks: [], media: [], messages: [], reactions: [] });
   feedError = $state(false);
@@ -49,7 +51,23 @@ export class LiveDay {
   }
   /** The newest Bulletin this browser's user has not acknowledged. */
   get pinnedBulletin(): Broadcast | null {
-    return this.bulletins.find((b) => !this.ackedIds.includes(b.id)) ?? null;
+    return this.bulletins.find((b) => !this.isAcked(b.id)) ?? null;
+  }
+  isAcked(id: string): boolean {
+    return this.ackedIds.includes(id) || this.acking.includes(id);
+  }
+  /** Hides the Bulletin at once and saves the Got it behind it. False if it had to come back. */
+  async ack(broadcastId: string, userId: string): Promise<boolean> {
+    if (this.acking.includes(broadcastId)) return true;
+    this.acking = [...this.acking, broadcastId];
+    try {
+      await clientClock.ready();
+      await pb.collection('broadcast_acks').create({ broadcast: broadcastId, user: userId });
+      this.ackedIds = [...this.ackedIds, broadcastId];
+    } catch { /* the refresh below tells a lost save from one another tab already made */ }
+    await this.loadBulletins();
+    this.acking = this.acking.filter((id) => id !== broadcastId);
+    return this.ackedIds.includes(broadcastId);
   }
   /** The Tab at the stop the crawl is in. */
   get drinks(): DrinkEntry[] {
@@ -68,7 +86,7 @@ export class LiveDay {
     const request = ++this.routeRead, runId = clientClock.runId;
     if (clientClock.enabled && runId && this.routeRun !== runId) {
       this.itinerary = null; this.stops = []; this.legs = []; this.anchor = null;
-      this.bulletins = []; this.ackedIds = []; this.feed = { drinks: [], media: [], messages: [], reactions: [] };
+      this.bulletins = []; this.ackedIds = []; this.acking = []; this.feed = { drinks: [], media: [], messages: [], reactions: [] };
       this.fromMirror = false; this.mirrorSavedAt = null; this.routeRun = runId;
       await scopeMirror(runId);
     }

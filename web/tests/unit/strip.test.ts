@@ -21,3 +21,9 @@ it('shows nothing done before the crawl and everything done after it', () => {
 it('uses the start time for the first stop and leg arrivals for the rest', () => {
   expect(stripStops(stops, legs, null, start).map((s) => s.arriveAt)).toEqual(['2026-12-26T18:00:00.000Z', '2026-12-26T20:00:00Z', '2026-12-26T22:00:00Z']);
 });
+it('tags each stop with how the crew arrives and leaves: on foot or by train', () => {
+  const kinds = [{ from_stop: 'a', to_stop: 'b', kind: 'train' }, { from_stop: 'b', to_stop: 'c', kind: 'impossible' }] as Leg[];
+  expect(stripStops(stops, kinds, null, start).map((s) => [s.stop.id, s.arriveBy, s.leaveBy])).toEqual([
+    ['a', null, 'train'], ['b', 'train', 'walk'], ['c', 'walk', null]
+  ]);
+});

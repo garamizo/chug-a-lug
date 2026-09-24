@@ -97,7 +97,6 @@ export const copy = {
   homeIntro: 'You’re ready for the ride. Planning, live updates, and the album will arrive next.',
   notYou: 'Not you? Log out and enter your own name.',
   logout: 'Log out',
-  footer: 'Family, friends, and the next train.',
   plannerTeaser: 'Propose stops, cheer the good ones, lock the winner.',
   plannerIntro: 'Anyone can start a draft and add stops. The Conductor runs the vote and locks The Route.',
   drafts: 'Drafts',
@@ -379,6 +378,8 @@ export const recordingCopy = {
   generated: 'Deterministic rehearsal recording generated.',
 } as const;
 
+/** Route strip marks by venue kind; an `other` stop gets a plain dot. */
+export const venueIcons: Record<string, string> = { bar: '🍺', restaurant: '🍽️' };
 export const drinkIcons: Record<string, string> = { shot: '🥃', cocktail: '🍸', beer: '🍺', water: '🧃', food: '🍽️' };
 
 export const rehearsalBulletins = [
