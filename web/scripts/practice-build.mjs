@@ -5,7 +5,7 @@
 // supply an in-memory fake. Nothing is visible to users before step 5 (locking).
 /**
  * @typedef {{
- *   list: (collection: string, predicate: (row: Record<string, any>) => boolean) => Promise<Record<string, any>[]>,
+ *   list: (collection: string, predicate: (row: Record<string, any>) => boolean, filter?: string) => Promise<Record<string, any>[]>,
  *   create: (collection: string, body: Record<string, any>) => Promise<Record<string, any>>,
  *   update: (collection: string, id: string, body: Record<string, any>) => Promise<unknown>,
  *   remove: (collection: string, id: string) => Promise<unknown>,
@@ -19,13 +19,30 @@
 
 export class CannedRouteError extends Error {}
 
+// Only these land on the `stops` collection; everything else on a stop object (rating, reviews,
+// photos, maps_url, ...) is place data and goes to `places` instead, below.
+const STOP_FIELDS = ['name', 'kind', 'station_id', 'station_name', 'place_id', 'osm_id', 'address',
+  'lat', 'lon', 'hours', 'phone', 'website', 'confirmed_open', 'dwell_min', 'walk_min', 'notes',
+  'meet_point', 'direction'];
+
+/** @param {Record<string, any>} obj @param {string[]} keys */
+function pick(obj, keys) {
+  /** @type {Record<string, any>} */
+  const out = {};
+  for (const k of keys) if (obj[k] !== undefined) out[k] = obj[k];
+  return out;
+}
+
+/** A PocketBase filter clause for an exact string match, quotes escaped. @param {string} field @param {string} value */
+function eq(field, value) { return `${field} = "${String(value).replace(/"/g, '\\"')}"`; }
+
 /**
  * @param {CannedRouteApi} api @param {string} itineraryId @param {number} expected @param {number} timeoutMs @param {number} pollMs
  */
 async function waitForLegs(api, itineraryId, expected, timeoutMs, pollMs) {
   const deadline = Date.now() + timeoutMs;
   for (;;) {
-    const legs = await api.list('legs', (l) => l.itinerary === itineraryId);
+    const legs = await api.list('legs', (l) => l.itinerary === itineraryId, eq('itinerary', itineraryId));
     if (legs.length >= expected) return legs;
     if (Date.now() >= deadline) {
       throw new CannedRouteError(`The planner timed out waiting for the recompute; the draft ${itineraryId} is left for inspection.`);
@@ -43,7 +60,7 @@ export async function buildCannedRoute(api, stops, opts) {
 
   // 1. A locked route with this title refuses the run outright. Any leftover draft/archived rows
   // are this script's own failed earlier attempts and are cleared (remove cascades their stops/legs).
-  const existing = await api.list('itineraries', (r) => r.title === title);
+  const existing = await api.list('itineraries', (r) => r.title === title, eq('title', title));
   if (existing.some((r) => r.status === 'locked')) {
     throw new CannedRouteError(`A locked canned route ("${title}") already exists.`);
   }
@@ -55,7 +72,7 @@ export async function buildCannedRoute(api, stops, opts) {
   const itineraryId = itinerary.id;
   const createdStops = [];
   for (const [i, stop] of stops.entries()) {
-    const row = await api.create('stops', { ...stop, itinerary: itineraryId, order: i + 1 });
+    const row = await api.create('stops', { ...pick(stop, STOP_FIELDS), itinerary: itineraryId, order: i + 1 });
     createdStops.push(row);
     // Places/photos attach right after each stop's own create, while the route is still a draft.
     if (stop.place_id) {
@@ -64,7 +81,9 @@ export async function buildCannedRoute(api, stops, opts) {
         kind: stop.kind, lat: stop.lat, lon: stop.lon, address: stop.address, rating: stop.rating,
         rating_count: stop.rating_count, hours: stop.hours, phone: stop.phone, website: stop.website,
         maps_url: stop.maps_url, station_id: stop.station_id, photos: stop.photos, photo_attributions: stop.photo_attributions,
-        reviews: stop.reviews, fetched_at: stop.fetched_at
+        reviews: stop.reviews, fetched_at: stop.fetched_at,
+        // Without this, attach.ts:92 reads the place as "no details yet" even though it has them.
+        details_at: stop.fetched_at
       });
       await api.update('stops', row.id, { place: place.id, photos_status: 'done' });
     }

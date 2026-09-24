@@ -6,12 +6,15 @@
 //
 // Safety: this script authenticates as superuser, spends Google Places budget and writes to
 // production PocketBase. It must never run as part of an automated test.
-import { mkdir, readdir, readFile, writeFile } from 'node:fs/promises';
+import { mkdir, readdir, readFile, stat, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { buildSchedule, servicesOn, unzipGtfs } from '../src/lib/metra/gtfs.ts';
 import { todayInTz } from '../src/lib/time.ts';
-import { CANNED_TITLE, PLAN, nextFreeSaturday, pickBar, pickDeepDish, pickLunch, placesClient } from './practice-venues.mjs';
+import { CANNED_TITLE, PLAN, deepDishCandidates, nextFreeSaturday, pickBar, pickDeepDish, pickLunch, placesClient } from './practice-venues.mjs';
 import { CannedRouteError, buildCannedRoute } from './practice-build.mjs';
+
+/** A PocketBase filter clause for an exact string match, quotes escaped. */
+function eq(field, value) { return `${field} = "${String(value).replace(/"/g, '\\"')}"`; }
 
 // --- Step 1: refuse before any network I/O unless the environment is complete. ---
 export function requiredEnv(vars = process.env) {
@@ -38,9 +41,22 @@ async function pocketbaseApi(pbUrl, email, password) {
     headers: { 'Content-Type': 'application/json', Authorization: token }, ...(body === undefined ? {} : { body: JSON.stringify(body) }) });
   return {
     token,
-    async list(collection, predicate) {
-      const rows = await request(`${pbUrl}/api/collections/${collection}/records?perPage=200`, { headers: { Authorization: token } });
-      return (rows.items ?? []).filter(predicate);
+    // Paginates through every page (an unfiltered collection like `legs` can exceed one page, and
+    // stopping at page 1 both risks a false "planner timed out" and can miss a locked real route
+    // whose event_date should have kept the canned route off that Saturday). `filter`, when the
+    // caller knows one, narrows the query server-side; `predicate` still runs as the real check.
+    async list(collection, predicate, filter) {
+      const items = [];
+      let page = 1, totalPages = 1;
+      do {
+        const params = new URLSearchParams({ page: String(page), perPage: '200' });
+        if (filter) params.set('filter', filter);
+        const rows = await request(`${pbUrl}/api/collections/${collection}/records?${params}`, { headers: { Authorization: token } });
+        items.push(...(rows.items ?? []));
+        totalPages = rows.totalPages ?? 1;
+        page += 1;
+      } while (page <= totalPages);
+      return items.filter(predicate);
     },
     async create(collection, body) {
       if (collection === 'places' && body.photos?.length) {
@@ -72,7 +88,7 @@ async function main() {
 
   // Refuse early, before spending Places budget, if a locked canned route already exists. A draft
   // with this title is a failed earlier run; buildCannedRoute replaces it.
-  const existing = await api.list('itineraries', (r) => r.title === CANNED_TITLE);
+  const existing = await api.list('itineraries', (r) => r.title === CANNED_TITLE, eq('title', CANNED_TITLE));
   if (existing.some((r) => r.status === 'locked')) {
     throw new Error(`A locked canned route ("${CANNED_TITLE}") already exists. Refusing to spend Places budget.`);
   }
@@ -93,7 +109,7 @@ async function main() {
   }
 
   // Step 4: the next Saturday not already used by a locked route, and covered by the timetable.
-  const lockedDates = (await api.list('itineraries', (r) => r.status === 'locked')).map((r) => r.event_date);
+  const lockedDates = (await api.list('itineraries', (r) => r.status === 'locked', eq('status', 'locked'))).map((r) => r.event_date);
   let eventDate = todayInTz();
   let covered = false;
   for (let attempt = 0; attempt < 8; attempt++) {
@@ -120,12 +136,16 @@ async function main() {
   }
 
   async function downloadPhotos(prefix, place) {
-    const detail = await client.details(place.id);
+    // Cached by place id (not `prefix`): a retry after a partial failure must not re-spend the
+    // Places budget on a detail lookup or a photo it already has on disk.
+    const detail = await cached(`${place.id}-details`, () => client.details(place.id));
     const photos = [];
     for (const [i, photo] of (detail.photos ?? []).slice(0, 2).entries()) {
       const filename = `${prefix}-${i}.jpg`;
-      await client.photo(photo.name, directory, filename);
-      photos.push({ file: filename, path: join(directory, filename), attribution: (photo.authorAttributions ?? []).map((a) => a.displayName).join(', ') });
+      const filePath = join(directory, filename);
+      const exists = await stat(filePath).then(() => true).catch(() => false);
+      if (!exists) await client.photo(photo.name, directory, filename);
+      photos.push({ file: filename, path: filePath, attribution: (photo.authorAttributions ?? []).map((a) => a.displayName).join(', ') });
     }
     return { detail, photos };
   }
@@ -146,7 +166,8 @@ async function main() {
   }
 
   const stopList = [];
-  const deepDishCandidates = {};
+  const deepDishRaw = {};
+  const outboundStations = {};
   for (const plan of PLAN) {
     const station = stationsById.get(plan.station);
     if (plan.role === 'dinner') continue; // resolved after the outbound loop, across stations.
@@ -157,11 +178,14 @@ async function main() {
     const { detail, photos } = await downloadPhotos(`${plan.station}-${plan.role}`, picked);
     stopList.push({ plan, fields: stopFields(picked, detail, photos, plan, station) });
     if (plan.direction === 'out') {
-      deepDishCandidates[plan.station] = await cached(`${plan.station}-deepdish`, () => client.searchText('deep dish pizza', station, 1500));
+      deepDishRaw[plan.station] = await cached(`${plan.station}-deepdish`, () => client.searchText('deep dish pizza', station, 1500));
+      outboundStations[plan.station] = station;
     }
   }
   const dinnerPlan = PLAN.find((p) => p.role === 'dinner');
-  const deepDish = pickDeepDish(deepDishCandidates, used);
+  // locationBias on a text search does not restrict results, so filter to walking distance (and
+  // dedupe a place seen near more than one station down to its nearest) before choosing among them.
+  const deepDish = pickDeepDish(deepDishCandidates(deepDishRaw, outboundStations), used);
   if (!deepDish) throw new Error('No walkable deep-dish pizza place found near any outbound station.');
   used.add(deepDish.place.id);
   const dinnerStation = stationsById.get(deepDish.station);
@@ -176,7 +200,7 @@ async function main() {
 
   const stops = stopList.map(({ fields }) => fields);
 
-  const admins = await api.list('users', (u) => u.is_admin);
+  const admins = await api.list('users', (u) => u.is_admin, 'is_admin = true');
   if (!admins.length) throw new Error('No admin user found; the canned route needs an owner.');
   const ownerId = admins[0].id;
 

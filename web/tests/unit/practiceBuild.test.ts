@@ -10,11 +10,13 @@ const opts = { title: TITLE, eventDate: '2026-10-03', startTime: '11:00', ownerI
 // distinct ids too, the way separate PocketBase creates would, instead of both starting over at 1.
 let n = 0;
 function fakeApi(legKind: 'train' | 'impossible' | null) {
-  const rows: Record<string, Record<string, unknown>[]> = { itineraries: [], stops: [], legs: [] };
+  const rows: Record<string, Record<string, unknown>[]> = { itineraries: [], stops: [], legs: [], places: [] };
   let current = '';
   const api = {
     rows, get current() { return current; },
-    async list(c: string, f: (r: Record<string, unknown>) => boolean) { return rows[c].filter(f); },
+    // `filter` is the server-side PocketBase filter clause the real adapter sends; the fake keeps
+    // filtering purely by predicate, but accepts the third argument so both share one call shape.
+    async list(c: string, f: (r: Record<string, unknown>) => boolean, _filter?: string) { return rows[c].filter(f); },
     async create(c: string, body: Record<string, unknown>) {
       const row = { id: `${c}${++n}`, ...body, ...(c === 'itineraries' ? { status: 'draft' } : {}) };
       rows[c].push(row);
@@ -68,5 +70,17 @@ describe('buildCannedRoute', () => {
     await api.setCurrent('real');
     await buildCannedRoute(api, stops, opts);
     expect(api.current).toBe('real');
+  });
+  it('stamps a place record with details_at, and never sends place-only fields to stops', async () => {
+    const api = fakeApi('train');
+    const stopsWithPlace = [
+      { name: 'A bar', kind: 'bar', station_id: 'AURORA', place_id: 'g1', rating: 4.6, fetched_at: '2026-09-24T12:00:00.000Z' },
+      { name: 'B bar', kind: 'bar', station_id: 'NAPERVILLE' }
+    ];
+    await buildCannedRoute(api, stopsWithPlace, opts);
+    expect(api.rows.places).toHaveLength(1);
+    expect(api.rows.places[0].details_at).toBe('2026-09-24T12:00:00.000Z');
+    expect(api.rows.places[0].place_id).toBe('g1');
+    expect(api.rows.stops[0].rating).toBeUndefined(); // place-only field, whitelisted away from stops
   });
 });

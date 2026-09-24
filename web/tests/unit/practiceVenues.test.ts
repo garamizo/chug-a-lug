@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { PLAN, nextFreeSaturday, pickBar, pickDeepDish, pickLunch } from '../../scripts/practice-venues.mjs';
+import { PLAN, deepDishCandidates, nextFreeSaturday, pickBar, pickDeepDish, pickLunch } from '../../scripts/practice-venues.mjs';
 
 const station = { id: 'LISLE', lat: 41.7955, lon: -88.0751 };
 const place = (id: string, over: object = {}) => ({ id, displayName: { text: id }, location: { latitude: 41.7956, longitude: -88.0752 },
@@ -27,6 +27,14 @@ describe('practice route plan', () => {
   it('chooses the best-rated deep-dish place across outbound stations', () => {
     const got = pickDeepDish({ NAPERVILLE: [place('lou', { primaryType: 'pizza_restaurant', rating: 4.5 })], LISLE: [place('gio', { primaryType: 'pizza_restaurant', rating: 4.3 })] }, new Set());
     expect(got).toEqual({ station: 'NAPERVILLE', place: expect.objectContaining({ id: 'lou' }) });
+  });
+  it('drops a deep-dish candidate outside walking distance and keeps a shared candidate only at its nearest station', () => {
+    const stations = { A: { id: 'A', lat: 0, lon: 0 }, B: { id: 'B', lat: 0, lon: 0.005 } }; // ~415m apart
+    const near = place('near', { location: { latitude: 0, longitude: 0.001 } });   // ~83m from A, ~332m from B: nearer A
+    const far = place('far', { location: { latitude: 0.02, longitude: 0 } });      // ~2220m from A: over the 1000m cap
+    const got = deepDishCandidates({ A: [near, far], B: [near] }, stations);
+    expect(got.A?.map((p) => p.id)).toEqual(['near']);
+    expect(got.B ?? []).toEqual([]);
   });
   it('dates the route on the next Saturday that no locked route uses', () => {
     expect(nextFreeSaturday('2026-09-24', [])).toBe('2026-09-26');
