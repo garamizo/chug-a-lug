@@ -29,7 +29,10 @@ describe('live route mirror', () => {
     await day.loadRoute();
     expect(mocks.save).toHaveBeenCalledOnce();
     expect(structuredClone(mocks.save.mock.calls[0][0])).toMatchObject({ itinerary, stops, legs });
-    for (const [, options] of mocks.list.mock.calls) expect(options).toMatchObject({ cache: 'no-store' });
+    // The route reads only; a new route also reloads that route's activity, which is not the mirror.
+    const routeReads = mocks.list.mock.calls.filter(([name]) => ['itineraries', 'stops', 'legs'].includes(name));
+    expect(routeReads).toHaveLength(3);
+    for (const [, options] of routeReads) expect(options).toMatchObject({ cache: 'no-store' });
     expect(day.fromMirror).toBe(false);
     expect(day.mirrorSavedAt).toBeNull();
   });

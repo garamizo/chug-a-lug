@@ -4,9 +4,9 @@ import { clientClock } from '$lib/sim/clock.svelte';
 import { pb } from '$lib/pb';
 import type { Alert, FeedMode, NextTrip } from '$lib/types';
 
-const authed = async (path: string) => {
+const authed = async (path: string, cache?: RequestCache) => {
   const revision = clientClock.revision;
-  const res = await fetch(path, { cache: clientClock.enabled ? 'no-store' : 'default', headers: { Authorization: pb.authStore.token } });
+  const res = await fetch(path, { cache: cache ?? (clientClock.enabled ? 'no-store' : 'default'), headers: { Authorization: pb.authStore.token } });
   if (!res.ok) throw new Error(`${path} HTTP ${res.status}`);
   const value = await res.json();
   if (clientClock.enabled && (revision !== clientClock.revision || value.revision !== clientClock.revision)) throw new Error('obsolete_feed');
@@ -16,8 +16,11 @@ const authed = async (path: string) => {
 export const fetchAlerts = (): Promise<{ mode: FeedMode; fetchedAt: string | null; alerts: Alert[] }> =>
   authed('/api/metra/alerts');
 
-export const fetchNext = (from: string, to: string, date: string, after: Date): Promise<{ mode: FeedMode; fetchedAt: string | null; trips: NextTrip[] }> =>
-  authed(`/api/metra/next?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}&date=${date}&after=${after.toISOString()}&limit=3`);
+/** The server's day and clock. Never cached: Workbox must not serve an old day. */
+export const fetchDay = (): Promise<{ today: string; now: string }> => authed('/api/day', 'no-store');
+
+export const fetchNext = (from: string, to: string, date: string, after: Date, practice = false): Promise<{ mode: FeedMode; fetchedAt: string | null; trips: NextTrip[] }> =>
+  authed(`/api/metra/next?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}&date=${date}&after=${after.toISOString()}&limit=3${practice ? '&practice=1' : ''}`);
 
 export const fetchStatus = (): Promise<{
   rtFetchedAt: string | null; mode: FeedMode;

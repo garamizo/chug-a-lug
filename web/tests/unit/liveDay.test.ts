@@ -2,17 +2,19 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Itinerary } from '$lib/types';
 
 const mocks = vi.hoisted(() => ({
-  getList: vi.fn(), getFullList: vi.fn(), filter: vi.fn((raw: string, _params: unknown) => raw),
+  getList: vi.fn(), getFullList: vi.fn(), getOne: vi.fn(), filter: vi.fn((raw: string, _params: unknown) => raw),
+  resolve: vi.fn(), fetchDay: vi.fn(), fetchNext: vi.fn(), fetchAlerts: vi.fn(),
   callbacks: new Map<string, () => void>(), unsubs: [] as ReturnType<typeof vi.fn>[]
 }));
 vi.mock('$lib/pb', () => ({
-  pb: { collection: () => ({ getList: mocks.getList, getFullList: mocks.getFullList }), filter: mocks.filter },
+  pb: { collection: () => ({ getList: mocks.getList, getFullList: mocks.getFullList, getOne: mocks.getOne }), filter: mocks.filter, authStore: { record: { id: 'me' } } },
   subscribe: (name: string, _filter: string, callback: () => void) => {
     mocks.callbacks.set(name, callback);
     const unsub = vi.fn(); mocks.unsubs.push(unsub); return unsub;
   }
 }));
-vi.mock('$lib/live/feed', () => ({ fetchStatus: async () => ({ mode: 'schedule_only' }) }));
+vi.mock('$lib/live/route', () => ({ resolveCurrentRoute: mocks.resolve }));
+vi.mock('$lib/live/feed', () => ({ fetchStatus: async () => ({ mode: 'schedule_only' }), fetchDay: mocks.fetchDay, fetchNext: mocks.fetchNext, fetchAlerts: mocks.fetchAlerts }));
 const { LiveDay } = await import('$lib/live/day.svelte');
 
 beforeEach(() => {
@@ -34,6 +36,8 @@ describe('live route refresh', () => {
   it('loads immediately, then coalesces collection bursts after 750 ms of quiet', async () => {
     const { reload, stop } = startDay();
     try {
+      // The first route load waits for the day, so it enters a scope on the server's day.
+      await vi.advanceTimersByTimeAsync(0);
       expect(reload).toHaveBeenCalledTimes(1);
       mocks.callbacks.get('itineraries')!();
       await vi.advanceTimersByTimeAsync(500);
@@ -66,6 +70,7 @@ describe('live route refresh', () => {
 
   it('cancels pending refreshes and ignores late callbacks after teardown', async () => {
     const { reload, stop } = startDay();
+    await vi.advanceTimersByTimeAsync(0);
     mocks.callbacks.get('stops')!();
     stop();
     mocks.callbacks.get('legs')!();
@@ -133,7 +138,9 @@ describe('live feed', () => {
     mocks.getFullList.mockImplementation(async (o: unknown) => { opts.push(o); return rows[order[call++]]; });
     Object.defineProperty(day, 'here', { get: () => ({ stop: { id: 'a' } }) });
     await day.loadFeed();
-    expect(mocks.filter.mock.calls.map(c => c[0])).toEqual(expect.arrayContaining(['stop.itinerary = {:id}', 'itinerary = {:id}']));
+    expect(mocks.filter.mock.calls.map(c => c[0])).toEqual(expect.arrayContaining([
+      'stop.itinerary = {:id} && at >= {:start} && at < {:end}', 'itinerary = {:id} && at >= {:start} && at < {:end}'
+    ]));
     // A stale Workbox NetworkFirst read must never undo a confirmed Tab tap or clear feedError.
     expect(opts).toHaveLength(4);
     for (const o of opts) expect(o).toMatchObject({ cache: 'no-store' });
@@ -168,4 +175,164 @@ describe('live feed', () => {
     expect(day.feed.drinks.map(d => d.id)).toEqual(['kept']);
     expect(day.feedError).toBe(true);
   });
+});
+
+const route = { id: 'r1', event_date: '2026-12-26', start_time: '11:00', status: 'locked' } as Itinerary;
+
+describe('practice days', () => {
+  it('is a practice day on any other date, with plan time on the route date', () => {
+    const day = new LiveDay();
+    day.itinerary = route;
+    day.realNow = new Date('2026-09-22T19:05:00Z');
+    day.syncPlan();
+    expect(day.hasRoute).toBe(true);
+    expect(day.isEventDay).toBe(false);
+    expect(day.practice).toBe(true);
+    expect(day.now.toISOString()).toBe('2026-12-26T20:05:00.000Z');
+  });
+  it('ignores the Conductor’s position on a practice day', () => {
+    const day = new LiveDay();
+    day.itinerary = route; day.stops = [] as never;
+    day.anchor = { stopId: 's2', at: '2026-09-22T18:00:00Z' };
+    day.realNow = new Date('2026-09-22T19:05:00Z'); day.syncPlan();
+    expect(day.effectiveAnchor).toBeNull();
+    day.realNow = new Date('2026-12-26T19:05:00Z'); day.syncPlan();
+    expect(day.effectiveAnchor).toEqual(day.anchor);
+  });
+  it('asks for timetable-only trains on a practice day and skips alerts', async () => {
+    mocks.fetchNext.mockResolvedValue({ trips: [], mode: 'schedule_only', fetchedAt: null });
+    const day = new LiveDay();
+    day.itinerary = route;
+    day.stops = [
+      { id: 'a', order: 1, station_id: 'LAGRANGE', dwell_min: 30, walk_min: 2 },
+      { id: 'b', order: 2, station_id: 'CUS', dwell_min: 30, walk_min: 2 }
+    ] as never;
+    day.legs = [{ from_stop: 'a', to_stop: 'b', kind: 'train', depart_at: '2026-12-26T20:34:00Z', arrive_at: '2026-12-26T20:49:00Z' }] as never;
+    day.realNow = new Date('2026-09-22T17:30:00Z'); day.syncPlan();
+    await day.loadTrains();
+    expect(mocks.fetchNext).toHaveBeenCalledWith('LAGRANGE', 'CUS', '2026-12-26', day.now, true);
+    await day.loadAlerts();
+    expect(mocks.fetchAlerts).not.toHaveBeenCalled();
+    expect(day.alerts).toEqual([]);
+  });
+});
+
+describe('one day at a time', () => {
+  it('reads activity only inside the server day', async () => {
+    mocks.getFullList.mockResolvedValue([]);
+    const day = new LiveDay();
+    day.itinerary = route; day.serverOffset = 0; day.realNow = new Date('2026-09-24T18:00:00Z');
+    await day.loadFeed();
+    const filters = mocks.filter.mock.calls.map((c) => [c[0], c[1]]);
+    expect(filters).toContainEqual([expect.stringContaining('at >= {:start} && at < {:end}'), expect.objectContaining({ start: new Date('2026-09-24T05:00:00.000Z'), end: new Date('2026-09-25T05:00:00.000Z') })]);
+    // Dates, not ISO strings: pb.filter writes a Date in PocketBase's stored form ("… 05:00:00.000Z"),
+    // while a "T" string compares as text and would exclude every row of the day.
+    for (const [, params] of filters) {
+      const p = params as { start?: unknown };
+      if (p?.start !== undefined) expect(p.start).toBeInstanceOf(Date);
+    }
+    expect(filters).toContainEqual([expect.stringContaining('created >= {:start} && created < {:end}'), expect.anything()]);
+  });
+  it('limits Bulletins to the day, and acks to those Bulletins', async () => {
+    mocks.getFullList.mockResolvedValueOnce([{ id: 'b1' }]).mockResolvedValueOnce([]);
+    const day = new LiveDay();
+    day.itinerary = route; day.serverOffset = 0; day.realNow = new Date('2026-09-24T18:00:00Z');
+    await day.loadBulletins();
+    const texts = mocks.filter.mock.calls.map((c) => c[0]);
+    expect(texts).toContainEqual(expect.stringContaining('itinerary = {:id} && at >= {:start} && at < {:end}'));
+    expect(texts).toContainEqual(expect.stringContaining('broadcast.itinerary = {:id} && broadcast.at >= {:start}'));
+  });
+  const yesterday = () => {
+    const day = new LiveDay();
+    day.itinerary = route; day.realNow = new Date('2026-09-25T04:58:00Z');   // 23:58 CDT on the 24th
+    day.serverOffset = 0; day.enterScope(false);
+    day.feed = { drinks: [{ id: 'd1' }], media: [{ id: 'm1' }], messages: [{ id: 'c1' }], reactions: [] } as never;
+    day.bulletins = [{ id: 'b1' }] as never;
+    return day;
+  };
+  it('empties yesterday’s activity at midnight even when every reload fails', async () => {
+    mocks.getFullList.mockRejectedValue(new Error('offline'));
+    const day = yesterday();
+    expect(day.pinnedBulletin?.id).toBe('b1');
+    day.realNow = new Date('2026-09-25T05:01:00Z');                          // 00:01 on the 25th
+    await day.checkScope();
+    expect(day.today).toBe('2026-09-25');
+    expect(day.feed.messages).toEqual([]);
+    expect(day.feed.drinks).toEqual([]);
+    expect(day.bulletins).toEqual([]);
+    expect(day.pinnedBulletin).toBeNull();
+  });
+  it('drops a read that started yesterday and answers after midnight', async () => {
+    const answers: ((rows: unknown[]) => void)[] = [];   // Bulletins and acks are read together
+    mocks.getFullList.mockImplementation(() => new Promise((r) => { answers.push(r); }));
+    const day = yesterday();
+    const late = day.loadBulletins();
+    day.realNow = new Date('2026-09-25T05:01:00Z'); day.enterScope(false);
+    answers.forEach((answer) => answer([{ id: 'b-old' }])); await late;
+    expect(day.bulletins).toEqual([]);
+  });
+  it('keeps counting the server’s day while the day endpoint is unreachable', async () => {
+    // The phone is a day behind (e2e fakes it); the server said so once, then went quiet.
+    mocks.fetchDay.mockResolvedValueOnce({ today: '2026-09-24', now: '2026-09-24T18:00:00.000Z' }).mockRejectedValue(new Error('offline'));
+    const day = new LiveDay();
+    day.realNow = new Date('2026-09-23T18:00:00Z');
+    await day.loadDay();
+    expect(day.today).toBe('2026-09-24');
+    day.realNow = new Date('2026-09-24T12:00:00Z');                          // 18 h later on the phone
+    await day.loadDay();
+    expect(day.today).toBe('2026-09-25');
+  });
+  it('uses the phone’s own date before the server has ever answered', async () => {
+    mocks.fetchDay.mockRejectedValue(new Error('offline'));
+    const day = new LiveDay();
+    day.realNow = new Date('2026-09-24T18:00:00Z');
+    await day.loadDay();
+    expect(day.today).toBe('2026-09-24');
+  });
+});
+
+describe('switching the current route', () => {
+  const two = { id: 'r2', event_date: '2026-12-12', start_time: '11:00', status: 'locked' } as Itinerary;
+  it('clears the old route’s trains, feed and Bulletins before the new ones arrive', async () => {
+    mocks.getFullList.mockImplementation(() => new Promise(() => {}));   // reloads never answer
+    const day = new LiveDay();
+    day.itinerary = route; day.serverOffset = 0; day.realNow = new Date('2026-09-24T18:00:00Z'); day.enterScope(false);
+    day.trips = [{ tripId: 'old' }] as never; day.feed.messages = [{ id: 'c1' }] as never; day.bulletins = [{ id: 'b1' }] as never;
+    day.itinerary = two; day.enterScope(false);
+    expect(day.trips).toEqual([]);
+    expect(day.feed.messages).toEqual([]);
+    expect(day.bulletins).toEqual([]);
+  });
+  it('drops a train answer for the previous route', async () => {
+    let answer!: (v: unknown) => void;
+    mocks.fetchNext.mockImplementation(() => new Promise((r) => { answer = r; }));
+    const day = new LiveDay();
+    day.itinerary = route;
+    day.stops = [
+      { id: 'a', order: 1, station_id: 'LAGRANGE', dwell_min: 30, walk_min: 2 },
+      { id: 'b', order: 2, station_id: 'CUS', dwell_min: 30, walk_min: 2 }
+    ] as never;
+    day.legs = [{ from_stop: 'a', to_stop: 'b', kind: 'train', depart_at: '2026-12-26T20:34:00Z', arrive_at: '2026-12-26T20:49:00Z' }] as never;
+    day.realNow = new Date('2026-09-22T17:30:00Z'); day.syncPlan();
+    const late = day.loadTrains();
+    day.itinerary = two; day.enterScope(false);
+    answer({ trips: [{ tripId: 'old-route' }], mode: 'schedule_only', fetchedAt: null }); await late;
+    expect(day.trips).toEqual([]);
+  });
+});
+
+it('asks for trains, the feed and Bulletins once when the first route load enters its scope', async () => {
+  mocks.resolve.mockResolvedValue(route);
+  mocks.getFullList.mockResolvedValue([]);
+  mocks.fetchDay.mockRejectedValue(new Error('offline'));
+  mocks.fetchAlerts.mockResolvedValue({ alerts: [] });
+  const day = new LiveDay();
+  const loads = (['loadTrains', 'loadFeed', 'loadBulletins'] as const).map((m) => vi.spyOn(day, m));
+  const stop = day.start();
+  try {
+    await vi.advanceTimersByTimeAsync(0);
+    expect(day.itinerary?.id).toBe('r1');
+    // A second train request would race the first, and the later answer wins whatever it says.
+    for (const load of loads) expect(load).toHaveBeenCalledOnce();
+  } finally { stop(); }
 });
