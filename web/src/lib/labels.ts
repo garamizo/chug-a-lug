@@ -336,6 +336,8 @@ export const copy = {
   nextStop: 'Next stop',
   closeSheet: 'Close',
   googlePhoto: 'Photo via Google',
+  leaderboard: 'Leaderboard',
+  you: 'you',
 } as const;
 
 // Operator-facing rehearsal setup messages; these never include passwords or tokens.

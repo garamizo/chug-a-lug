@@ -14,6 +14,7 @@
   import { stripStops } from '$lib/live/strip';
   import { withPending } from '$lib/live/tab';
   import { drinkCount } from '$lib/live/crew';
+  import { topLine } from '$lib/live/leaderboard';
   import { todayInTz } from '$lib/time';
   import { newRecordId } from '$lib/live/staged';
   import CrewChat from '$lib/components/CrewChat.svelte';
@@ -24,6 +25,7 @@
   import AlertBubbles from '$lib/components/AlertBubbles.svelte';
   import TabRow from '$lib/components/TabRow.svelte';
   import FreightStrip from '$lib/components/FreightStrip.svelte';
+  import Leaderboard from '$lib/components/Leaderboard.svelte';
 
   let error = $state('');
   let uploading = $state(false);
@@ -41,6 +43,7 @@
   const me = $derived($auth.user?.id ?? '');
   const tabEntries = $derived(withPending(liveDay.feed.drinks, pending));
   const dayTotal = $derived(drinkCount(tabEntries, me, todayInTz(liveDay.now)));
+  const leaders = $derived($auth.user ? topLine(liveDay.feed.drinks, { id: $auth.user.id, name: $auth.user.name }, todayInTz(liveDay.now)) : []);
   const showToast = (id: string, kind: DrinkKind) => {
     clearTimeout(toastTimer);
     toast = { id, kind, failed: false };
@@ -172,6 +175,8 @@
     <button type="button" onclick={() => void undoDrink(toast!)} data-testid="tab-undo">{copy.undoDrink}</button>
   </div>
 {/if}
+
+<Leaderboard {leaders} />
 
 {#if liveDay.itinerary && $auth.user}<CrewChat itineraryId={liveDay.itinerary.id} userId={$auth.user.id} />{/if}
 

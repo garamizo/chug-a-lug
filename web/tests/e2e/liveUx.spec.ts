@@ -115,3 +115,11 @@ test('the crew chat celebrates the first beer', async ({ page }) => {
   await page.getByTestId('drink-beer').click();
   await expect(page.getByTestId('crew-chat').locator('article.milestone')).toContainText('First of the day: Beer · E2E Milestone');
 });
+
+test('the leaderboard line puts me on the podium and opens the Crew Board', async ({ page }) => {
+  await liveDay(page, 'E2E Podium');
+  await page.getByTestId('drink-beer').click();
+  await expect(page.getByTestId('leaderboard')).toContainText('you 1');
+  await page.getByTestId('leaderboard').click();
+  await expect(page).toHaveURL(/\/crew$/);
+});
