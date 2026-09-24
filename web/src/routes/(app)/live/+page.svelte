@@ -147,7 +147,12 @@
   <p class="current"><small>{copy.currentStop}</small>
     <button type="button" class="stopname" onclick={() => openStop(here.stop!.id)} data-testid="current-stop">{here.stop.name} <span aria-hidden="true">ⓘ</span></button></p>
 {/if}
-<TabRow entries={tabEntries} stopId={tabStop?.id ?? null} userId={me} total={dayTotal} {clinking} showUndoLast={!toast}
+<!-- `!pending.length` keeps the fallback off a tap still in flight: while it's non-empty,
+     tabEntries carries drafts with no saved row yet, and deleting one 404s (or races a later
+     upsertDrink back in). Once pending is empty, tabEntries is exactly liveDay.feed.drinks, so
+     tally()'s lastMine can only be a saved entry. -->
+<TabRow entries={tabEntries} stopId={tabStop?.id ?? null} userId={me} total={dayTotal} {clinking}
+  showUndoLast={!toast && !pending.length}
   onlog={(kind) => void logDrink(kind)} onundo={(entry) => void undoDrink(entry)} />
 <div class="actions">
   <div class="photo-action">
