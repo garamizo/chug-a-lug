@@ -4,6 +4,11 @@ const PB = process.env.PB_URL ?? 'http://127.0.0.1:18093';
 const SU_EMAIL = process.env.PB_ADMIN_EMAIL ?? 'tests@chugalug.invalid';
 const SU_PASSWORD = process.env.PB_ADMIN_PASSWORD ?? 'local-test-password-only';
 
+/** Escapes regex metacharacters so a name can anchor an exact `hasText` match. */
+function exactly(text: string): RegExp {
+  return new RegExp(`^${text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`);
+}
+
 export async function login(page: Page, name: string, password: string) {
   await page.goto('/login');
   await page.getByTestId('name-input').fill(name);
@@ -12,12 +17,21 @@ export async function login(page: Page, name: string, password: string) {
   // The tab bar mounts off `liveDay.isToday` alone, so on the event day it can render on `/` for
   // the instant before the home page's own effect redirects to `/live`. A check-then-assert (see
   // if the name shows, then assert its text) loses that race: the name can vanish between the two
-  // steps. `Promise.any` accepts whichever lands durably — the right name on the home screen, or
+  // steps. `Promise.any` accepts whichever lands durably — the exact name on the home screen (an
+  // anchored regex, not a substring match, so one crew member's name can't satisfy another's), or
   // the tab bar already up for the event day — without a synchronous check that can go stale.
-  await Promise.any([
-    page.getByTestId('name').filter({ hasText: name }).waitFor({ state: 'visible' }),
-    page.getByTestId('tab-bar').waitFor({ state: 'visible' })
-  ]);
+  const nameShown = page.getByTestId('name').filter({ hasText: exactly(name) });
+  const tabBarShown = page.getByTestId('tab-bar');
+  try {
+    await Promise.any([
+      nameShown.waitFor({ state: 'visible' }),
+      tabBarShown.waitFor({ state: 'visible' })
+    ]);
+  } catch {
+    // Replay as a normal Playwright expect so a failed login reports a readable timeout/diff
+    // instead of a bare AggregateError from Promise.any.
+    await expect(nameShown.or(tabBarShown).first()).toBeVisible();
+  }
 }
 
 async function superuserToken(): Promise<string> {
