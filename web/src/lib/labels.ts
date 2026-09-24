@@ -49,11 +49,6 @@ export function label(key: LabelKey): string {
 // UI copy lives alongside the glossary so it can be changed in one place.
 export const copy = {
   rehearsalTitle: 'Rehearsal — practice only',
-  rehearsalIntro: 'This is a shared practice run. Explore the route, log drinks, and try the controls. Nothing here changes the real event. Sign in with your usual name and shared password.',
-  rehearsalReady: 'Rehearsal is ready at the usual app URL. Sign in with your usual shared password.',
-  rehearsalSetupIncomplete: 'Rehearsal setup is incomplete or belongs to another run. Inspect data/rehearsal before retrying; existing data has been preserved.',
-  rehearsalLive: 'Practice the live day',
-  rehearsalLiveHint: 'Departure Board, Tab and photos',
   mainNav: 'Main',
   liveHint: 'Departure Board, Tab and crew chat',
 
@@ -221,7 +216,6 @@ export const copy = {
   tabAdded: '+1',
   undoLast: 'Undo my last one here',
   tabClosed: 'The Tab opens when the crawl does.',
-  rehearsalRouteTitle: 'Saturday rehearsal — twelve stops along the BNSF',
   postedAt: 'Posted',
   effectiveAt: 'Effective',
   notificationTimeUnknown: 'Time not supplied',
@@ -385,9 +379,3 @@ export const recordingCopy = {
 /** Route strip marks by venue kind; an `other` stop gets a plain dot. */
 export const venueIcons: Record<string, string> = { bar: '🍺', restaurant: '🍽️' };
 export const drinkIcons: Record<string, string> = { shot: '🥃', cocktail: '🍸', beer: '🍺', water: '🧃', food: '🍽️' };
-
-export const rehearsalBulletins = [
-  'Practice Bulletin: Welcome aboard! Check The Route for today’s twelve stops and venue details.',
-  'Practice Bulletin: We have food and non-alcoholic breaks along the way. Log your own choices in The Tab.',
-  'Practice Bulletin: Meet at the first stop before departure. Watch Railroad Time — rehearsal runs at 10× speed.'
-];

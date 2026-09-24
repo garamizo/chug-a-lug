@@ -20,7 +20,6 @@ test('three sessions rehearse clock, replay, route edits, Tab, Freight and recon
   test.setTimeout(120_000);
   await page.goto('/login');
   await expect(page.getByTestId('rehearsal-badge')).toContainText('Rehearsal');
-  await expect(page.getByTestId('rehearsal-notice')).toContainText('Nothing here changes the real event');
   await login(page, 'Rehearsal Conductor', process.env.ADMIN_PASSWORD!);
   await expect(page.getByTestId('nav-live').or(page.getByTestId('tab-bar')).first()).toBeVisible();
   const crewContext = await browser.newContext({ ...devices['iPhone 13'], baseURL: 'http://127.0.0.1:15173' });
