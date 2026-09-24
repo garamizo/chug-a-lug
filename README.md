@@ -159,13 +159,17 @@ Goal: nobody misses a train, nobody is lost, and the plan can change without cha
   until that person taps "Got it". Plan edits and posted Bulletins go into the event log.
 - **Crew Board** shows shot / cocktail / beer / non-alcoholic / food counts and who acknowledged the latest
   Bulletin. Ranking uses shot + cocktail + beer, then non-alcoholic drinks, then food. It does not track individual locations.
-- **Live actions** sit below the compact ticket and current venue: the cup opens The Tab, the photo
-  opens the file picker (with a camera shortcut), and the speaker opens the Conductor’s Bulletin composer.
+- **Live actions** sit below the compact ticket and current venue: the photo button opens the file
+  picker (with a camera shortcut), and the speaker opens the Conductor’s Bulletin composer.
   **Crew chat** at the bottom combines route-wide Tab activity and Bulletins with names and event times;
   Undo removes the corresponding Tab entry. **Next stops** links to upcoming venues.
-- **The Tab** logs shot, cocktail, beer, non-alcoholic drinks or food at the current stop, with personal counters and undo for your own
-  entries. The Tab and Freight are available only while the position source is `clock` or `override`;
-  a stop still appears before and after the crawl, but those controls stay closed.
+- **The Tab** is a one-tap row of shot / cocktail / beer / non-alcoholic / food buttons, always visible
+  above the live actions, with personal counters per drink and a running total for the day. A tap logs
+  a drink at the current stop instantly; a toast with Undo confirms it, and it stays up (with a retry
+  if the delete fails) until it fades or another tap replaces it — after which "Undo my last one here"
+  still undoes your newest entry at the stop. The Tab and Freight are available only while the position
+  source is `clock` or `override`; a stop still appears before and after the crawl, but those controls
+  stay closed (buttons disabled, no toast).
 - **Freight** uploads photos and videos tagged with the stop the uploader's shared board shows. The
   server checks that the stop belongs to a locked route; an invalid tag is cleared without losing the
   upload. Images are compressed in the browser (the original is used if compression fails), videos
