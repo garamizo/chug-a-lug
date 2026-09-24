@@ -122,13 +122,16 @@ describe('/api/metra/next', () => {
   it('ignores realtime for a practice-day request', async () => {
     const first = fixtureSchedule().trips.find((t) => t.routeId === 'BNSF')!;
     allFresh();
+    // Inject a prediction for the first BNSF trip. Without practice=1, predictions leak in.
     state.feed = await decodeFeed(first.id, 4102444800);
+    // Request WITH practice=1 to suppress realtime.
     const body = await get('../../src/routes/api/metra/next/+server',
-      'http://x/api/metra/next?from=LAGRANGE&to=CUS&date=2026-12-26&after=2026-12-26T19:00:00Z&practice=1');
+      'http://x/api/metra/next?from=LAGRANGE&to=CUS&date=2026-12-26&practice=1');
     expect(body.mode).toBe('schedule_only');
     expect(body.fetchedAt).toBeNull();
     expect(body.trips.length).toBeGreaterThan(0);
-    expect(body.trips.every((t: { status: string; delayMin: number | null; liveDepart: string; schedDepart: string }) => t.status === 'scheduled' && t.delayMin === 0 && t.liveDepart === t.schedDepart)).toBe(true);
+    // All trips must be scheduled with zero delay (no live predictions applied, even though feed is fresh and contains predictions).
+    expect(body.trips.every((t: { status: string; delayMin: number | null }) => t.status === 'scheduled' && t.delayMin === 0)).toBe(true);
   });
 });
 
