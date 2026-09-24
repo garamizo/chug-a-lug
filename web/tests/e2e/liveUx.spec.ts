@@ -109,3 +109,9 @@ test('the crew can talk and Cheers each other across phones', async ({ page, bro
     await expect(otherCheersButton).not.toContainText('1');
   } finally { await context.close(); }
 });
+
+test('the crew chat celebrates the first beer', async ({ page }) => {
+  await liveDay(page, 'E2E Milestone');
+  await page.getByTestId('drink-beer').click();
+  await expect(page.getByTestId('crew-chat').locator('article.milestone')).toContainText('First of the day: Beer · E2E Milestone');
+});
