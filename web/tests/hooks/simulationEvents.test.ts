@@ -28,6 +28,11 @@ describe.skipIf(process.env.SIM !== '1')('simulation event hooks', () => {
       expect(Date.parse(logs.items[0].at)).toBe(Date.parse(epoch));
     }
   });
+  it('stamps crew chat messages with virtual time', async () => {
+    const res = await post(path('chat_messages'), { itinerary, user, body: 'Paused chat', at: '2000-01-01T00:00:00Z' }, conductor);
+    expect(res.status).toBe(200);
+    expect(Date.parse((await res.json()).at)).toBe(Date.parse(epoch));
+  });
   it('keeps locked_at real and uses event time for the lock log', async () => {
     const res = await patch(`${path('itineraries')}/${itinerary}`, { status: 'locked' }, root);
     expect(res.status).toBe(200);

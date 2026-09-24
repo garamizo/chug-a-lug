@@ -107,4 +107,9 @@ export type Broadcast = RecordModel & { at?: string; itinerary: string; kind: Bu
 export type BroadcastAck = RecordModel & { broadcast: string; user: string };
 export type DrinkKind = 'beer' | 'wine' | 'cocktail' | 'shot' | 'water' | 'food';
 export type DrinkEntry = RecordModel & { action_order?: number; user: string; stop: string; kind: DrinkKind; at: string; expand?: { user?: UserRecord; stop?: Stop } };
-export type Media = RecordModel & { user: string; file: string; kind: 'image' | 'video'; taken_at: string; stop: string; tagged_by: 'clock' | 'manual' | 'none' };
+export type Media = RecordModel & { user: string; file: string; kind: 'image' | 'video'; taken_at: string; at?: string; stop: string; tagged_by: 'clock' | 'manual' | 'none'; expand?: { user?: UserRecord } };
+export type ReactionTarget = 'drink' | 'bulletin' | 'message' | 'media';
+export type ChatMessage = RecordModel & { itinerary: string; user: string; body: string; at: string; expand?: { user?: UserRecord } };
+export type Reaction = RecordModel & { user: string; target_kind: ReactionTarget; target_id: string; itinerary: string };
+/** One item in the full-screen viewer. `url` is what is shown, `full` the original for download. */
+export type LightboxItem = { url: string; full: string; kind: 'image' | 'video'; caption?: string };

@@ -24,6 +24,7 @@ onRecordCreateRequest((e) => {
     r.set('stop', '')
     r.set('tagged_by', 'none')
   }
+  r.set('at', require(`${__hooks}/clock.js`).eventNow(e.app))
   e.next()
 }, 'media')
 
@@ -46,3 +47,11 @@ onRecordAfterCreateSuccess((e) => {
   log.set('at', e.record.getString('at'))
   $app.save(log)
 }, 'broadcasts')
+
+// Crew chat: the author is whoever is signed in, and the time is the event's, whatever the body says.
+onRecordCreateRequest((e) => {
+  const isCrew = !!e.auth && !e.auth.isSuperuser()
+  if (isCrew) e.record.set('user', e.auth.id)
+  e.record.set('at', require(`${__hooks}/clock.js`).eventNow(e.app))
+  e.next()
+}, 'chat_messages')
