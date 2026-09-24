@@ -10,6 +10,7 @@
   import PinnedBulletin from '$lib/components/PinnedBulletin.svelte';
   import BulletinSheet from '$lib/components/BulletinSheet.svelte';
   import TabBar from '$lib/components/TabBar.svelte';
+  import Lightbox from '$lib/components/Lightbox.svelte';
   import { newRecordId } from '$lib/live/staged';
   let { children } = $props();
   let error = $state('');
@@ -96,6 +97,7 @@
   {#if error}<p role="alert">{error}</p>{/if}
   {@render children()}
   {#if liveDay.isToday}<TabBar />{/if}
+  <Lightbox />
   {#if liveDay.composing}
     <BulletinSheet text="" onsend={(body) => void postBulletin(body)} onskip={() => (liveDay.composing = false)} />
   {/if}

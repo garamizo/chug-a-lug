@@ -310,6 +310,9 @@ export const copy = {
   savedButBroken: 'Saved, but a leg after here has no train. Fix it and save again.',
   crewIsHere: 'The crew is here',
   crewIsHereSet: 'Move the crew here',
+  photoViewer: 'Photo viewer',
+  closeViewer: 'Close',
+  downloadOriginal: 'Download original',
 } as const;
 
 // Operator-facing rehearsal setup messages; these never include passwords or tokens.
