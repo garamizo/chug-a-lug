@@ -5,15 +5,16 @@
   import { clientClock } from '$lib/sim/clock.svelte';
   import { goto } from '$app/navigation';
   import { copy } from '$lib/labels';
-  import { fmtTime } from '$lib/time';
   import { mirrorSavedWhen } from '$lib/offline';
   import { auth, pb } from '$lib/pb';
   import type { DrinkEntry, DrinkKind } from '$lib/types';
   import { liveDay } from '$lib/live/day.svelte';
   import { prepare, uploadBatch } from '$lib/live/upload';
   import { openStop } from '$lib/nav';
+  import { stripStops } from '$lib/live/strip';
   import CrewChat from '$lib/components/CrewChat.svelte';
   import StopSheet from '$lib/components/StopSheet.svelte';
+  import RouteStrip from '$lib/components/RouteStrip.svelte';
   let tabDialog = $state<HTMLDialogElement>();
   let tabOpen = $state(false);
   let fileInput = $state<HTMLInputElement>();
@@ -27,7 +28,7 @@
   const here = $derived(liveDay.here);
   // The board retains a stop before and after the crawl, when the Tab and Freight must stay closed.
   const tabStop = $derived(here?.source === 'clock' || here?.source === 'override' ? here.stop : null);
-  const remaining = $derived(liveDay.stops.filter((s) => s.order > (here?.stop?.order ?? 0)));
+  const strip = $derived(stripStops(liveDay.stops, liveDay.legs, here, liveDay.startAt));
 
   async function logDrink(kind: DrinkKind) {
     const stop = tabStop, user = $auth.user;
@@ -85,6 +86,7 @@
 {#if !liveDay.itinerary || !liveDay.isToday}
   <p data-testid="no-active-route">{copy.noActiveRoute} <a href="/plan">{copy.backToPlanner}</a></p>
 {:else if here?.stop}
+  {#if here?.stop}<RouteStrip items={strip} onopen={openStop} />{/if}
   <AlertBubbles alerts={liveDay.alerts} onopen={() => goto('/notifications')} />
   <DepartureBoard
     station={here.stop.station_name || here.stop.station_id}
@@ -125,20 +127,6 @@
 {/if}
 {#if error && !tabOpen}<p role="alert">{error}</p>{/if}
 
-{#if here?.stop}
-  <section class="rest">
-    <h2>{copy.stillToCome}</h2>
-    {#each remaining as stop (stop.id)}
-      {@const leg = liveDay.legs.find((l) => l.to_stop === stop.id)}
-      <div class="row">
-        <span class="when">{leg?.arrive_at ? fmtTime(leg.arrive_at) : ''}</span>
-        <button type="button" class="name" onclick={() => openStop(stop.id)}>{stop.name} →</button>
-        <span class="where">{stop.station_name}</span>
-      </div>
-    {/each}
-  </section>
-{/if}
-
 {#if liveDay.itinerary}<CrewChat />{/if}
 
 {#if liveDay.itinerary}
@@ -150,6 +138,7 @@
   .current { margin: 2px 20px 12px; display: grid; gap: 2px; }
   .current small { color: #aaa; font-size: 11px; text-transform: uppercase; letter-spacing: .08em; }
   .stopname { all: unset; cursor: pointer; font-size: 19px; font-weight: 750; color: #ffce5c; }
+  .stopname:focus-visible { outline: 3px solid #fff; outline-offset: 3px; }
   .actions { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; padding: 0 20px 14px; align-items: start; }
   .action { display: flex; width: 100%; margin: 0; flex-direction: column; align-items: center; gap: 5px; border-radius: 16px; padding: 12px 5px; border: 1px solid #b5873b; color: #ffe3a3; background: linear-gradient(145deg, #443319, #211b13); box-shadow: 0 3px 0 #695024; font-size: 13px; }
   .action span { font-size: 30px; line-height: 1.2; }
@@ -164,10 +153,6 @@
   dialog::backdrop { background: #000b; backdrop-filter: blur(4px); }
   dialog > button { margin: 0; }
   .stale { margin: 12px 20px; padding: 10px 12px; border: 1px solid #555; border-radius: 9px; font-size: 13px; color: #cfcfcf; }
-  .rest, .tabclosed { padding: 18px 20px; }
+  .tabclosed { padding: 18px 20px; }
   h2 { margin: 0 0 10px; font-size: 13px; letter-spacing: .09em; text-transform: uppercase; color: #9a9a9a; font-weight: 700; }
-  .row { display: flex; align-items: baseline; gap: 12px; padding: 11px 0; border-bottom: 1px solid #2a2a2a; }
-  .when { font-variant-numeric: tabular-nums; font-size: 15px; color: #9a9a9a; width: 68px; flex: none; }
-  .name { all: unset; cursor: pointer; flex-grow: 1; font-size: 16px; color: inherit; }
-  .where { font-size: 13px; color: #9a9a9a; }
 </style>

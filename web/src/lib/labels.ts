@@ -207,6 +207,7 @@ export const copy = {
   noActiveRoute: 'No route is locked for today yet.',
   backToLive: 'Back to Live',
   stillToCome: 'Next stops',
+  routeProgress: 'Route progress',
   tabTitle: 'Tab',
   drink_beer: 'Beer',
   drink_cocktail: 'Cocktail',

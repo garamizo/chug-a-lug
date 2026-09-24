@@ -7,7 +7,7 @@ test('live actions open the Tab and camera choices and share activity with the c
   await page.clock.install({ time: new Date('2026-12-26T19:00:00Z') });
   await page.goto('/live');
   await expect(page.getByTestId('current-stop')).toBeVisible();
-  await expect(page.getByRole('heading', { name: 'Next stops' })).toBeVisible();
+  await expect(page.getByTestId('route-strip')).toBeVisible();
   const context = await browser.newContext();
   try {
     const other = await context.newPage();

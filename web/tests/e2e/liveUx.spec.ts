@@ -77,3 +77,11 @@ test('on the event day The Route opens stops in the sheet, not the planner', asy
   await expect(page.getByTestId('sheet-name')).toHaveText('Berwyn Beer Hall');
   await expect(page).toHaveURL(/\/route\?stop=/);
 });
+
+test('the route strip shows where the crew is and opens any stop', async ({ page }) => {
+  await liveDay(page, 'E2E Route Strip');
+  await expect(page.getByTestId('strip-stop-0')).toHaveAttribute('aria-current', 'step');
+  await expect(page.getByTestId('strip-stop-1')).not.toHaveAttribute('aria-current', 'step');
+  await page.getByTestId('strip-stop-1').click();
+  await expect(page.getByTestId('sheet-name')).toHaveText('Berwyn Beer Hall');
+});
