@@ -34,9 +34,10 @@ test('three sessions rehearse clock, replay, route edits, Tab, Freight and recon
     await login(other, 'Rehearsal Crew Two', process.env.CREW_PASSWORD!);
     await page.goto('/sim'); await crew.goto('/live'); await other.goto('/live');
     const indicator = page.getByTestId('simulation-status');
-    await expect(indicator).toContainText('Paused');
-    await expect(crew.getByTestId('simulation-status')).toHaveText(await indicator.textContent() ?? '');
-    await expect(other.getByTestId('simulation-status')).toHaveText(await indicator.textContent() ?? '');
+    await expect(indicator).toHaveAttribute('data-status', /Paused/);
+    await expect(page.getByTestId('rehearsal-badge')).toContainText(`${copy.rehearsalTitle} — `);
+    await expect(crew.getByTestId('simulation-status')).toHaveAttribute('data-status', await indicator.getAttribute('data-status') ?? '');
+    await expect(other.getByTestId('simulation-status')).toHaveAttribute('data-status', await indicator.getAttribute('data-status') ?? '');
     const initialHeaders = { Authorization: await token(page) };
     const normal = await (await page.request.get('/api/metra/next?from=CUS&to=LAGRANGE&date=2026-12-26', { headers: initialHeaders })).json();
     expect(normal.trips.find((t: { tripId: string }) => t.tripId === 'BN1')?.delayMin).toBe(0);
@@ -48,10 +49,10 @@ test('three sessions rehearse clock, replay, route edits, Tab, Freight and recon
     await expect(page.getByRole('button', { name: '10×', exact: true })).toHaveAttribute('aria-pressed', 'true');
     const before = await clock(page);
     await page.getByTestId('sim-toggle').click();
-    await expect(indicator).toContainText('Running');
-    await expect(other.getByTestId('simulation-status')).toContainText('Running', { timeout: 7000 });
+    await expect(indicator).toHaveAttribute('data-status', /Running/);
+    await expect(other.getByTestId('simulation-status')).toHaveAttribute('data-status', /Running/, { timeout: 7000 });
     await page.getByTestId('sim-toggle').click();
-    await expect(indicator).toContainText('Paused');
+    await expect(indicator).toHaveAttribute('data-status', /Paused/);
     const paused = await clock(page);
     expect(Date.parse(paused.eventNow) - Date.parse(before.eventNow)).toBeGreaterThan(0);
     expect(Date.parse(paused.eventNow) - Date.parse(before.eventNow)).toBeLessThan(90_000);
@@ -88,9 +89,9 @@ test('three sessions rehearse clock, replay, route edits, Tab, Freight and recon
     });
     await crew.evaluate(() => window.dispatchEvent(new Event('focus'))); await seen;
     await change(page, { action: 'rate', rate: 30 });
-    await expect(crew.getByTestId('simulation-status')).toContainText('30×', { timeout: 7000 });
+    await expect(crew.getByTestId('simulation-status')).toHaveAttribute('data-status', /30×/, { timeout: 7000 });
     release();
-    await expect(crew.getByTestId('simulation-status')).toContainText('30×');
+    await expect(crew.getByTestId('simulation-status')).toHaveAttribute('data-status', /30×/);
     await crew.unrouteAll({ behavior: 'wait' });
     const pb = await admin();
     const route = (await pb.collection('itineraries').getFullList())[0];
@@ -163,7 +164,7 @@ test('three sessions rehearse clock, replay, route edits, Tab, Freight and recon
     await crew.evaluate(() => window.scrollTo(0, 0));
     await crew.screenshot({ path: info.outputPath('board.png'), fullPage: true });
     await crewContext.setOffline(true);
-    await expect(crew.getByTestId('simulation-status')).toContainText('Not synchronized');
+    await expect(crew.getByTestId('simulation-status')).toHaveAttribute('data-status', /Not synchronized/);
     await crew.getByTestId('drink-beer').click();
     await expect(crew.getByRole('alert')).toHaveText(copy.noSignal);
     expect((await pb.collection('drink_entries').getFullList()).length).toBe(1);
@@ -178,7 +179,7 @@ test('three sessions rehearse clock, replay, route edits, Tab, Freight and recon
     const after = await pb.collection('drink_entries').getFullList({ sort: '-action_order' });
     expect(new Date(after[0].at).toISOString()).toBe('2026-12-26T18:26:00.000Z');
     await change(page, { action: 'seek', at: '2026-12-27T00:10:00.000Z' });
-    await expect(crew.getByTestId('simulation-status')).toContainText('Ended', { timeout: 7000 });
+    await expect(crew.getByTestId('simulation-status')).toHaveAttribute('data-status', /Ended/, { timeout: 7000 });
     const tail = await (await page.request.get('/api/metra/status', { headers })).json();
     expect(tail.feeds.tripupdates.mode).toBe('stale');
   } finally { await crewContext.close(); await otherContext.close(); }

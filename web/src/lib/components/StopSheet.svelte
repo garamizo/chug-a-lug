@@ -66,11 +66,11 @@
       <h3>{copy.hours}</h3>
       <p class="today">{hours.line ?? copy.hoursUnknown}</p>
       {#if hours.rest.length}<details><summary>{copy.otherDays}</summary><ul>{#each hours.rest as line}<li>{line}</li>{/each}</ul></details>{/if}
-      {#if website}<p><a href={website} target="_blank" rel="noopener">{copy.website}</a></p>{/if}
     </section>
     {#if stop.notes}<section><h3>{copy.notes}</h3><p class="notes">{stop.notes}</p></section>{/if}
     <footer>
-      {#if isAdmin}<a href="/plan/{itineraryId}/stops/{stop.id}" data-testid="sheet-edit">{copy.editDetails}</a>{/if}
+      {#if isAdmin}<a class="edit" href="/plan/{itineraryId}/stops/{stop.id}" data-testid="sheet-edit">{copy.editDetails}</a>{/if}
+      {#if website}<a class="site" href={website} target="_blank" rel="noopener" data-testid="sheet-website">{copy.website}</a>{/if}
       <button type="button" class="secondary" onclick={closeStop} data-testid="sheet-close">{copy.closeSheet}</button>
     </footer>
   {/if}
@@ -78,7 +78,10 @@
 
 <style>
   .sheet { margin: auto 0 0; width: 100%; max-width: 760px; max-height: 88dvh; margin-inline: auto; padding: 8px 20px calc(20px + env(safe-area-inset-bottom));
-    border: 1px solid #3a3a3a; border-bottom: 0; border-radius: 22px 22px 0 0; background: #181818; color: #eee; }
+    border: 1px solid #3a3a3a; border-bottom: 0; border-radius: 22px 22px 0 0; background: #181818; color: #eee;
+    overflow-y: auto; overscroll-behavior: contain; }
+  /* A touch scroll that reaches the sheet's end must not carry on into the screen behind it. */
+  :global(html:has(dialog.sheet[open])) { overflow: hidden; }
   .sheet[open] { animation: up .22s ease-out; }
   .sheet::backdrop { background: #000a; backdrop-filter: blur(3px); }
   @keyframes up { from { transform: translateY(40px); opacity: .4; } }
@@ -99,6 +102,9 @@
   h3 { font-size: 13px; letter-spacing: .09em; text-transform: uppercase; color: #9a9a9a; margin: 18px 0 4px; }
   .today { color: #fff; font-weight: 700; margin: 0; }
   .notes { white-space: pre-wrap; }
-  footer { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 18px; }
+  /* Close and Website sit on the right, under a right thumb; Edit stays out of the way on the left. */
+  footer { display: flex; align-items: center; justify-content: flex-end; gap: 12px; margin-top: 18px; }
+  .edit { margin-right: auto; }
+  .site { padding: 12px 14px; border: 1px solid #555; border-radius: 10px; text-decoration: none; }
   footer button { width: auto; margin: 0; }
 </style>

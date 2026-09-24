@@ -1,6 +1,5 @@
 <script lang="ts">
   import { clientClock } from '$lib/sim/clock.svelte';
-  import SimulationStatus from '$lib/components/SimulationStatus.svelte';
   import { goto } from '$app/navigation';
   import { page } from '$app/state';
   import { pb, auth } from '$lib/pb';
@@ -78,8 +77,6 @@
 </script>
 
 {#if $auth.user}
-  <div class="clock-header" class:sim={clientClock.enabled}>
-  <SimulationStatus />
   {#if showBanner}
     <a class="banner" href="/live" data-testid="banner">
       <DepartureBoard compact
@@ -90,7 +87,6 @@
         mode={liveDay.mode} rtFetchedAt={liveDay.rtFetchedAt} />
     </a>
   {/if}
-  </div>
   {#if liveDay.pinnedBulletin}
     <PinnedBulletin bulletin={liveDay.pinnedBulletin} onack={() => void ack(liveDay.pinnedBulletin!.id)} />
   {/if}
@@ -104,8 +100,5 @@
 {/if}
 
 <style>
-  .clock-header { display: contents; }
-  .clock-header.sim { display: flow-root; position: sticky; top: 64px; z-index: 9; background: #111; padding-bottom: 4px; }
-  .clock-header.sim .banner { position: static; }
   .banner { display: block; position: sticky; top: 64px; z-index: 9; text-decoration: none; color: inherit; }
 </style>

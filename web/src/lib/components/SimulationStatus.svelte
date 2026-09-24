@@ -1,20 +1,23 @@
 <script lang="ts">
+  // The rehearsal marker in the app header: one line with Railroad Time. The run's details (source,
+  // speed, state, sync) ride along as the tooltip so the header stays a single line on a phone.
   import { clientClock } from '$lib/sim/clock.svelte';
   import { liveDay } from '$lib/live/day.svelte';
-  import { copy, labels } from '$lib/labels';
-  import { fmtDateTime } from '$lib/time';
+  import { copy } from '$lib/labels';
+  import { fmtTime } from '$lib/time';
+  const sample = $derived(clientClock.sample);
+  const status = $derived(!sample ? copy.simUnavailable : [
+    sample.source === 'recording' ? copy.simRecorded : copy.simTimetable,
+    `${sample.rate || sample.resumeRate}×`,
+    liveDay.now.getTime() >= Date.parse(sample.windowEnd) ? copy.simEnded : sample.rate === 0 ? copy.simPaused : copy.simRunning,
+    clientClock.synchronized ? copy.simSynced : copy.simUnsynced
+  ].join(' · '));
 </script>
 {#if clientClock.enabled}
-  <aside data-testid="simulation-status" aria-live="polite">
-    <strong>{copy.rehearsalTitle}</strong>
-    {#if clientClock.sample}
-      <time datetime={liveDay.now.toISOString()} data-testid="rehearsal-time">{labels.simulationClock}: {fmtDateTime(liveDay.now.toISOString())}</time>
-      <span>{clientClock.sample.source === 'recording' ? copy.simRecorded : copy.simTimetable} · {clientClock.sample.rate || clientClock.sample.resumeRate}× · {liveDay.now.getTime() >= Date.parse(clientClock.sample.windowEnd) ? copy.simEnded : clientClock.sample.rate === 0 ? copy.simPaused : copy.simRunning} · {clientClock.synchronized ? copy.simSynced : copy.simUnsynced}</span>
-    {:else}<span>{copy.simUnavailable}</span>{/if}
-  </aside>
+  <small data-testid="rehearsal-badge">{copy.rehearsalTitle}{#if sample}{' — '}<time datetime={liveDay.now.toISOString()} data-testid="simulation-status" data-status={status} title={status}>{fmtTime(liveDay.now)}{#if !clientClock.synchronized} <span class="warn" aria-label={copy.simUnsynced}>⚠</span>{/if}</time>{/if}</small>
 {/if}
 <style>
-  aside { margin: 4px 0; padding: 6px 10px; border: 1px solid #ffb400; border-radius: 8px; font-size: 11px; display: grid; gap: 2px; }
-  time { font-size: 15px; font-weight: 800; color: #fff; font-variant-numeric: tabular-nums; }
-  strong { color: #ffb400; }
+  small { display: block; color: #ffb400; font-size: 12px; line-height: 16px; overflow: hidden; text-overflow: ellipsis; }
+  time { color: #fff; font-weight: 800; font-variant-numeric: tabular-nums; }
+  .warn { color: #ff9a9a; }
 </style>

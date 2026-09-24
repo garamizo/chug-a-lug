@@ -4,6 +4,7 @@
   import { copy } from '$lib/labels';
   import { fmtTime } from '$lib/time';
   import { boardState } from '$lib/live/board';
+  import { stationUrl } from '$lib/live/venue';
   import { boardTone, compactLine, leadLine } from '$lib/live/present';
   import type { FeedMode, NextTrip } from '$lib/types';
 
@@ -35,7 +36,7 @@
         <span class="agency">{copy.metraBnsf}</span>
         <span class="run">{copy.run} {trip.tripId}</span>
       </div>
-      <h2 class="station">{station}</h2>
+      <h2 class="station"><a href={stationUrl(station)} target="_blank" rel="noopener" data-testid="station-walk">{station}</a></h2>
       <div class="times">
         <div>
           <div class="cap">{copy.departLabel}</div>
@@ -63,7 +64,7 @@
         </div>
       </div>
     {:else}
-      <h2 class="station">{station}</h2>
+      <h2 class="station"><a href={stationUrl(station)} target="_blank" rel="noopener" data-testid="station-walk">{station}</a></h2>
       <p class="lead"><span class="big">{copy.noTrainLeft}</span></p>
     {/if}
   </div>
@@ -81,6 +82,7 @@
   .head .agency { font-weight: 700; }
   .head .run { color: var(--faint); }
   .station { margin: 0; font-size: 19px; font-weight: 750; line-height: 1.15; }
+  .station a { color: inherit; text-decoration: underline; text-decoration-thickness: 1px; text-underline-offset: 3px; }
   .times { display: flex; gap: 18px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
   .times > div { flex-grow: 1; }
   .cap { font-size: 10px; letter-spacing: .1em; text-transform: uppercase; color: var(--faint); }

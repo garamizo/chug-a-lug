@@ -28,6 +28,13 @@ test('a Freight photo opens in the viewer and back closes it without leaving Liv
   await expect(page.getByTestId('departure-board')).toBeVisible();
 });
 
+test('the ticket\'s station opens walking directions back to it', async ({ page }) => {
+  await liveDay(page, 'E2E Station Link');
+  const link = page.getByTestId('departure-board').getByTestId('station-walk');
+  await expect(link).toHaveAttribute('href', /destination=.*Metra\+Station&travelmode=walking/);
+  await expect(link).toHaveAttribute('target', '_blank');
+});
+
 test('tapping the current stop opens its sheet over Live; back closes it', async ({ page }) => {
   const ids = await liveDay(page, 'E2E Stop Sheet');
   await page.getByTestId('current-stop').click();
@@ -35,9 +42,17 @@ test('tapping the current stop opens its sheet over Live; back closes it', async
   await expect(page.getByTestId('sheet-name')).toHaveText('The Whistle Stop');
   await expect(page.getByTestId('sheet-walk')).toHaveAttribute('href', /travelmode=walking/);
   await expect(page.getByTestId('sheet-call')).toHaveCount(0);
+  // The sheet scrolls on its own; Live underneath must not move with it.
+  await expect(page.getByTestId('stop-sheet')).toHaveCSS('overscroll-behavior-y', 'contain');
+  await expect(page.locator('html')).toHaveCSS('overflow-y', 'hidden');
+  // Close sits on the right edge for a one-handed thumb.
+  const sheet = (await page.getByTestId('stop-sheet').boundingBox())!;
+  const close = (await page.getByTestId('sheet-close').boundingBox())!;
+  expect(sheet.x + sheet.width - (close.x + close.width)).toBeLessThan(40);
   await page.getByTestId('sheet-next').click();
   await expect(page.getByTestId('sheet-name')).toHaveText('Berwyn Beer Hall');
   await page.goBack();
+  await expect(page.locator('html')).not.toHaveCSS('overflow-y', 'hidden');
   await expect(page.getByTestId('stop-sheet')).toBeHidden();
   await expect(page).toHaveURL(/\/live$/);
   await expect(page.getByTestId('departure-board')).toBeVisible();

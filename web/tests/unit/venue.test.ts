@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { hoursFor, safeWebsite, telHref, walkUrl } from '../../src/lib/live/venue';
+import { hoursFor, safeWebsite, stationUrl, telHref, walkUrl } from '../../src/lib/live/venue';
 
 describe('venue helpers', () => {
   const week = { source: 'google' as const, weekday: ['Monday: 11 AM – 2 AM', 'Saturday: 11 AM – 3 AM', 'Sunday: Closed'] };
@@ -11,6 +11,9 @@ describe('venue helpers', () => {
   it('builds walking directions, preferring the Google place', () => {
     expect(walkUrl({ name: 'Tap', lat: 41.8, lon: -87.9, place_id: '' })).toBe('https://www.google.com/maps/dir/?api=1&destination=41.8%2C-87.9&travelmode=walking');
     expect(walkUrl({ name: 'Tap & Co', lat: 1, lon: 2, place_id: 'ChIJ' })).toContain('destination=Tap+%26+Co&travelmode=walking&destination_place_id=ChIJ');
+  });
+  it('walks back to a Metra station by name', () => {
+    expect(stationUrl('La Grange Road')).toBe('https://www.google.com/maps/dir/?api=1&destination=La+Grange+Road+Metra+Station&travelmode=walking');
   });
   it('only links real phone numbers and web addresses', () => {
     expect(telHref('(708) 555-0101')).toBe('tel:7085550101');

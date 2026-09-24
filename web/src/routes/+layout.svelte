@@ -4,6 +4,7 @@
   import { copy } from '$lib/labels';
   import { auth } from '$lib/pb';
   import AppMenu from '$lib/components/AppMenu.svelte';
+  import SimulationStatus from '$lib/components/SimulationStatus.svelte';
   import { fetchAlerts } from '$lib/live/feed';
   import { readSeen, unseenCount } from '$lib/live/seen';
   import { liveDay } from '$lib/live/day.svelte';
@@ -44,7 +45,7 @@
 
 <header class="top">
   <div class="col bar">
-    <a href="/" class="brand"><img src="/icon.svg" alt="" width="40" height="40" /><span>{copy.appTitle}{#if clientClock.enabled}<small data-testid="rehearsal-badge">{copy.rehearsalTitle}</small>{/if}</span></a>
+    <a href="/" class="brand"><img src="/icon.svg" alt="" width="40" height="40" /><span>{copy.appTitle}<SimulationStatus /></span></a>
     {#if $auth.user}
       <button type="button" class="secondary menu" aria-label={copy.menu} onclick={() => (ui.menuOpen = true)} data-testid="menu">
         <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
@@ -70,7 +71,6 @@
   .top { position: sticky; top: 0; z-index: 10; background: rgba(17, 17, 17, .94); backdrop-filter: blur(8px); border-bottom: 1px solid #2a2a2a; }
   .bar { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 64px; padding-block: 8px; }
   .brand { display: flex; align-items: center; gap: 12px; font-weight: 750; color: inherit; text-decoration: none; min-width: 0; }
-  .brand small { display: block; color: #ffb400; font-size: 12px; line-height: 16px; }
   .brand img { flex: none; }
   .brand span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .menu { flex: none; width: 44px; height: 44px; padding: 0; margin: 0; position: relative;

@@ -14,6 +14,13 @@ export function walkUrl(stop: Pick<Stop, 'name' | 'lat' | 'lon' | 'place_id'>): 
   return `https://www.google.com/maps/dir/?${params}`;
 }
 
+/** Directions back to the station by name: the client has no station coordinates, and Google
+ * resolves "<name> Metra Station" to the platform. */
+export function stationUrl(station: string): string {
+  const params = new URLSearchParams({ api: '1', destination: `${station} Metra Station`, travelmode: 'walking' });
+  return `https://www.google.com/maps/dir/?${params}`;
+}
+
 export const telHref = (phone: string | undefined): string => {
   const digits = (phone ?? '').replace(/[^\d+]/g, '');
   return digits ? `tel:${digits}` : '';
