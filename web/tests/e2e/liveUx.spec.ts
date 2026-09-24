@@ -99,9 +99,13 @@ test('the crew can talk and Cheers each other across phones', async ({ page, bro
     await expect(other.getByTestId('chat-input')).toHaveValue('');
     const message = page.getByTestId('crew-chat').locator('article', { hasText: 'Grabbing a table in the back' });
     await expect(message).toContainText('E2E Chat Guest');
-    await message.getByRole('button', { name: /Cheers/ }).click();
-    await expect(other.getByTestId('crew-chat').locator('article', { hasText: 'Grabbing a table' }).getByRole('button', { name: /Cheers/ })).toContainText('1');
-    await message.getByRole('button', { name: /Cheers/ }).click();
-    await expect(other.getByTestId('crew-chat').locator('article', { hasText: 'Grabbing a table' }).getByRole('button', { name: /Cheers/ })).not.toContainText('1');
+    const cheersButton = message.getByRole('button', { name: /Cheers/ });
+    const otherCheersButton = other.getByTestId('crew-chat').locator('article', { hasText: 'Grabbing a table' }).getByRole('button', { name: /Cheers/ });
+    await cheersButton.click();
+    await expect(cheersButton).toHaveAttribute('aria-pressed', 'true');
+    await expect(otherCheersButton).toContainText('1');
+    await cheersButton.click();
+    await expect(cheersButton).toHaveAttribute('aria-pressed', 'false');
+    await expect(otherCheersButton).not.toContainText('1');
   } finally { await context.close(); }
 });

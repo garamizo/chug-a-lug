@@ -2,6 +2,7 @@
   // The crew's shared thread: Tab activity, Bulletins, photos, milestones and what people type.
   // Only Conductor Bulletins are ever pinned; a message is just a message.
   import { ClientResponseError } from 'pocketbase';
+  import { SvelteSet } from 'svelte/reactivity';
   import { pb } from '$lib/pb';
   import { clientClock } from '$lib/sim/clock.svelte';
   import { copy, drinkIcons, labels } from '$lib/labels';
@@ -20,22 +21,12 @@
   const viewer = $derived<LightboxItem[]>(photos.map((e) => ({ url: pb.files.getURL(e.media!, e.media!.file, { thumb: '1200x0' }), full: pb.files.getURL(e.media!, e.media!.file), kind: e.media!.kind, caption: e.author })));
   const error = $derived(sendError || (liveDay.feedError ? copy.chatLoadError : ''));
 
-  // My own last write for a target, keyed like `cheers`. The feed only catches up after a round
-  // trip through `loadFeed` (or a realtime push), which can lag a rapid second tap; this keeps a
-  // toggle's own next decision (and its own button) consistent with what it just did, without
-  // waiting on that round trip. It self-heals once the feed agrees, so it never drifts.
-  let mineOverride = $state(new Map<string, string | null>());
-  function status(entry: ChatEntry): { count: number; mine: string | null } | undefined {
-    if (!entry.target) return undefined;
-    const key = `${entry.target.kind}:${entry.target.id}`;
-    const base = cheers.get(key) ?? { count: 0, mine: null };
-    if (!mineOverride.has(key)) return base;
-    const mine = mineOverride.get(key) ?? null;
-    if (mine === base.mine) return base;
-    if (mine && !base.mine) return { count: base.count + 1, mine };
-    if (!mine && base.mine) return { count: Math.max(0, base.count - 1), mine: null };
-    return { count: base.count, mine };
-  }
+  // `cheers` (from `liveDay.feed.reactions`) is the only source of truth for who cheered what — no
+  // local shadow of it. A rapid second tap on the same target before the feed has caught up with the
+  // first is instead blocked outright: this tracks which targets have a create/delete plus its
+  // following `loadFeed` still in flight, so the button disables itself and a stray click is a no-op
+  // until the feed settles.
+  const pending = new SvelteSet<string>();
 
   async function send() {
     const body = draft.trim();
@@ -53,20 +44,23 @@
   async function toggle(entry: ChatEntry) {
     if (!entry.target) return;
     const key = `${entry.target.kind}:${entry.target.id}`;
-    const mine = status(entry)?.mine ?? null;
+    if (pending.has(key)) return;
+    const mine = cheers.get(key)?.mine ?? null;
+    pending.add(key);
     sendError = '';
     try {
       await clientClock.ready();
-      if (mine) { await pb.collection('reactions').delete(mine); mineOverride.set(key, null); }
-      else {
-        const rec = await pb.collection('reactions').create({ user: userId, target_kind: entry.target.kind, target_id: entry.target.id, itinerary: itineraryId });
-        mineOverride.set(key, rec.id);
-      }
+      if (mine) await pb.collection('reactions').delete(mine);
+      else await pb.collection('reactions').create({ user: userId, target_kind: entry.target.kind, target_id: entry.target.id, itinerary: itineraryId });
     } catch (err) {
-      // 400 is the unique index: another tab already cheered this. The reload shows it.
-      if (!(err instanceof ClientResponseError && err.status === 400)) sendError = copy.noSignal;
+      // 400 on create: another tab already cheered this. 404 on delete: another tab already
+      // uncheered it. Either way the reload below shows the true state, so neither is a real error.
+      const known = err instanceof ClientResponseError && ((mine && err.status === 404) || (!mine && err.status === 400));
+      if (!known) sendError = copy.noSignal;
+    } finally {
+      await liveDay.loadFeed();
+      pending.delete(key);
     }
-    await liveDay.loadFeed();
   }
 
   async function remove(entry: ChatEntry) {
@@ -81,7 +75,8 @@
   {#if all.length > shown}<button type="button" class="more secondary" onclick={() => (shown += 40)} data-testid="chat-more">{copy.showEarlier}</button>{/if}
   <div role="log" aria-label={copy.crewChat} aria-live="polite" aria-relevant="additions text">
     {#each entries as entry (entry.id)}
-      {@const c = status(entry)}
+      {@const key = entry.target ? `${entry.target.kind}:${entry.target.id}` : null}
+      {@const c = key ? cheers.get(key) : undefined}
       <article class:bulletin={entry.kind === 'bulletin'} class:milestone={entry.kind === 'milestone'} class:mine={entry.userId === userId && entry.kind === 'message'}>
         <div class="meta"><strong>{entry.author}</strong><time datetime={entry.at}>{fmtTime(entry.at)}</time></div>
         {#if entry.kind === 'bulletin'}<p><span aria-hidden="true">📣</span> {entry.body}</p>
@@ -94,7 +89,7 @@
         {:else}<p><span aria-hidden="true">{drinkIcons[entry.kind] ?? '☕'}</span> {copy.chatAdded} {(copy as Record<string, string>)[`drink_${entry.kind}`] ?? copy.chatDrink}{#if entry.stop} · {entry.stop}{/if}</p>{/if}
         {#if entry.target}
           <div class="acts">
-            <button type="button" class="cheers" class:on={!!c?.mine} aria-pressed={!!c?.mine} onclick={() => void toggle(entry)}
+            <button type="button" class="cheers" class:on={!!c?.mine} aria-pressed={!!c?.mine} disabled={pending.has(key!)} onclick={() => void toggle(entry)}
               data-testid="cheers-{entry.id.replace(':', '-')}"><span aria-hidden="true">🍻</span> {labels.like}{#if c?.count} {c.count}{/if}</button>
             {#if entry.kind === 'message' && entry.userId === userId}<button type="button" class="del" onclick={() => void remove(entry)}>{copy.deleteMessage}</button>{/if}
           </div>
@@ -124,6 +119,7 @@
   .acts button { width: auto; min-height: 32px; margin: 0; padding: 4px 10px; font-size: 13px; border-radius: 999px;
     background: transparent; border: 1px solid #4a4030; color: #cdb88a; font-weight: 600; }
   .cheers.on { background: #3a2e12; border-color: #ffb400; color: #ffce5c; }
+  .cheers:disabled { opacity: .55; }
   .photo { width: auto; min-height: 0; margin: 6px 0 0; padding: 0; background: none; border: 0; }
   .photo img { border-radius: 10px; object-fit: cover; display: block; }
   .video { display: grid; place-items: center; width: 160px; height: 120px; background: #222; border-radius: 10px; color: #fff; }
