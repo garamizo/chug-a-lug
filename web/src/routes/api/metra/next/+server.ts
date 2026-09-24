@@ -24,7 +24,7 @@ export const GET: RequestHandler = async ({ request, url }) => {
   const metadata = { source: snapshot.source, revision: snapshot.revision, diagnostics: snapshot.diagnostics };
   const from = url.searchParams.get('from') ?? '';
   const to = url.searchParams.get('to') ?? '';
-  const date = url.searchParams.get('date') ?? snapshot.serviceDate ?? '2026-12-26';
+  const date = url.searchParams.get('date') ?? snapshot.serviceDate ?? '';
   if (!from || !to || !/^\d{4}-\d{2}-\d{2}$/.test(date)) throw error(400, 'from, to and date=YYYY-MM-DD are required.');
   const after = url.searchParams.get('after');
   let afterDate = new Date(snapshot.eventNow);
@@ -41,6 +41,10 @@ export const GET: RequestHandler = async ({ request, url }) => {
   // alerts feed says nothing about whether departures are still being published.
   const mode = modeFor(snapshot.status.feeds.tripupdates);
 
+  // Practice days run the plan date's published timetable; today's realtime belongs to another day.
+  const practice = url.searchParams.get('practice') === '1';
+  const effectiveMode = practice ? 'schedule_only' : mode;
+
   // Look back before `after` so a delayed train is still a candidate, and take more than the caller
   // asked for so cancellations cannot empty the result. Both are trimmed by selectDepartures.
   const fromMin = Math.max(0, afterMin - DELAY_LOOKBACK_MIN);
@@ -50,9 +54,9 @@ export const GET: RequestHandler = async ({ request, url }) => {
     liveDepart: null, liveArrive: null, delayMin: null, status: 'scheduled'
   }));
   // Stale times are worse than none: fall back to the timetable rather than show old predictions.
-  const preds = mode === 'live' ? readPredictions(snapshot.feeds.tripupdates?.message ?? null, PLANNER_ROUTE, date) : {};
+  const preds = effectiveMode === 'live' ? readPredictions(snapshot.feeds.tripupdates?.message ?? null, PLANNER_ROUTE, date) : {};
   // The board shows this as "no live times since", so it must be the trip-update feed's own
   // timestamp — not the newest fetch across feeds, which a healthy alerts poll keeps refreshing.
   const fetchedAt = snapshot.status.feeds.tripupdates.fetchedAt;
-  return json({ ...metadata, mode, fetchedAt, trips: selectDepartures(candidates, preds, from, to, afterDate, limit) });
+  return json({ ...metadata, mode: effectiveMode, fetchedAt: practice ? null : fetchedAt, trips: selectDepartures(candidates, preds, from, to, afterDate, limit) });
 };
