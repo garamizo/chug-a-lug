@@ -65,11 +65,15 @@ The Tab dialog, the cup button and the "Still to come" list are removed.
   planning page.
 - **Paging:** swipe left/right or arrow buttons move to the previous/next stop in route order, replacing
   (not pushing) the history state so back still closes the sheet in one step.
-- **Data:** stops come from `liveDay.stops`; the `places` record is fetched once per opened stop
-  (`expand: 'place'`) and mirrored into the IndexedDB offline store alongside stops. Offline without a
+- **Data:** stops come from `liveDay.stops`. Stops are loaded with `expand: 'place'`, so venue details
+  arrive with the route and are mirrored for offline use with no extra storage code. Offline without a
   mirrored place, the sheet shows the stop fields it has and hides the gallery. The sheet writes
   nothing. Website links keep the existing `^https?://` guard.
-- Also opened from The Route page's stop rows on the event day.
+- On the event day The Route opens stops in the sheet through an `onopen` callback on
+  `ItineraryView`/`StopRow`; off-day the rows still link to the planner. The Crew Board keeps its own
+  loading.
+- The open stop is tracked in `page.state.stop` (SvelteKit 2.70 shallow routing does not update
+  `page.url`), with the `?stop=` URL used only for fresh loads and deep links.
 
 ### 2. Route strip
 
@@ -112,7 +116,8 @@ poller and realtime subscriptions:
 (`stop.itinerary = id` / `itinerary = id`), reloaded on realtime events for those collections, on the
 existing 30 s timer and on `online`. The existing per-stop `drinks`/`media` become derived from the
 feed. `CrewChat` stops fetching and reads `liveDay.feed`. Load failures keep the last good feed and
-set the existing chat error line.
+set the existing chat error line. `media` gains an event-time `at` stamped by the create hook, so
+photos sort into the chat by Railroad Time.
 
 ### 6. One-tap Tab
 

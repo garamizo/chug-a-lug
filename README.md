@@ -77,6 +77,8 @@ users see. Bars and restaurants keep their plain names.
 | Plan edit: cancel a stop | **Annul** | Rail, Metra's own word | |
 | Plan edit: add a stop | **Extra** | Rail, an unscheduled train | |
 | Broadcast message | **Bulletin** | Rail | |
+| Crew chat message | **Message** | Plain | Anyone can post; never pinned |
+| Computed chat milestone | **Milestone** | Plain | Worked out from the Tab and Freight, never stored |
 | Event log | **Train Sheet** | Rail, the dispatcher's log | |
 | Drink log | **Tab** | Bar | |
 | Scoreboard | **Hall of Fame** | Sports | |
@@ -159,10 +161,15 @@ Goal: nobody misses a train, nobody is lost, and the plan can change without cha
   until that person taps "Got it". Plan edits and posted Bulletins go into the event log.
 - **Crew Board** shows shot / cocktail / beer / non-alcoholic / food counts and who acknowledged the latest
   Bulletin. Ranking uses shot + cocktail + beer, then non-alcoholic drinks, then food. It does not track individual locations.
-- **Live actions** sit below the compact ticket and current venue: the photo button opens the file
-  picker (with a camera shortcut), and the speaker opens the Conductor’s Bulletin composer.
-  **Crew chat** at the bottom combines route-wide Tab activity and Bulletins with names and event times;
-  Undo removes the corresponding Tab entry. **Next stops** links to upcoming venues.
+- **Live** reads top to bottom: the route strip (punched stops, 🚂 where the crew is, tap any stop), the
+  Departure Board, the current stop (tap for its sheet: hours, walking directions, call, photos), the
+  one-tap Tab with the day's personal total and an Undo toast, Photo and Bulletin, the leaderboard line
+  and the crew chat. On the event day a tab bar (Live · The Route · Crew Board · Menu) replaces the
+  back links and opening the app lands on Live. Stop sheets and the photo viewer close with the back
+  gesture and never leave the screen underneath.
+- **Crew chat** merges Tab activity, Bulletins, Freight, computed milestones (firsts, crew totals, a
+  new leader, the first photo at each stop) and messages anyone can post (280 characters, own delete).
+  Everyone can Cheers any entry once. Only Conductor Bulletins are pinned.
 - **The Tab** is a one-tap row of shot / cocktail / beer / non-alcoholic / food buttons, always visible
   above the live actions, with personal counters per drink and a running total for the day. A tap logs
   a drink at the current stop instantly; a toast with Undo confirms it, and it stays up (with a retry
