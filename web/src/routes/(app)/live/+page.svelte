@@ -173,7 +173,7 @@
   </div>
 {/if}
 
-{#if liveDay.itinerary}<CrewChat />{/if}
+{#if liveDay.itinerary && $auth.user}<CrewChat itineraryId={liveDay.itinerary.id} userId={$auth.user.id} />{/if}
 
 {#if liveDay.itinerary}
   <StopSheet stops={liveDay.stops} media={liveDay.feed.media} eventDate={liveDay.itinerary.event_date}

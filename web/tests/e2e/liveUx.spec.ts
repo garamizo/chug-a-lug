@@ -85,3 +85,23 @@ test('the route strip shows where the crew is and opens any stop', async ({ page
   await page.getByTestId('strip-stop-1').click();
   await expect(page.getByTestId('sheet-name')).toHaveText('Berwyn Beer Hall');
 });
+
+test('the crew can talk and Cheers each other across phones', async ({ page, browser }) => {
+  await liveDay(page, 'E2E Chat Host');
+  const context = await browser.newContext();
+  try {
+    const other = await context.newPage();
+    await other.clock.install({ time: new Date('2026-12-26T19:00:00Z') });
+    await login(other, 'E2E Chat Guest', CREW);
+    await other.goto('/live');
+    await other.getByTestId('chat-input').fill('Grabbing a table in the back');
+    await other.getByTestId('chat-send').click();
+    await expect(other.getByTestId('chat-input')).toHaveValue('');
+    const message = page.getByTestId('crew-chat').locator('article', { hasText: 'Grabbing a table in the back' });
+    await expect(message).toContainText('E2E Chat Guest');
+    await message.getByRole('button', { name: /Cheers/ }).click();
+    await expect(other.getByTestId('crew-chat').locator('article', { hasText: 'Grabbing a table' }).getByRole('button', { name: /Cheers/ })).toContainText('1');
+    await message.getByRole('button', { name: /Cheers/ }).click();
+    await expect(other.getByTestId('crew-chat').locator('article', { hasText: 'Grabbing a table' }).getByRole('button', { name: /Cheers/ })).not.toContainText('1');
+  } finally { await context.close(); }
+});
