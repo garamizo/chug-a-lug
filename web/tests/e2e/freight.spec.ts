@@ -67,7 +67,8 @@ for (const [phase, time] of [
     await page.clock.install({ time: new Date(time) });
     await page.goto('/live');
 
-    await expect(page.getByRole('heading', { name: 'Tab', exact: true })).toBeVisible();
+    // The Tab header now reads "Tab · you N" (the day's personal total), so match by substring.
+    await expect(page.getByRole('heading', { name: 'Tab' })).toBeVisible();
     await expect(page.getByTestId('no-active-route')).toHaveCount(0);
     await expect(page.getByTestId('freight-input')).toHaveCount(0);
   });

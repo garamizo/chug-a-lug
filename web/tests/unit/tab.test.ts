@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { DRINK_KINDS, tally } from '../../src/lib/live/tab';
+import { DRINK_KINDS, tally, withPending } from '../../src/lib/live/tab';
 import type { DrinkEntry } from '../../src/lib/types';
 
 const entry = (id: string, user: string, stop: string, kind: string, at: string) =>
@@ -46,4 +46,11 @@ it('uses stable created/id fallback for legacy cached ties', () => {
   const b = { ...a, id: 'b' };
   expect(tally([a, b], 'a', 'me').lastMine?.id).toBe('b');
   expect(tally([b, a], 'a', 'me').lastMine?.id).toBe('b');
+});
+
+it('shows taps in flight once, even after the saved row arrives first', () => {
+  const saved = [{ id: 'a', kind: 'beer' }, { id: 'b', kind: 'shot' }] as DrinkEntry[];
+  const pending = [{ id: 'b', kind: 'shot' }, { id: 'c', kind: 'beer' }] as DrinkEntry[];
+  expect(withPending(saved, pending).map((d) => d.id)).toEqual(['a', 'b', 'c']);
+  expect(withPending(saved, [])).toBe(saved);
 });

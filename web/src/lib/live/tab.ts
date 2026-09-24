@@ -23,6 +23,13 @@ function newer(a: DrinkEntry, b: DrinkEntry): boolean {
   return a.id > b.id;
 }
 
+/** Saved rows plus taps still in flight, deduplicated by record id (the id is chosen by the client). */
+export function withPending(saved: DrinkEntry[], pending: DrinkEntry[]): DrinkEntry[] {
+  if (!pending.length) return saved;
+  const ids = new Set(saved.map((d) => d.id));
+  return [...saved, ...pending.filter((p) => !ids.has(p.id))];
+}
+
 export function tally(entries: DrinkEntry[], stopId: string, userId: string): Tally {
   const crew = zeroes(), mine = zeroes();
   let lastMine: DrinkEntry | null = null;

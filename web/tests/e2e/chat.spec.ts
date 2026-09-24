@@ -15,14 +15,11 @@ test('live actions open the Tab and camera choices and share activity with the c
     await login(other, 'Chat Crew', process.env.CREW_PASSWORD ?? 'crew-test-password');
     await other.goto('/live');
     await expect(other.getByTestId('action-bulletin')).toBeDisabled();
-    await page.getByTestId('action-tab').click();
-    await expect(page.getByTestId('tab-dialog')).toBeVisible();
     await page.getByTestId('drink-beer').click();
     await expect(other.getByTestId('crew-chat')).toContainText('Chat Conductor');
     await expect(other.getByTestId('crew-chat')).toContainText('Beer');
     await page.getByTestId('tab-undo').click();
     await expect(other.getByTestId('crew-chat')).not.toContainText('Beer');
-    await page.getByTestId('close-tab').click();
     const picker = page.waitForEvent('filechooser');
     await page.getByTestId('action-photo').click();
     expect((await picker).isMultiple()).toBe(true);

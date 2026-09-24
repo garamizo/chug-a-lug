@@ -33,12 +33,10 @@ test('the open Crew Board follows new users, drinks, undo and acknowledgements',
     const row = page.getByTestId('crew-row').filter({ hasText: 'E2E Roster Late Arrival' });
     await expect(row).toBeVisible();
     await crew.goto('/live');
-    await crew.getByTestId('action-tab').click();
     await crew.getByTestId('drink-beer').click();
     await expect(row.locator('.tab > span[title="Beer"]')).toContainText('1');
     await crew.getByTestId('tab-undo').click();
     await expect(row.locator('.tab > span[title="Beer"]')).toContainText('0');
-    await crew.getByTestId('close-tab').click();
     await page.getByTestId('menu').click();
     await page.getByTestId('menu-bulletin').click();
     await page.getByTestId('bulletin-body').fill('Crew Board acknowledgement test.');
