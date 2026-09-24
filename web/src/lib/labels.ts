@@ -54,6 +54,8 @@ export const copy = {
   rehearsalSetupIncomplete: 'Rehearsal setup is incomplete or belongs to another run. Inspect data/rehearsal before retrying; existing data has been preserved.',
   rehearsalLive: 'Practice the live day',
   rehearsalLiveHint: 'Departure Board, Tab and photos',
+  mainNav: 'Main',
+  liveHint: 'Departure Board, Tab and crew chat',
 
   simRecorded: 'Recorded feed',
   simTimetable: 'Timetable rehearsal',

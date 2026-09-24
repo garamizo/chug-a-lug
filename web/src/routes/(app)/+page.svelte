@@ -1,8 +1,10 @@
 <script lang="ts">
   import { clientClock } from '$lib/sim/clock.svelte';
   import { onMount } from 'svelte';
+  import { goto } from '$app/navigation';
   import { auth, pb } from '$lib/pb';
   import { label, copy } from '$lib/labels';
+  import { liveDay } from '$lib/live/day.svelte';
   import type { Itinerary } from '$lib/types';
 
   let locked = $state<Itinerary | null>(null);
@@ -12,6 +14,8 @@
       locked = list.items[0] ?? null;
     } catch { locked = null; }
   });
+  // On the day itself the app is the Departure Board; the planner is a tab away.
+  $effect(() => { if (liveDay.isToday) void goto('/live', { replaceState: true }); });
 </script>
 
 <h1>{copy.welcome} <span data-testid="name">{$auth.user?.name}</span></h1>
@@ -19,7 +23,7 @@
 <ul>
   <li><a href="/plan" data-testid="nav-plan"><strong><span aria-hidden="true">🗺️</span> {label('planningPhase')} →</strong><span>{copy.plannerTeaser}</span></a></li>
   <li><a href="/route" data-testid="nav-route"><strong><span aria-hidden="true">🚂</span> {label('lockedItinerary')} →</strong><span>{locked ? locked.title : copy.noRoute}</span></a></li>
-  {#if clientClock.enabled}<li><a href="/live" data-testid="nav-live"><strong><span aria-hidden="true">🎟️</span> {copy.rehearsalLive} →</strong><span>{copy.rehearsalLiveHint}</span></a></li>
+  {#if clientClock.enabled || liveDay.isToday}<li><a href="/live" data-testid="nav-live"><strong><span aria-hidden="true">🎟️</span> {clientClock.enabled ? copy.rehearsalLive : label('livePhase')} →</strong><span>{clientClock.enabled ? copy.rehearsalLiveHint : copy.liveHint}</span></a></li>
   {:else}<li><strong>{label('livePhase')}</strong><span>{copy.comingSoon}</span></li>{/if}
   <li><strong>{label('wrapUpPhase')}</strong><span>{copy.comingSoon}</span></li>
 </ul>

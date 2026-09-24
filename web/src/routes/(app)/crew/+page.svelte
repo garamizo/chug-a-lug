@@ -51,7 +51,7 @@
 
 <svelte:head><title>{labels.userRoster}</title></svelte:head>
 
-<p><a href="/live">← {copy.backToLive}</a></p>
+{#if !liveDay.isToday}<p><a href="/live">← {copy.backToLive}</a></p>{/if}
 <h1>{labels.userRoster}</h1>
 {#if error}<p class="error" role="alert">{error}</p>{/if}
 

@@ -25,7 +25,7 @@
 
 <svelte:head><title>{copy.notifications}</title></svelte:head>
 
-<p><a href="/live">← {copy.backToLive}</a></p>
+{#if !liveDay.isToday}<p><a href="/live">← {copy.backToLive}</a></p>{/if}
 <h1>{copy.notifications}</h1>
 
 <h2>{copy.serviceAlerts}</h2>

@@ -7,9 +7,9 @@
   import { fetchAlerts } from '$lib/live/feed';
   import { readSeen, unseenCount } from '$lib/live/seen';
   import { liveDay } from '$lib/live/day.svelte';
+  import { ui } from '$lib/ui.svelte';
   let { children } = $props();
 
-  let menuOpen = $state(false);
   // Kept apart from the Bulletin count so a failed alerts read only zeroes its own half of the
   // dot: `unread` below stays live off `liveDay`'s own state either way.
   let alertsUnread = $state(0);
@@ -46,7 +46,7 @@
   <div class="col bar">
     <a href="/" class="brand"><img src="/icon.svg" alt="" width="40" height="40" /><span>{copy.appTitle}{#if clientClock.enabled}<small data-testid="rehearsal-badge">{copy.rehearsalTitle}</small>{/if}</span></a>
     {#if $auth.user}
-      <button type="button" class="secondary menu" aria-label={copy.menu} onclick={() => (menuOpen = true)} data-testid="menu">
+      <button type="button" class="secondary menu" aria-label={copy.menu} onclick={() => (ui.menuOpen = true)} data-testid="menu">
         <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
           <path d="M4 7h16M4 12h16M4 17h16"></path>
         </svg>
@@ -55,7 +55,7 @@
     {/if}
   </div>
 </header>
-<AppMenu open={menuOpen} {unread} onclose={() => (menuOpen = false)} oncompose={() => (liveDay.composing = true)} />
+<AppMenu open={ui.menuOpen} {unread} onclose={() => (ui.menuOpen = false)} oncompose={() => (liveDay.composing = true)} />
 <main class="col">{@render children()}</main>
 <footer class="col">{copy.footer}</footer>
 

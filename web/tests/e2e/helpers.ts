@@ -9,7 +9,15 @@ export async function login(page: Page, name: string, password: string) {
   await page.getByTestId('name-input').fill(name);
   await page.getByTestId('password').fill(password);
   await page.getByTestId('login').click();
-  await expect(page.getByTestId('name')).toHaveText(name);
+  // The tab bar mounts off `liveDay.isToday` alone, so on the event day it can render on `/` for
+  // the instant before the home page's own effect redirects to `/live`. A check-then-assert (see
+  // if the name shows, then assert its text) loses that race: the name can vanish between the two
+  // steps. `Promise.any` accepts whichever lands durably — the right name on the home screen, or
+  // the tab bar already up for the event day — without a synchronous check that can go stale.
+  await Promise.any([
+    page.getByTestId('name').filter({ hasText: name }).waitFor({ state: 'visible' }),
+    page.getByTestId('tab-bar').waitFor({ state: 'visible' })
+  ]);
 }
 
 async function superuserToken(): Promise<string> {
