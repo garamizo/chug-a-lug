@@ -29,7 +29,7 @@
 </section>
 
 <style>
-  .tab { padding: 6px 20px 12px; }
+  .tab { padding: 6px 0 12px; }
   h2 { margin: 0 0 8px; font-size: 13px; letter-spacing: .09em; text-transform: uppercase; color: #9a9a9a; font-weight: 700; }
   .grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 6px; }
   .grid button { margin: 0; padding: 10px 2px; min-height: 0; display: flex; flex-direction: column; align-items: center; gap: 1px;

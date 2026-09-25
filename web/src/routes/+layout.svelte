@@ -49,7 +49,7 @@
 
 <header class="top">
   <div class="col bar">
-    <a href="/" class="brand"><img src="/icon.svg" alt="" width="40" height="40" /><span>{copy.appTitle}<SimulationStatus /></span></a>
+    <a href="/" class="brand"><img src="/logo.svg" alt="" width="40" height="40" /><span>{copy.appTitle}<SimulationStatus /></span></a>
     {#if $auth.user}
       <button type="button" class="secondary menu" aria-label={copy.menu} onclick={() => (ui.menuOpen = true)} data-testid="menu">
         <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
@@ -69,8 +69,8 @@
   :global(a:focus-visible), :global(button:focus-visible), :global(label:focus-within) { outline: 3px solid #fff; outline-offset: 3px; }
   :global(body) { margin: 0; font-family: system-ui, sans-serif; background: #111; color: #eee; }
   /* One readable column on every screen: fluid on phones, capped on desktop. */
-  .col { width: 100%; max-width: 760px; margin: 0 auto; padding-inline: 20px; }
-  @media (min-width: 720px) { .col { padding-inline: 32px; } }
+  .col { width: 100%; max-width: 760px; margin: 0 auto; padding-inline: 10px; }
+  @media (min-width: 720px) { .col { padding-inline: 24px; } }
   .top { position: sticky; top: 0; z-index: 10; background: rgba(17, 17, 17, .94); backdrop-filter: blur(8px); border-bottom: 1px solid #2a2a2a; }
   .bar { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 64px; padding-block: 8px; }
   .brand { display: flex; align-items: center; gap: 12px; font-weight: 750; color: inherit; text-decoration: none; min-width: 0; }

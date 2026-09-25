@@ -1,10 +1,19 @@
-import { expect, test, type Page } from '@playwright/test';
+import { expect, test, type Locator, type Page } from '@playwright/test';
 import { clearLockedCrawls, login, seedLockedCrawl } from './helpers';
 import { copy } from '../../src/lib/labels';
 
 const ADMIN = process.env.ADMIN_PASSWORD ?? 'admin-test-password';
 const CREW = process.env.CREW_PASSWORD ?? 'crew-test-password';
 const GIF = Buffer.from('R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7', 'base64');
+
+async function longPress(page: Page, target: Locator) {
+  await target.evaluate((el) => el.scrollIntoView({ block: 'center' }));
+  const box = (await target.boundingBox())!;
+  await page.mouse.move(box.x + 12, box.y + 8);
+  await page.mouse.down();
+  await page.waitForTimeout(600);
+  await page.mouse.up();
+}
 
 async function liveDay(page: Page, name: string) {
   await page.route('**/api/metra/**', (r) => r.fulfill({ json: { mode: 'schedule_only', fetchedAt: null, trips: [], alerts: [] } }));
@@ -37,7 +46,7 @@ test('the ticket\'s station opens walking directions back to it', async ({ page 
 
 test('tapping the current stop opens its sheet over Live; back closes it', async ({ page }) => {
   const ids = await liveDay(page, 'E2E Stop Sheet');
-  await page.getByTestId('current-stop').click();
+  await page.getByTestId('route-strip').locator('[aria-current="step"]').click();
   await expect(page).toHaveURL(new RegExp(`/live\\?stop=${ids.firstStopId}$`));
   await expect(page.getByTestId('sheet-name')).toHaveText('The Whistle Stop');
   await expect(page.getByTestId('sheet-walk')).toHaveAttribute('href', /travelmode=walking/);
@@ -62,7 +71,7 @@ test('a photo opened from the sheet sits above it, and back steps out one layer 
   await liveDay(page, 'E2E Sheet Photo');
   await page.getByTestId('freight-input').setInputFiles({ name: 'bar.gif', mimeType: 'image/gif', buffer: GIF });
   await expect(page.getByTestId('freight-open-0')).toBeVisible();
-  await page.getByTestId('current-stop').click();
+  await page.getByTestId('route-strip').locator('[aria-current="step"]').click();
   await page.getByTestId('stop-sheet').locator('.gallery button').first().click();
   await expect(page.getByTestId('lightbox')).toBeVisible();
   await page.getByTestId('lightbox-close').click();          // the viewer's own control must be clickable
@@ -120,13 +129,25 @@ test('the crew can talk and Cheers each other across phones', async ({ page, bro
     const message = page.getByTestId('crew-chat').locator('article', { hasText: 'Grabbing a table in the back' });
     await expect(message).toContainText('E2E Chat Guest');
     const cheersButton = message.getByRole('button', { name: /Cheers/ });
-    const otherCheersButton = other.getByTestId('crew-chat').locator('article', { hasText: 'Grabbing a table' }).getByRole('button', { name: /Cheers/ });
+    const otherMessage = other.getByTestId('crew-chat').locator('article', { hasText: 'Grabbing a table' });
+    // Actions hide until the bubble is pressed and held.
+    await expect(cheersButton).toHaveCount(0);
+    await longPress(page, message);
     await cheersButton.click();
+    await expect(message.getByTestId('chat-cheers')).toHaveClass(/on/);
+    await expect(otherMessage.getByTestId('chat-cheers')).toContainText('1');
+    await longPress(page, message);
     await expect(cheersButton).toHaveAttribute('aria-pressed', 'true');
-    await expect(otherCheersButton).toContainText('1');
     await cheersButton.click();
-    await expect(cheersButton).toHaveAttribute('aria-pressed', 'false');
-    await expect(otherCheersButton).not.toContainText('1');
+    await expect(message.getByTestId('chat-cheers')).toHaveCount(0);
+    await expect(otherMessage.getByTestId('chat-cheers')).toHaveCount(0);
+    // Only the author is offered Delete, and it removes the message for everyone.
+    await longPress(page, message);
+    await expect(message.getByRole('button', { name: copy.deleteMessage })).toHaveCount(0);
+    await page.keyboard.press('Escape');
+    await longPress(other, otherMessage);
+    await otherMessage.getByRole('button', { name: copy.deleteMessage }).click();
+    await expect(message).toHaveCount(0);
   } finally { await context.close(); }
 });
 
@@ -152,7 +173,7 @@ test('a fast double tap on close never pops past Live', async ({ page }) => {
   await expect(page).toHaveURL(/\/live$/);
   await expect(page.getByTestId('departure-board')).toBeVisible();
 
-  await page.getByTestId('current-stop').click();
+  await page.getByTestId('route-strip').locator('[aria-current="step"]').click();
   await expect(page.getByTestId('stop-sheet')).toBeVisible();
   await page.getByTestId('sheet-close').dblclick();
   await expect(page.getByTestId('stop-sheet')).toBeHidden();

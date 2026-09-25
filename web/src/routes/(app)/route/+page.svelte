@@ -27,7 +27,7 @@
 {/if}
 
 <style>
-  .stale { margin: 12px 20px; padding: 10px 12px; border: 1px solid #555; border-radius: 9px; font-size: 13px; color: #cfcfcf; }
+  .stale { margin: 12px 0; padding: 10px 12px; border: 1px solid #555; border-radius: 9px; font-size: 13px; color: #cfcfcf; }
   .meta { color: #aaa; font-size: 14px; margin-top: 24px; }
   .button { display: block; text-align: center; background: transparent; color: #ffce5c; border: 1px solid #555; font-weight: 700; padding: 12px; border-radius: 10px; text-decoration: none; min-height: 48px; }
 </style>

@@ -34,7 +34,7 @@ test('Tab offers five illustrated personal counters and a camera picker', async 
   await page.clock.install({ time: new Date('2026-12-26T19:00:00Z') });
   await page.goto('/live');
   await expect(page.getByTestId('drink-wine')).toHaveCount(0);
-  await expect(page.getByTestId('drink-water')).toContainText('Non-alcoholic');
+  await expect(page.getByTestId('drink-water')).toContainText('NA');
   await expect(page.getByTestId('freight-camera')).toHaveAttribute('capture', 'environment');
 });
 

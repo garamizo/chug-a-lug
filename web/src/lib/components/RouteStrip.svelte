@@ -32,7 +32,7 @@
 </nav>
 
 <style>
-  .strip { display: flex; list-style: none; margin: 0; padding: 8px 16px 4px; overflow-x: auto; scrollbar-width: none; }
+  .strip { display: flex; list-style: none; margin: 0; padding: 8px 0 4px; overflow-x: auto; scrollbar-width: none; }
   li { flex: 0 0 96px; position: relative; }
   .link { --c: #3a3a3a; position: absolute; top: 21px; height: 3px; background: var(--c); }
   .link.passed { --c: #b5873b; }
@@ -48,5 +48,9 @@
   .current .dot { background: #ffb400; border-color: #ffb400; width: 36px; height: 36px; margin-top: -3px; font-size: 18px; }
   .current button { color: #fff; }
   .name { max-width: 92px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  /* The stop the crew is at reads as the headline: wider slot, bigger name, up to two lines. */
+  li.current { flex-basis: 140px; }
+  .current .name { max-width: 136px; font-size: 16px; font-weight: 750; line-height: 1.2; color: #ffce5c;
+    white-space: normal; display: -webkit-box; -webkit-line-clamp: 2; line-clamp: 2; -webkit-box-orient: vertical; }
   .at { font-variant-numeric: tabular-nums; color: #777; font-size: 11px; }
 </style>

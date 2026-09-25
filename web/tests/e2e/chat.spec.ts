@@ -6,7 +6,7 @@ test('live actions open the Tab and camera choices and share activity with the c
   await seedLockedCrawl({ ownerName: 'Chat Conductor', eventDate: '2026-12-26', startTime: '12:00', departAt: '2026-12-26T20:34:00Z', arriveAt: '2026-12-26T20:49:00Z' });
   await page.clock.install({ time: new Date('2026-12-26T19:00:00Z') });
   await page.goto('/live');
-  await expect(page.getByTestId('current-stop')).toBeVisible();
+  await expect(page.getByTestId('route-strip').locator('[aria-current="step"]')).toBeVisible();
   await expect(page.getByTestId('route-strip')).toBeVisible();
   const context = await browser.newContext();
   try {

@@ -72,7 +72,7 @@
 </div>
 
 <style>
-  .wrap { padding: 6px 16px 8px; }
+  .wrap { padding: 6px 0 8px; }
   .card { border-radius: 12px; padding: 10px 14px; display: flex; flex-direction: column; gap: 7px; }
   .calm { background: #f2efe6; color: #141413; --faint: #6b6862; --rule: #c9c4b5; --edge: #c0bbac; }
   .last { background: #ffb400; color: #111; --faint: rgba(17,17,17,.72); --rule: rgba(0,0,0,.28); --edge: rgba(0,0,0,.3); }

@@ -40,7 +40,7 @@
 </section>
 
 <style>
-  .freight { padding: 0 20px 18px; }
+  .freight { padding: 0 0 18px; }
   .pick { display: block; text-align: center; background: #1b1b1b; border: 1px solid #333; border-radius: 10px;
     padding: 14px; font-weight: 700; color: #ffce5c; cursor: pointer; }
   .pick { position: relative; margin-bottom: 8px; }

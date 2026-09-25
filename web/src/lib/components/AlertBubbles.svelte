@@ -28,7 +28,7 @@
 {/if}
 
 <style>
-  .bubbles { padding: 12px 16px 0; display: flex; flex-direction: column; gap: 8px; }
+  .bubbles { padding: 12px 0 0; display: flex; flex-direction: column; gap: 8px; }
   .bubble { display: flex; align-items: flex-start; gap: 9px; text-align: left; width: 100%;
     min-height: 44px; padding: 10px 13px; border-radius: 999px; margin: 0; font-size: 13.5px; font-weight: 400;
     border: 1px solid rgba(255,180,0,.42); background: rgba(255,180,0,.12); color: #ffd98a; }
