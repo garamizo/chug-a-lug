@@ -53,44 +53,18 @@ export function pickLunch(places, station, used) {
   return places.filter((p) => usable(p, used, 200) && isRestaurant(p) && openAtNoonSaturday(p) && metres(p, station) <= 1000)
     .sort((a, b) => (b.rating ?? 0) - (a.rating ?? 0))[0] ?? null;
 }
+/** Chicago deep-dish houses. "Best-rated restaurant near a pizza search" is not deep dish. */
+const DEEP_DISH = /lou malnati|giordano|gino'?s east|pequod|uno pizzeria|my pi\b|art of pizza|burt'?s place/i;
+
 /**
- * Best-rated "deep dish pizza" text-search result across every outbound station's candidates.
- * Candidates must already be walking-distance-filtered (see `deepDishCandidates`): `locationBias`
- * on a Places text search does not restrict results, so an unfiltered far venue can win here and
- * later blow the stops schema's `walk_min` cap.
- * @param {Record<string, Place[]>} candidatesByStation @param {Set<string>} used
- * @returns {{ station: string, place: Place } | null}
+ * The deep-dish dinner at the dinner stop's own station: a known deep-dish house within walking
+ * distance (`locationBias` on a text search does not restrict results), best-rated first, then the
+ * most reviewed. Null rather than another kind of restaurant, so the script fails loudly.
+ * @param {Place[]} places @param {Station} station @param {Set<string>} used @returns {Place | null}
  */
-export function pickDeepDish(candidatesByStation, used) {
-  const all = Object.entries(candidatesByStation).flatMap(([station, places]) => places.filter((p) => usable(p, used, 100)).map((place) => ({ station, place })));
-  return all.sort((a, b) => (b.place.rating ?? 0) - (a.place.rating ?? 0))[0] ?? null;
-}
-/**
- * Keeps only deep-dish candidates within walking distance (1000m) of the station whose search
- * turned them up, and — when the same place turns up near more than one outbound station — keeps
- * it only under the nearest one, so `pickDeepDish` never has to choose between two entries for the
- * same place.
- * @param {Record<string, Place[]>} candidatesByStation @param {Record<string, Station>} stations
- * @returns {Record<string, Place[]>}
- */
-export function deepDishCandidates(candidatesByStation, stations) {
-  /** @type {Map<string, { station: string, place: Place, distance: number }>} */
-  const nearest = new Map();
-  for (const [stationId, places] of Object.entries(candidatesByStation)) {
-    const station = stations[stationId];
-    if (!station) continue;
-    for (const place of places) {
-      if (!place.location) continue;
-      const distance = metres(place, station);
-      if (distance > 1000) continue;
-      const current = nearest.get(place.id);
-      if (!current || distance < current.distance) nearest.set(place.id, { station: stationId, place, distance });
-    }
-  }
-  /** @type {Record<string, Place[]>} */
-  const result = {};
-  for (const { station, place } of nearest.values()) (result[station] ??= []).push(place);
-  return result;
+export function pickDeepDish(places, station, used) {
+  return places.filter((p) => usable(p, used, 100) && DEEP_DISH.test(p.displayName?.text ?? '') && metres(p, station) <= 1000)
+    .sort((a, b) => (b.rating ?? 0) - (a.rating ?? 0) || (b.userRatingCount ?? 0) - (a.userRatingCount ?? 0))[0] ?? null;
 }
 /**
  * The next Saturday after `today` whose date is not already taken by a locked route.

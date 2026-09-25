@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { PLAN, deepDishCandidates, nextFreeSaturday, pickBar, pickDeepDish, pickLunch } from '../../scripts/practice-venues.mjs';
+import { PLAN, nextFreeSaturday, pickBar, pickDeepDish, pickLunch } from '../../scripts/practice-venues.mjs';
 
 const station = { id: 'LISLE', lat: 41.7955, lon: -88.0751 };
 const place = (id: string, over: object = {}) => ({ id, displayName: { text: id }, location: { latitude: 41.7956, longitude: -88.0752 },
@@ -24,17 +24,18 @@ describe('practice route plan', () => {
     const r = (id: string, rating: number, hours: object) => place(id, { primaryType: 'mexican_restaurant', types: ['restaurant'], rating, userRatingCount: 400, regularOpeningHours: hours });
     expect(pickLunch([r('dinner-only', 4.9, late), r('lunch', 4.4, open), r('small', 4.8, { periods: open.periods })].map((p, i) => i === 2 ? { ...p, userRatingCount: 50 } : p), station, new Set())?.id).toBe('lunch');
   });
-  it('chooses the best-rated deep-dish place across outbound stations', () => {
-    const got = pickDeepDish({ NAPERVILLE: [place('lou', { primaryType: 'pizza_restaurant', rating: 4.5 })], LISLE: [place('gio', { primaryType: 'pizza_restaurant', rating: 4.3 })] }, new Set());
-    expect(got).toEqual({ station: 'NAPERVILLE', place: expect.objectContaining({ id: 'lou' }) });
+  it('picks a deep-dish house at the dinner station, not merely the best-rated place nearby', () => {
+    const dd = (id: string, name: string, over: object = {}) => place(id, { displayName: { text: name }, primaryType: 'pizza_restaurant', ...over });
+    const got = pickDeepDish([
+      dd('antonino', "Antonino's Ristorante", { rating: 4.9, primaryType: 'italian_restaurant' }),  // not deep dish
+      dd('gio', "Giordano's", { rating: 4.4, userRatingCount: 1748 }),
+      dd('lou', "Lou Malnati's Pizzeria", { rating: 4.5, userRatingCount: 5063 }),
+      dd('far', "Gino's East", { rating: 4.8, location: { latitude: 41.83, longitude: -88.07 } })   // ~3.9 km away
+    ], station, new Set());
+    expect(got?.id).toBe('lou');
   });
-  it('drops a deep-dish candidate outside walking distance and keeps a shared candidate only at its nearest station', () => {
-    const stations = { A: { id: 'A', lat: 0, lon: 0 }, B: { id: 'B', lat: 0, lon: 0.005 } }; // ~415m apart
-    const near = place('near', { location: { latitude: 0, longitude: 0.001 } });   // ~83m from A, ~332m from B: nearer A
-    const far = place('far', { location: { latitude: 0.02, longitude: 0 } });      // ~2220m from A: over the 1000m cap
-    const got = deepDishCandidates({ A: [near, far], B: [near] }, stations);
-    expect(got.A?.map((p) => p.id)).toEqual(['near']);
-    expect(got.B ?? []).toEqual([]);
+  it('finds no deep dish rather than settling for another restaurant', () => {
+    expect(pickDeepDish([place('x', { displayName: { text: 'Some Grill' }, primaryType: 'restaurant', rating: 4.9 })], station, new Set())).toBeNull();
   });
   it('dates the route on the next Saturday that no locked route uses', () => {
     expect(nextFreeSaturday('2026-09-24', [])).toBe('2026-09-26');

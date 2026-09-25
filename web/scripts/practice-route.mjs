@@ -10,7 +10,7 @@ import { mkdir, readdir, readFile, stat, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { buildSchedule, servicesOn, unzipGtfs } from '../src/lib/metra/gtfs.ts';
 import { todayInTz } from '../src/lib/time.ts';
-import { CANNED_TITLE, PLAN, deepDishCandidates, nextFreeSaturday, pickBar, pickDeepDish, pickLunch, placesClient } from './practice-venues.mjs';
+import { CANNED_TITLE, PLAN, nextFreeSaturday, pickBar, pickDeepDish, pickLunch, placesClient } from './practice-venues.mjs';
 import { CannedRouteError, buildCannedRoute } from './practice-build.mjs';
 
 /** A PocketBase filter clause for an exact string match, quotes escaped. */
@@ -164,37 +164,23 @@ async function main() {
   }
 
   const stopList = [];
-  const deepDishRaw = {};
-  const outboundStations = {};
   for (const plan of PLAN) {
     const station = stationsById.get(plan.station);
-    if (plan.role === 'dinner') continue; // resolved after the outbound loop, across stations.
-    const nearby = await cached(`${plan.station}-search`, () => client.searchNearby(station, 1000, ['bar', 'pub', 'brewery', 'restaurant']));
-    const picked = plan.role === 'lunch' ? pickLunch(nearby, station, used) : pickBar(nearby, station, used);
-    if (!picked) throw new Error(`No usable ${plan.role} venue near ${plan.station}.`);
+    let picked;
+    if (plan.role === 'dinner') {
+      // Dinner stays at its own station on the way back; moving it would send the crew backwards.
+      const found = await cached(`${plan.station}-deepdish`, () => client.searchText('deep dish pizza', station, 1500));
+      picked = pickDeepDish(found, station, used);
+      if (!picked) throw new Error(`No deep-dish house within walking distance of ${plan.station}.`);
+    } else {
+      const nearby = await cached(`${plan.station}-search`, () => client.searchNearby(station, 1000, ['bar', 'pub', 'brewery', 'restaurant']));
+      picked = plan.role === 'lunch' ? pickLunch(nearby, station, used) : pickBar(nearby, station, used);
+      if (!picked) throw new Error(`No usable ${plan.role} venue near ${plan.station}.`);
+    }
     used.add(picked.id);
     const { detail, photos } = await downloadPhotos(`${plan.station}-${plan.role}`, picked);
     stopList.push({ plan, fields: stopFields(picked, detail, photos, plan, station) });
-    if (plan.direction === 'out') {
-      deepDishRaw[plan.station] = await cached(`${plan.station}-deepdish`, () => client.searchText('deep dish pizza', station, 1500));
-      outboundStations[plan.station] = station;
-    }
   }
-  const dinnerPlan = PLAN.find((p) => p.role === 'dinner');
-  // locationBias on a text search does not restrict results, so filter to walking distance (and
-  // dedupe a place seen near more than one station down to its nearest) before choosing among them.
-  const deepDish = pickDeepDish(deepDishCandidates(deepDishRaw, outboundStations), used);
-  if (!deepDish) throw new Error('No walkable deep-dish pizza place found near any outbound station.');
-  used.add(deepDish.place.id);
-  const dinnerStation = stationsById.get(deepDish.station);
-  if (deepDish.station !== dinnerPlan.station) {
-    console.log(`Deep dish: moving dinner from ${dinnerPlan.station} to ${deepDish.station} (best-rated result).`);
-  }
-  const { detail: dinnerDetail, photos: dinnerPhotos } = await downloadPhotos(`${deepDish.station}-dinner`, deepDish.place);
-  const dinnerFields = stopFields(deepDish.place, dinnerDetail, dinnerPhotos, dinnerPlan, dinnerStation);
-  // Keep dinner's position in PLAN order (it stays the 8th stop) even though its station changed.
-  const dinnerIndex = PLAN.indexOf(dinnerPlan);
-  stopList.splice(dinnerIndex, 0, { plan: dinnerPlan, fields: dinnerFields });
 
   const stops = stopList.map(({ fields }) => fields);
 

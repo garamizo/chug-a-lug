@@ -157,10 +157,10 @@ Notifications (`/notifications`) still list the day's Bulletins, so nothing is h
   - **Out, toward Chicago:** a bar at Aurora; a bar at Naperville; a **lunch** restaurant at Lisle or
     Downers Grove (highest-rated `restaurant` with at least 200 ratings, open at noon); a bar at
     Downers Grove Main St; a bar at LaGrange Road.
-  - **Back, toward Aurora:** a bar at Hinsdale; a bar at Westmont; a **deep-dish dinner** (a Places
-    text search for "deep dish pizza" near each outbound station, taking the best-rated result within
-    walking distance, expected to be Lou Malnati's or Giordano's in Naperville); a last bar at
-    Route 59.
+  - **Back, toward Aurora:** a bar at Hinsdale; a bar at Westmont; a **deep-dish dinner** at Naperville
+    (a Places text search for "deep dish pizza" there, keeping known deep-dish houses such as Lou
+    Malnati's or Giordano's within walking distance, best-rated first; the stop never moves to another
+    station, which would send the crew backwards); a last bar at Route 59.
   - Bars are chosen as the rehearsal script chooses them today (`scripts/rehearsal-venues.mjs`, moved
     and reused): nearest operational bar/pub/brewery with at least 20 ratings, never the same venue
     twice.
