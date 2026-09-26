@@ -5,6 +5,7 @@
   import { label, copy } from '$lib/labels';
   import { fmtDate } from '$lib/time';
   import { liveDay } from '$lib/live/day.svelte';
+  import { landing } from '$lib/landing';
   import { countdownText, liveChip, plannerChip, wrapUpChip } from '$lib/home';
   import Ticket from '$lib/components/Ticket.svelte';
   import Board from '$lib/components/Board.svelte';
@@ -15,9 +16,10 @@
   // moment the Conductor uses "Make current" and, offline, would show "no route" even though the
   // Live link above it (driven by liveDay.hasRoute) still shows.
   const locked = $derived(liveDay.itinerary);
-  // On the day itself the app is the Departure Board; the planner is reached through the menu, not
-  // a tab — the event-day TabBar links Live, The Route and the Crew Board only.
-  $effect(() => { if (liveDay.isEventDay) void goto('/live', { replaceState: true }); });
+  // On the day itself opening the app lands on the Departure Board; the planner is reached through
+  // the menu, not a tab. Only the page the app opened on redirects: the logo still reaches Home.
+  const entry = landing.isEntry;
+  $effect(() => { if (entry && liveDay.isEventDay) void goto('/live', { replaceState: true }); });
 
   let drafts = $state(0);
   let voting = $state(false);

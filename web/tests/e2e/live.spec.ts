@@ -76,6 +76,19 @@ test('an alert shows as a bubble and opens the notifications screen', async ({ p
   await expect(page.getByText('Signal problem at Cicero.')).toBeVisible();
 });
 
+test('an alert bubble closes with its X and stays closed', async ({ page }) => {
+  await arrive(page, 'E2E Alert Closer', ADMIN, '2026-12-26T19:00:00.000Z', [{
+    id: 'a2', effect: 'SIGNIFICANT_DELAYS', header: 'BNSF outbound delays',
+    body: 'Crowding at Union Station.', startsAt: null, endsAt: null, stationIds: []
+  }]);
+  await page.getByRole('button', { name: 'Close alert: BNSF outbound delays' }).click();
+  await expect(page.getByText('BNSF outbound delays')).toHaveCount(0);
+  await expect(page).toHaveURL(/\/live$/);
+  await page.reload();
+  await expect(page.getByTestId('departure-board')).toBeVisible();
+  await expect(page.getByText('BNSF outbound delays')).toHaveCount(0);
+});
+
 test('the banner rides along on other screens', async ({ page }) => {
   await arrive(page, 'E2E Banner Skipper', ADMIN, '2026-12-26T19:00:00.000Z');
   await expect(page.getByTestId('departure-board')).toBeVisible();

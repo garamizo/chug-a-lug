@@ -2,6 +2,8 @@
   import { clientClock } from '$lib/sim/clock.svelte';
   import { onMount } from 'svelte';
   import { page } from '$app/state';
+  import { beforeNavigate } from '$app/navigation';
+  import { landing } from '$lib/landing';
   import { copy } from '$lib/labels';
   import { auth } from '$lib/pb';
   import AppMenu from '$lib/components/AppMenu.svelte';
@@ -38,6 +40,8 @@
       });
     }
   });
+  // Any move inside the app means Home was asked for, not landed on (see (app)/+page.svelte).
+  beforeNavigate(({ from }) => landing.noteNavigation(from?.url.pathname ?? null));
 </script>
 
 <svelte:head>

@@ -308,6 +308,7 @@ export const copy = {
   theRoute: 'The Route',
   moreAlerts: 'more alerts',
   oneMoreAlert: 'more alert',
+  closeAlert: 'Close alert',
   stationOTC: 'Ogilvie',
   stationCUS: 'Union Station',
   inbound: 'Aurora → Chicago',

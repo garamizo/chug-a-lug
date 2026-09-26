@@ -82,8 +82,10 @@ test('on the event day the app lands on Live and navigates by the tab bar', asyn
   await page.getByTestId('tab-crew').click();
   await expect(page).toHaveURL(/\/crew$/);
   await expect(page.getByRole('link', { name: /Back to Live/ })).toHaveCount(0);
-  await page.getByTestId('tab-menu').click();
-  await expect(page.getByTestId('menu-crew')).toBeVisible();
+  // Home is still reachable from inside the app: only opening the app lands on Live.
+  await page.getByRole('banner').getByRole('link').first().click();
+  await expect(page).toHaveURL(/\/$/);
+  await expect(page.getByTestId('name')).toBeVisible();
 });
 
 test('off the event day there is no tab bar and home stays home', async ({ page }) => {

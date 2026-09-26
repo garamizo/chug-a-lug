@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { markSeen, readSeen, unseenCount } from '../../src/lib/live/seen';
+import { dismissAlert, markSeen, readDismissed, readSeen, unseenCount } from '../../src/lib/live/seen';
 
 /** A localStorage stand-in; `fail` makes every call throw, as a private window can. */
 function stubStorage(fail = false) {
@@ -50,5 +50,23 @@ describe('seen alerts', () => {
     const alerts = [{ id: 'a1' }, { id: 'a2' }, { id: 'a3' }];
     expect(unseenCount(alerts, new Set(['a2']))).toBe(2);
     expect(unseenCount([], new Set())).toBe(0);
+  });
+});
+
+describe('dismissed alerts', () => {
+  beforeEach(() => { vi.unstubAllGlobals(); });
+
+  it('remembers a closed alert apart from the seen ones', () => {
+    stubStorage();
+    markSeen(['a1']);
+    dismissAlert('a2');
+    expect([...readDismissed()]).toEqual(['a2']);
+    expect([...readSeen()]).toEqual(['a1']);
+  });
+
+  it('forgets nothing when storage throws', () => {
+    stubStorage(true);
+    expect(() => dismissAlert('a1')).not.toThrow();
+    expect(readDismissed().size).toBe(0);
   });
 });
