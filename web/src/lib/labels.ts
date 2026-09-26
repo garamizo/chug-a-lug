@@ -93,7 +93,7 @@ export const copy = {
   notYou: 'Not you? Log out and enter your own name.',
   logout: 'Log out',
   plannerTeaser: 'Propose stops, cheer the good ones, lock the winner.',
-  plannerIntro: 'Anyone can start a draft and add stops. The Conductor runs the vote and locks The Route.',
+  plannerIntro: 'Anyone can build a route. You edit your own; the Conductor can edit any and locks The Route.',
   drafts: 'Drafts',
   pastRoutes: 'Locked and archived',
   newDraft: 'Start a draft',

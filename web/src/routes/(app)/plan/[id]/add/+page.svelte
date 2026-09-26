@@ -2,9 +2,10 @@
   import { onMount } from 'svelte';
   import { goto } from '$app/navigation';
   import { page } from '$app/state';
-  import { pb } from '$lib/pb';
+  import { pb, auth } from '$lib/pb';
   import { api } from '$lib/api';
   import { copy } from '$lib/labels';
+  import { canEditStops } from '$lib/permissions';
   import { haversineM, walkMinutes } from '$lib/geo';
   import { PLANNER_ROUTE, insertionIndex, plannerStations, type Direction } from '$lib/lineMap';
   import Schematic from '$lib/components/Schematic.svelte';
@@ -12,6 +13,7 @@
   import IconLink from '$lib/components/IconLink.svelte';
 
   const itineraryId = $derived(page.params.id!);
+  let itinerary = $state<Pick<Itinerary, 'id' | 'status' | 'created_by' | 'event_date'> | null>(null);
   let lines = $state<Line[]>([]);
   // The picker shows the planner line only (the crawl is settled on BNSF), Aurora at the top.
   const stations = $derived(plannerStations(lines));
@@ -30,7 +32,8 @@
   onMount(async () => {
     try {
       // The crawl date decides which stations have trains at all; the picker greys out the rest.
-      const it = await pb.collection('itineraries').getOne<Itinerary>(itineraryId, { fields: 'event_date' });
+      const it = await pb.collection('itineraries').getOne<Itinerary>(itineraryId, { fields: 'id,status,created_by,event_date' });
+      itinerary = it;
       lines = (await api<{ lines: Line[] }>(`/api/metra/stations?date=${encodeURIComponent(it.event_date)}`)).lines;
     } catch (err) { error = (err as Error).message; return; }
     // Arriving from a station circle on the draft: skip the picker.
@@ -39,6 +42,10 @@
     const preset = wanted && plannerStations(lines).find((s) => s.id === wanted);
     if (preset && preset.served !== false) void pick(preset);
   });
+
+  // Neither the builder of a locked/archived draft nor another crew member gets this deep link: send
+  // them back to the read-only draft view, same as the edit screen's guard.
+  $effect(() => { if (itinerary && !canEditStops(itinerary, $auth.user)) void goto(`/plan/${itinerary.id}`, { replaceState: true }); });
 
   async function pick(s: Station) {
     station = s; nearby = null; results = null; error = '';

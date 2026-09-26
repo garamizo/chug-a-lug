@@ -3,6 +3,7 @@
   // stops happens on the edit screen.
   import { auth } from '$lib/pb';
   import { copy } from '$lib/labels';
+  import { canDelete, canEditStops } from '$lib/permissions';
   import { draftFrom, loadDraft, watchDraft, type Draft } from '$lib/draft';
   import { recordActions } from '$lib/planActions';
   import { liveDay } from '$lib/live/day.svelte';
@@ -29,7 +30,9 @@
   });
 
   const isAdmin = $derived(!!$auth.user?.is_admin);
-  const canEdit = $derived(!!draft && (draft.itinerary.status === 'draft' || isAdmin));
+  const canEdit = $derived(!!draft && canEditStops(draft.itinerary, $auth.user));
+  // Used by Task 10's delete icon (testid `delete-route`).
+  const mayDelete = $derived(!!draft && canDelete(draft.itinerary, $auth.user));
 
   // The Conductor chooses which locked route Live, The Route and photos follow. Every phone reloads
   // through its `crawl_settings` subscription; this one reloads now so the answer shows at once.

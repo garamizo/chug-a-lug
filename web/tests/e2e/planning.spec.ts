@@ -125,3 +125,24 @@ test('draft with real train times, layover change, card edits, votes, comments, 
   await expect(page.getByTestId('remove-0')).toHaveCount(0);
   await expect(page.getByTestId('dwell-0')).toHaveCount(0);
 });
+
+test('another crew member can read and cheer a draft but not change it, even by deep link', async ({ page, browser }) => {
+  await login(page, 'E2E Builder', process.env.CREW_PASSWORD ?? 'crew-test-password');
+  await page.getByTestId('nav-plan').click();
+  await page.getByTestId('draft-title').fill('Builder Only');
+  await page.getByTestId('create-draft').click();
+  await expect(page).toHaveURL(/\/plan\/[a-z0-9]{15}\/edit$/);
+  const draftUrl = page.url().replace(/\/edit$/, '');
+
+  const other = await browser.newPage();
+  await login(other, 'E2E Onlooker', process.env.CREW_PASSWORD ?? 'crew-test-password');
+  await other.goto(draftUrl);
+  await expect(other.getByTestId('vote-up')).toBeVisible();
+  await expect(other.getByTestId('edit-draft')).toHaveCount(0);
+  await expect(other.getByTestId('delete-route')).toHaveCount(0);
+  await other.goto(`${draftUrl}/edit`);
+  await expect(other).toHaveURL(draftUrl);
+  await other.goto(`${draftUrl}/add?station=NAPERVILLE&side=left`);
+  await expect(other).toHaveURL(draftUrl);
+  await other.close();
+});

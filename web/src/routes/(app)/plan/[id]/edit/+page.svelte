@@ -6,6 +6,7 @@
   import { pb, auth } from '$lib/pb';
   import { api } from '$lib/api';
   import { copy } from '$lib/labels';
+  import { canEditSettings, canEditStops } from '$lib/permissions';
   import { draftFrom, loadDraft, watchDraft, type Draft } from '$lib/draft';
   import { recordActions, type PlanActions } from '$lib/planActions';
   import { addStop, commitPayload, moveStop, newRecordId, removeStop, setAnchor, setDwell, stagePlan, type StagedPlan, type StagedStop } from '$lib/live/staged';
@@ -43,10 +44,9 @@
     stops: p.stops.map((s) => ({ id: s.id, name: s.name, order: s.order, station_name: s.station_name, dwell_min: s.dwell_min }))
   });
 
-  const isAdmin = $derived(!!$auth.user?.is_admin);
   const live = $derived(!!draft && draft.itinerary.status === 'locked');
-  const editable = $derived(!!draft && (draft.itinerary.status === 'draft' || isAdmin));
-  const canManage = $derived(!!draft && (isAdmin || (draft.itinerary.created_by === $auth.user?.id && draft.itinerary.status === 'draft')));
+  const editable = $derived(!!draft && canEditStops(draft.itinerary, $auth.user));
+  const canManage = $derived(!!draft && canEditSettings(draft.itinerary, $auth.user));
 
   async function load(first?: Promise<Draft>) {
     try {
