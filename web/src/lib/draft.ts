@@ -8,7 +8,7 @@ export type Draft = { itinerary: Itinerary; stops: Stop[]; legs: Leg[] };
 export async function loadDraft(id: string): Promise<Draft> {
   const filter = pb.filter('itinerary = {:id}', { id });
   const [itinerary, stops, legs] = await Promise.all([
-    pb.collection('itineraries').getOne<Itinerary>(id),
+    pb.collection('itineraries').getOne<Itinerary>(id, { expand: 'created_by' }),
     pb.collection('stops').getFullList<Stop>({ filter, sort: 'order,created', expand: 'place' }),
     pb.collection('legs').getFullList<Leg>({ filter })
   ]);

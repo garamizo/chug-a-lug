@@ -1,4 +1,6 @@
 import { test, expect, type Page } from '@playwright/test';
+import { clearLockedCrawls, seedLockedCrawl } from './helpers';
+import { copy } from '../../src/lib/labels';
 
 const ADMIN = process.env.ADMIN_PASSWORD ?? 'admin-test-password';
 
@@ -101,6 +103,9 @@ test('draft with real train times, layover change, card edits, votes, comments, 
   await page.goto(editUrl);
   await page.getByTestId('done-editing').click();
   await expect(page).toHaveURL(draftUrl);
+  await expect(page.getByTestId('delete-route')).toBeVisible();
+  await expect(page.locator('header.it')).toContainText('by E2E Skipper');
+  await expect(page.locator('header.it')).toContainText('stops');
   await expect(page.getByTestId('station-dot-LAGRANGE')).toHaveCount(0);
   await expect(page.getByTestId('station-dot-back-LAGRANGE')).toHaveCount(0);
   await expect(page.getByTestId('dwell-0')).toHaveCount(0);
@@ -162,4 +167,20 @@ test('the builder deletes their draft from the board with the trash icon', async
   page.once('dialog', (d) => d.accept());
   await page.getByTestId(`delete-route-${id}`).click();
   await expect(page.getByTestId(`route-link-${id}`)).toHaveCount(0);
+});
+
+test('the Conductor deletes a locked route for everyone from its view page', async ({ page }) => {
+  await login(page, 'E2E Deleter', ADMIN);
+  await clearLockedCrawls();
+  const seeded = await seedLockedCrawl({
+    ownerName: 'E2E Deleter', eventDate: '2026-12-26', startTime: '12:00',
+    departAt: '2026-12-26T20:34:00.000Z', arriveAt: '2026-12-26T20:49:00.000Z'
+  });
+  await page.goto(`/plan/${seeded.itineraryId}`);
+  let dialogMessage = '';
+  page.once('dialog', (d) => { dialogMessage = d.message(); void d.accept(); });
+  await page.getByTestId('delete-route').click();
+  await expect(page).toHaveURL(/\/plan$/);
+  expect(dialogMessage).toContain(copy.deleteLockedConfirm.split('?')[0]);
+  await expect(page.getByTestId(`route-link-${seeded.itineraryId}`)).toHaveCount(0);
 });

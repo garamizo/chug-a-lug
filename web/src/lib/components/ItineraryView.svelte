@@ -2,20 +2,25 @@
   import { onMount, tick } from 'svelte';
   import { api } from '$lib/api';
   import { copy } from '$lib/labels';
-  import { fmtDate, fmtWeekday, localToUtc, parseHm } from '$lib/time';
+  import { fmtDate, fmtTime, fmtWeekday, localToUtc, parseHm } from '$lib/time';
   import { PLANNER_ROUTE, placeStops, plannerStations, sideOfSection, unfold, type Section, type SectionRow } from '$lib/lineMap';
+  import { finishAt } from '$lib/routeStats';
   import type { Itinerary, Leg, Line, Station, Stop, StopLike } from '$lib/types';
   import { stopPhoto } from '$lib/photo';
   import type { PlanActions } from '$lib/planActions';
   import LineMap from './LineMap.svelte';
   import StopRow from './StopRow.svelte';
 
-  let { itinerary, stops, legs, editable, canManage, actions, onerror, onopenstop, photos }: {
+  let { itinerary, stops, legs, editable, canManage, actions, onerror, onopenstop, photos, builder, current }: {
     itinerary: Itinerary; stops: StopLike[]; legs: Leg[]; editable: boolean; canManage: boolean; actions: PlanActions; onerror?: (message: string) => void;
     /** Card photos by stop id, for staged stops that carry no place; otherwise read off each stop. */
     photos?: Record<string, string>;
     /** When set, stop links open the stop sheet in place of navigating to the planning page. */
     onopenstop?: (id: string) => void;
+    /** The route's builder, for the "by <name>" chip; omitted when the caller has no expand to offer. */
+    builder?: string;
+    /** Whether this is the current locked route (Live follows it); adds the gold "Current" chip. */
+    current?: boolean;
   } = $props();
 
   const sorted = $derived([...stops].sort((a, b) => a.order - b.order || (a.created ?? '').localeCompare(b.created ?? '')));
@@ -87,6 +92,8 @@
     }
   });
 
+  const finish = $derived(finishAt(sorted.map((_, i) => leaveAt(i))));
+
 </script>
 
 {#snippet card(i: number)}
@@ -112,13 +119,24 @@
 {/snippet}
 
 <header class="it">
+  <span class="k">{itinerary.status === 'draft' ? copy.kindDraftRoute : itinerary.status === 'locked' ? copy.kindTheRoute : copy.kindArchived}</span>
   <h1>{itinerary.title}</h1>
-  <p class="meta">{copy.eventDate}: <strong>{fmtDate(itinerary.event_date)}</strong></p>
-  {#if canManage && actions.setStartTime}
-    <label class="inline">{copy.startTime} <input type="time" bind:value={startTime} onchange={() => { if (/^([01]\d|2[0-3]):[0-5]\d$/.test(startTime) && startTime !== itinerary.start_time) void actions.setStartTime?.(startTime); }} data-testid="start-time" /></label>
-  {:else}
-    <p class="meta">{copy.startTime} <strong>{itinerary.start_time}</strong></p>
-  {/if}
+  <div class="chips">
+    {#if builder}<span class="chip">{copy.byBuilder} {builder}</span>{/if}
+    <span class="chip">{fmtDate(itinerary.event_date)}</span>
+    {#if itinerary.vote_open}<span class="chip go">{copy.voteOpenShort}</span>{/if}
+    {#if current}<span class="chip gold">{copy.chipCurrent}</span>{/if}
+  </div>
+  <div class="stats">
+    <div><strong>{sorted.length}</strong><small>{copy.statStops}</small></div>
+    <div>
+      {#if canManage && actions.setStartTime}
+        <input type="time" aria-label={copy.startTime} bind:value={startTime} onchange={() => { if (/^([01]\d|2[0-3]):[0-5]\d$/.test(startTime) && startTime !== itinerary.start_time) void actions.setStartTime?.(startTime); }} data-testid="start-time" />
+      {:else}<strong>{itinerary.start_time}</strong>{/if}
+      <small>{copy.statStart}</small>
+    </div>
+    <div><strong>{finish ? fmtTime(finish) : '—'}</strong><small>{copy.statFinish}</small></div>
+  </div>
 </header>
 
 <h2>{copy.stops}</h2>
@@ -149,10 +167,17 @@
 {#if editable && stations !== null && !stations.length}<a class="button" href="/plan/{itinerary.id}/add" data-testid="add-stop">{copy.addStop}</a>{/if}
 
 <style>
-  .it h1 { margin-bottom: 4px; }
-  .meta { margin: 4px 0; color: #aaa; font-size: 15px; }
-  .inline { display: flex; align-items: center; gap: 10px; margin: 8px 0 0; font-size: 15px; }
-  .inline input { width: auto; margin: 0; padding: 8px; font-size: 16px; }
+  .it { background: var(--board-bg); border: 2px solid #333; border-radius: 12px; padding: 12px 14px; margin: 4px 0 12px; }
+  .it .k { font-size: 11px; letter-spacing: .14em; text-transform: uppercase; color: var(--gold); font-weight: 800; }
+  .it h1 { font-family: var(--mono); color: var(--gold-soft); text-transform: uppercase; font-size: 24px; margin: 4px 0 8px; overflow-wrap: anywhere; }
+  .chips { display: flex; flex-wrap: wrap; gap: 6px; }
+  .chip { font-size: 12px; font-weight: 700; padding: 3px 9px; border-radius: 999px; background: #222; color: #ccc; }
+  .chip.go { background: var(--metra); color: #031; }
+  .chip.gold { background: var(--gold); color: #111; }
+  .stats { display: grid; grid-template-columns: repeat(3, 1fr); text-align: center; border-top: 1px solid #222; margin-top: 10px; padding-top: 8px; }
+  .stats strong { display: block; font-family: var(--mono); font-size: 20px; color: var(--gold); }
+  .stats small { font-size: 10px; letter-spacing: .08em; text-transform: uppercase; color: #888; }
+  .stats input { width: 100%; max-width: 110px; margin: 0 auto; padding: 4px; font-family: var(--mono); font-size: 18px; text-align: center; }
   h2 { font-size: 18px; margin-top: 28px; }
   h3 { font-size: 15px; color: #aaa; margin: 20px 0 8px; }
   .dir { font-size: 12px; letter-spacing: .14em; text-transform: uppercase; color: var(--gold); margin: 18px 0 6px 46px; }

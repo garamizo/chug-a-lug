@@ -366,6 +366,12 @@ export const copy = {
   draftsOne: 'draft',
   voteOpenShort: 'vote open',
   wrapUpHint: 'After the crawl',
+  kindDraftRoute: 'Draft route',
+  kindTheRoute: 'The Route',
+  kindArchived: 'Archived route',
+  statStops: 'stops',
+  statStart: 'start',
+  statFinish: 'finish',
 } as const;
 
 // Operator-facing rehearsal setup messages; these never include passwords or tokens.

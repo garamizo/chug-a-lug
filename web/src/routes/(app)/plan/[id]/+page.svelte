@@ -5,6 +5,7 @@
   import { copy } from '$lib/labels';
   import { canDelete, canEditStops } from '$lib/permissions';
   import { draftFrom, loadDraft, watchDraft, type Draft } from '$lib/draft';
+  import { deleteRoute } from '$lib/planList';
   import { recordActions } from '$lib/planActions';
   import { liveDay } from '$lib/live/day.svelte';
   import { setCurrentRoute } from '$lib/live/route';
@@ -13,6 +14,8 @@
   import Comments from '$lib/components/Comments.svelte';
   import ApprovalPanel from '$lib/components/ApprovalPanel.svelte';
   import IconLink from '$lib/components/IconLink.svelte';
+  import IconButton from '$lib/components/IconButton.svelte';
+  import { goto } from '$app/navigation';
 
   let { data } = $props();
   let draft = $state<Draft | null>(null);
@@ -43,15 +46,25 @@
     catch { error = copy.noSignal; }
     finally { choosing = false; }
   }
+
+  async function removeRoute() {
+    if (!draft) return;
+    error = '';
+    try { if (await deleteRoute(draft.itinerary, liveDay.itinerary?.id ?? null, liveDay.today)) await goto('/plan'); }
+    catch (err) { error = (err as Error).message || copy.genericError; }
+  }
 </script>
 
 <nav class="bar">
   <IconLink href="/plan" icon="back" label={copy.backToPlanner} />
+  <span class="sp"></span>
   {#if draft && canEdit}<IconLink href="/plan/{draft.itinerary.id}/edit" icon="edit" label={copy.editDraft} testid="edit-draft" />{/if}
+  {#if draft && mayDelete}<IconButton icon="delete" tone="danger" label={copy.deleteRoute} onclick={() => void removeRoute()} testid="delete-route" />{/if}
 </nav>
 {#if error}<p class="error" role="alert">{error}</p>{/if}
 {#if draft}
   <ItineraryView itinerary={draft.itinerary} stops={draft.stops} legs={draft.legs} editable={false} canManage={false}
+    builder={draft.itinerary.expand?.created_by?.name} current={liveDay.itinerary?.id === draft.itinerary.id}
     actions={recordActions(draft.itinerary.id, (m) => (error = m))} />
   <Votes targetCollection="itineraries" targetId={draft.itinerary.id} />
   <Comments targetCollection="itineraries" targetId={draft.itinerary.id} />
@@ -66,5 +79,6 @@
 {/if}
 
 <style>
-  .bar { display: flex; justify-content: space-between; align-items: center; margin: 4px 0 8px; }
+  .bar { display: flex; gap: 8px; align-items: center; margin: 4px 0 8px; }
+  .sp { flex: 1; }
 </style>

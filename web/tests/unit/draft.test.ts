@@ -25,5 +25,5 @@ it('reads again when the early read is stale or belongs to another draft', async
   await draftFrom(early, 'd1');
   expect(mocks.getOne).toHaveBeenCalledTimes(2);
   await draftFrom(preloadDraft('d1'), 'd2');
-  expect(mocks.getOne).toHaveBeenLastCalledWith('d2');
+  expect(mocks.getOne).toHaveBeenLastCalledWith('d2', { expand: 'created_by' });
 });

@@ -3,23 +3,25 @@
   // in one go, so the crew never sees a half-finished change.
   import { clientClock } from '$lib/sim/clock.svelte';
   import { goto } from '$app/navigation';
-  import { pb, auth } from '$lib/pb';
+  import { auth } from '$lib/pb';
   import { api } from '$lib/api';
   import { copy } from '$lib/labels';
-  import { canEditSettings, canEditStops } from '$lib/permissions';
+  import { canDelete, canEditSettings, canEditStops } from '$lib/permissions';
   import { draftFrom, loadDraft, watchDraft, type Draft } from '$lib/draft';
+  import { deleteRoute } from '$lib/planList';
+  import { liveDay } from '$lib/live/day.svelte';
   import { recordActions, type PlanActions } from '$lib/planActions';
   import { addStop, commitPayload, moveStop, newRecordId, removeStop, setAnchor, setDwell, stagePlan, type StagedPlan, type StagedStop } from '$lib/live/staged';
   import { insertionIndex, plannerStations } from '$lib/lineMap';
   import { bulletinKind, bulletinText, planDiff, type BulletinKind, type PlanSnapshot } from '$lib/live/diff';
   import { previewPlan } from '$lib/live/preview';
   import { cohesionBlockers } from '$lib/live/cohesion';
-  import { liveDay } from '$lib/live/day.svelte';
   import { stopPhotos } from '$lib/photo';
   import ItineraryView from '$lib/components/ItineraryView.svelte';
   import BulletinSheet from '$lib/components/BulletinSheet.svelte';
   import type { Leg, Line } from '$lib/types';
   import IconLink from '$lib/components/IconLink.svelte';
+  import IconButton from '$lib/components/IconButton.svelte';
 
   let { data } = $props();
   let draft = $state<Draft | null>(null);
@@ -222,13 +224,22 @@
 
   $effect(() => { if (draft && !editable) void goto(`/plan/${draft.itinerary.id}`, { replaceState: true }); });
 
-  async function deleteDraft() {
-    if (!draft || !confirm(copy.deleteDraftConfirm)) return;
-    try { await pb.collection('itineraries').delete(draft.itinerary.id); await goto('/plan'); } catch (err) { error = (err as Error).message; }
+  // The Conductor's staged live editor never deletes mid-edit — that path is the view page's
+  // `delete-route`, which always lands on `/plan` afterward, not this editor.
+  const mayDelete = $derived(!!draft && canDelete(draft.itinerary, $auth.user) && !live);
+  async function removeRoute() {
+    if (!draft) return;
+    error = '';
+    try { if (await deleteRoute(draft.itinerary, liveDay.itinerary?.id ?? null, liveDay.today)) await goto('/plan'); }
+    catch (err) { error = (err as Error).message || copy.genericError; }
   }
 </script>
 
-<nav>{#if draft}<IconLink href="/plan/{draft.itinerary.id}" icon="back" label={copy.doneEditing} testid="done-editing" />{:else}<IconLink href="/plan" icon="back" label={copy.backToPlanner} />{/if}</nav>
+<nav class="bar">
+  {#if draft}<IconLink href="/plan/{draft.itinerary.id}" icon="back" label={copy.doneEditing} testid="done-editing" />{:else}<IconLink href="/plan" icon="back" label={copy.backToPlanner} />{/if}
+  <span class="sp"></span>
+  {#if mayDelete}<IconButton icon="delete" tone="danger" label={copy.deleteRoute} onclick={() => void removeRoute()} testid="delete-route" />{/if}
+</nav>
 {#if error}<p class="error" role="alert">{error}</p>{/if}
 
 {#if draft && editable}
@@ -273,13 +284,13 @@
           onsend={(body) => commit({ id: pending!.id, kind: pending!.kind, body })}
           onskip={() => commit(null)} />
       {/if}
-    {:else if canManage && draft.itinerary.status === 'draft'}
-      <button type="button" class="secondary" onclick={deleteDraft} data-testid="delete-draft">{copy.deleteDraft}</button>
     {/if}
   {/if}
 {/if}
 
 <style>
+  .bar { display: flex; gap: 8px; align-items: center; margin: 4px 0 8px; }
+  .sp { flex: 1; }
   .warning { border: 1px solid #c0261c; border-left-width: 5px; border-radius: 10px; padding: 12px 14px; color: #ffd9d6; background: rgba(192,38,28,.12); }
   .savebar { position: sticky; bottom: 0; padding: 12px 0 20px; background: linear-gradient(to top, #111 70%, transparent); }
   .blockers { margin: 0 0 10px; padding-left: 20px; color: #ffb4ae; font-size: 14px; line-height: 1.5; }

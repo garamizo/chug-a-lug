@@ -39,7 +39,7 @@
 </div>
 
 <style>
-  .votes { display: flex; gap: 10px; margin: 20px 0; }
-  .votes button { margin: 0; }
-  .active { background: #ffb400; color: #111; border-color: #ffb400; }
+  .votes { display: flex; gap: 8px; margin: 12px 0 16px; }
+  .votes button { margin: 0; min-height: 40px; padding: 8px 12px; border-radius: 999px; font-size: 15px; }
+  .active { background: var(--gold); color: #111; border-color: var(--gold); }
 </style>

@@ -53,8 +53,8 @@
 
   {#if open}
     <div class="row">
-      <button type="button" class:active={mine?.value === 'go'} aria-pressed={mine?.value === 'go'} onclick={() => cast('go')} disabled={busy} data-testid="vote-go">✅ {copy.go}</button>
-      <button type="button" class="secondary" class:active={mine?.value === 'nogo'} aria-pressed={mine?.value === 'nogo'} onclick={() => cast('nogo')} disabled={busy} data-testid="vote-nogo">🚫 {copy.nogo}</button>
+      <button type="button" class="go" class:active={mine?.value === 'go'} aria-pressed={mine?.value === 'go'} onclick={() => cast('go')} disabled={busy} data-testid="vote-go">✅ {copy.go}</button>
+      <button type="button" class="nogo" class:active={mine?.value === 'nogo'} aria-pressed={mine?.value === 'nogo'} onclick={() => cast('nogo')} disabled={busy} data-testid="vote-nogo">🚫 {copy.nogo}</button>
     </div>
   {/if}
 
@@ -81,7 +81,9 @@
   .meta { color: #aaa; }
   .row { display: flex; gap: 10px; margin: 12px 0; }
   .row button { margin: 0; }
-  .active { outline: 3px solid #fff; }
+  .row button.go { background: var(--metra); color: #031; font-size: 20px; min-height: 56px; }
+  .row button.nogo { background: transparent; color: var(--danger); border: 2px solid #5a2a26; font-size: 20px; min-height: 56px; }
+  .active { outline: 3px solid #fff; outline-offset: 2px; }
   dl { display: grid; grid-template-columns: auto 1fr; gap: 6px 14px; color: #ccc; }
   dt { font-weight: 700; }
   dd { margin: 0; }
