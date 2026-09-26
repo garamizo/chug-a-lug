@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { BUFFER_MIN, WARNING_MIN, boardState, pickTrip } from '../../src/lib/live/board';
-import type { NextTrip } from '../../src/lib/types';
+import { BUFFER_MIN, WARNING_MIN, boardState, pickTrip, plannedTrain } from '../../src/lib/live/board';
+import type { Leg, NextTrip, Stop } from '../../src/lib/types';
 
 const trip = (tripId: string, depart: string): NextTrip => ({
   tripId, routeId: 'BNSF', headsign: 'Chicago', schedDepart: depart, schedArrive: depart,
@@ -72,5 +72,39 @@ describe('pickTrip', () => {
 
   it('returns null for an empty list', () => {
     expect(pickTrip([], new Date())).toBeNull();
+  });
+});
+
+describe('pickTrip with a planned train', () => {
+  const trips = [trip('T1', '2026-12-26T20:00:00.000Z'), trip('T2', '2026-12-26T21:00:00.000Z')];
+  it('counts down to the planned train, not an earlier one', () => {
+    expect(pickTrip(trips, new Date('2026-12-26T19:00:00.000Z'), 'T2')?.tripId).toBe('T2');
+  });
+  it('falls back to the next train once the planned one has gone', () => {
+    const later = [...trips, trip('T3', '2026-12-26T22:00:00.000Z')];
+    expect(pickTrip(later, new Date('2026-12-26T21:30:00.000Z'), 'T2')?.tripId).toBe('T3');
+  });
+  it('falls back to the next train when the planned one is not in the list', () => {
+    expect(pickTrip(trips, new Date('2026-12-26T19:00:00.000Z'), 'T9')?.tripId).toBe('T1');
+  });
+});
+
+describe('plannedTrain', () => {
+  const stop = (id: string, order: number, station_id: string) => ({ id, order, station_id }) as Stop;
+  const seg = (tripId: string, from: string, dep: string) =>
+    ({ kind: 'train' as const, tripId, routeId: 'BNSF', headsign: 'Chicago', from, to: 'CUS', dep, arr: dep });
+  const leg = (from_stop: string, segments: Leg['segments']) => ({ from_stop, segments }) as Leg;
+  const stops = [stop('a', 0, 'LAGRANGE'), stop('b', 1, 'LAGRANGE'), stop('c', 2, 'CUS')];
+
+  it('is the first train the plan takes from the given station', () => {
+    const legs = [
+      leg('b', [seg('BN4', 'LAGRANGE', '2026-12-26T18:30:00.000Z')]),
+      leg('a', [{ kind: 'walk', minutes: 3, from: 'LAGRANGE', to: 'LAGRANGE' }])
+    ];
+    expect(plannedTrain(stops, legs, 'LAGRANGE')).toEqual({ tripId: 'BN4', dep: '2026-12-26T18:30:00.000Z' });
+  });
+
+  it('is null when no planned train leaves that station', () => {
+    expect(plannedTrain(stops, [leg('a', [])], 'LAGRANGE')).toBeNull();
   });
 });

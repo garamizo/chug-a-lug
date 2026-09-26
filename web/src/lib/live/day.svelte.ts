@@ -6,7 +6,7 @@ import { pb, subscribe } from '$lib/pb';
 import { dayBounds, localToUtc, parseHm, todayInTz } from '$lib/time';
 import { clearMirror, mirrorPayload, readMirror, saveMirror, scopeMirror } from '$lib/offline';
 import { currentStop, type Current } from './current';
-import { pickTrip } from './board';
+import { pickTrip, plannedTrain } from './board';
 import { fetchAlerts, fetchDay, fetchNext, fetchStatus } from './feed';
 import { isEventDay as onEventDate, planNow } from './planClock';
 import { resolveCurrentRoute } from './route';
@@ -62,8 +62,13 @@ export class LiveDay {
     if (!this.hasRoute) return null;
     return currentStop(this.stops, this.legs, this.now, { startAt: this.startAt, override: this.effectiveAnchor });
   }
+  /** Before the crawl, the train the plan starts on; the board counts down to it, not the next one. */
+  get plannedTrip(): { tripId: string; dep: string } | null {
+    const here = this.here;
+    return here?.source === 'before' && here.stop ? plannedTrain(this.stops, this.legs, here.stop.station_id) : null;
+  }
   get trip(): NextTrip | null {
-    return pickTrip(this.trips, this.now);
+    return pickTrip(this.trips, this.now, this.plannedTrip?.tripId);
   }
   /** The newest Bulletin this browser's user has not acknowledged. */
   get pinnedBulletin(): Broadcast | null {
@@ -280,7 +285,11 @@ export class LiveDay {
     // next stop is another bar here, and a trip from a station to itself does not exist.
     if (!here?.stop || !here.onwardStop || !this.itinerary) { this.trips = []; return; }
     try {
-      const res = await fetchNext(here.stop.station_id, here.onwardStop.station_id, this.itinerary.event_date, this.now, this.practice);
+      // Ask from just before the planned train, so the three trips returned include it.
+      const planned = this.plannedTrip;
+      const plannedFrom = planned ? new Date(new Date(planned.dep).getTime() - 60_000) : null;
+      const after = plannedFrom && plannedFrom > this.now ? plannedFrom : this.now;
+      const res = await fetchNext(here.stop.station_id, here.onwardStop.station_id, this.itinerary.event_date, after, this.practice);
       if (request !== this.trainRead || revision !== clientClock.revision || scope !== this.scopeKey) return;
       this.trips = res.trips;
       this.mode = res.mode;

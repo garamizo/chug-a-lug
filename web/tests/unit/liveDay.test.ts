@@ -424,3 +424,46 @@ it('does not apply the early route read over a reload that started after it', as
     expect(day.itinerary?.start_time).toBe('12:00');
   } finally { stop(); }
 });
+
+describe('before the crawl the board waits for the planned train', () => {
+  const trip = (tripId: string, depart: string) => ({
+    tripId, routeId: 'BNSF', headsign: 'Chicago', schedDepart: depart, schedArrive: depart,
+    liveDepart: null, liveArrive: null, delayMin: null, status: 'scheduled' as const
+  });
+  function plannedDay() {
+    const day = new LiveDay();
+    day.itinerary = route;
+    day.stops = [
+      { id: 'a', order: 1, station_id: 'LAGRANGE', dwell_min: 30, walk_min: 2 },
+      { id: 'b', order: 2, station_id: 'CUS', dwell_min: 30, walk_min: 2 }
+    ] as never;
+    day.legs = [{ from_stop: 'a', to_stop: 'b', kind: 'train', depart_at: '2026-12-26T18:30:00Z', arrive_at: '2026-12-26T18:55:00Z',
+      segments: [{ kind: 'train', tripId: 'BN6', routeId: 'BNSF', headsign: 'Chicago', from: 'LAGRANGE', to: 'CUS', dep: '2026-12-26T18:30:00.000Z', arr: '2026-12-26T18:55:00.000Z' }] }] as never;
+    return day;
+  }
+
+  it('asks for trains from just before the planned departure and counts down to it', async () => {
+    mocks.fetchNext.mockResolvedValue({ trips: [trip('BN6', '2026-12-26T18:30:00.000Z'), trip('BN8', '2026-12-26T19:30:00.000Z')], mode: 'schedule_only', fetchedAt: null });
+    const day = plannedDay();
+    day.realNow = new Date('2026-12-26T16:00:00Z'); day.syncPlan();
+    expect(day.here?.source).toBe('before');
+    await day.loadTrains();
+    expect(mocks.fetchNext).toHaveBeenCalledWith('LAGRANGE', 'CUS', '2026-12-26', new Date('2026-12-26T18:29:00.000Z'), false);
+    expect(day.trip?.tripId).toBe('BN6');
+  });
+
+  it('prefers the planned train even when an earlier one is in the list', () => {
+    const day = plannedDay();
+    day.realNow = new Date('2026-12-26T16:00:00Z'); day.syncPlan();
+    day.trips = [trip('BN4', '2026-12-26T17:30:00.000Z'), trip('BN6', '2026-12-26T18:30:00.000Z')];
+    expect(day.trip?.tripId).toBe('BN6');
+  });
+
+  it('counts down to the next train once the crawl is under way', () => {
+    const day = plannedDay();
+    day.realNow = new Date('2026-12-26T17:10:00Z'); day.syncPlan();
+    expect(day.here?.source).toBe('clock');
+    day.trips = [trip('BN4', '2026-12-26T17:30:00.000Z'), trip('BN6', '2026-12-26T18:30:00.000Z')];
+    expect(day.trip?.tripId).toBe('BN4');
+  });
+});

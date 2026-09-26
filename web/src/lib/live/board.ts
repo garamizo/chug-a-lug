@@ -1,6 +1,6 @@
 // The Departure Board's state machine. Pure, with `now` injected, so M4's sim clock drives it
 // without changing a line here.
-import type { NextTrip } from '$lib/types';
+import type { Leg, NextTrip, Stop } from '$lib/types';
 
 /** Minutes of slack between arriving on the platform and the train leaving. */
 export const BUFFER_MIN = 3;
@@ -21,7 +21,25 @@ export function boardState(opts: { departAt: Date; walkMin: number; now: Date })
   return { state, leaveAt, departsInMin };
 }
 
-/** The first trip that has not left yet: the one the board counts down to. */
-export function pickTrip(trips: NextTrip[], now: Date): NextTrip | null {
-  return trips.find((t) => new Date(t.liveDepart ?? t.schedDepart).getTime() > now.getTime()) ?? null;
+/**
+ * The trip the board counts down to: the planned one while it has not left, otherwise the first
+ * trip that has not left yet. Before the crawl the plan names the train; counting down to an
+ * earlier one would start the crew on the wrong train.
+ */
+export function pickTrip(trips: NextTrip[], now: Date, plannedTripId?: string | null): NextTrip | null {
+  const catchable = (t: NextTrip) => new Date(t.liveDepart ?? t.schedDepart).getTime() > now.getTime();
+  const planned = plannedTripId ? trips.find((t) => t.tripId === plannedTripId && catchable(t)) : undefined;
+  return planned ?? trips.find(catchable) ?? null;
+}
+
+/** The first train the plan takes from `stationId`, in stop order, or null when it takes none. */
+export function plannedTrain(stops: Stop[], legs: Leg[], stationId: string): { tripId: string; dep: string } | null {
+  const order = new Map(stops.map((s) => [s.id, s.order]));
+  const ordered = [...legs].sort((a, b) => (order.get(a.from_stop) ?? 0) - (order.get(b.from_stop) ?? 0));
+  for (const leg of ordered) {
+    for (const seg of leg.segments ?? []) {
+      if (seg.kind === 'train' && seg.from === stationId) return { tripId: seg.tripId, dep: seg.dep };
+    }
+  }
+  return null;
 }
