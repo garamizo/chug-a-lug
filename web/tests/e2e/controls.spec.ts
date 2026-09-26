@@ -46,6 +46,9 @@ test('return links are a back arrow and editing is a pen, both named for screen 
   await expect(edit.locator('svg')).toBeVisible();
   await edit.click();
   await expect(page).toHaveURL(new RegExp(`/plan/${seeded.itineraryId}/edit$`));
+  // Stop controls are icons with accessible names, not glyphs.
+  await expect(page.getByTestId('remove-0')).toHaveAccessibleName(copy.remove);
+  await expect(page.getByTestId('remove-0').locator('svg')).toHaveCount(1);
   await page.getByRole('link', { name: copy.doneEditing }).click();
   await expect(page).toHaveURL(new RegExp(`/plan/${seeded.itineraryId}$`));
   await expect(page.getByText(copy.backToPlanner)).toHaveCount(0);

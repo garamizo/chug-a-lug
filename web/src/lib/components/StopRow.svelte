@@ -10,6 +10,7 @@
   import type { Leg, NextTrip, Stop, StopLike } from '$lib/types';
   import type { Side } from '$lib/lineMap';
   import LegRow from './LegRow.svelte';
+  import IconButton from './IconButton.svelte';
 
   let { stop, photo = null, index, arriveAt, leaveAt, editable, last, href, side = 'left', leg, legReason, names, nextStationId, date, canUp = false, canDown = false, onupdate, onmove, onremove, onopen }: {
     stop: StopLike; photo?: string | null; index: number; arriveAt: Date | null; leaveAt: Date | null; editable: boolean; last: boolean;
@@ -56,9 +57,9 @@
 <article class="stop" data-testid="stop-row-{index}" data-side={side}>
   {#if editable}
     <div class="corner">
-      {#if canUp}<button type="button" class="tiny" onclick={() => onmove?.(-1)} aria-label={copy.moveUp} data-testid="up-{index}">↑</button>{/if}
-      {#if canDown}<button type="button" class="tiny" onclick={() => onmove?.(1)} aria-label={copy.moveDown} data-testid="down-{index}">↓</button>{/if}
-      <button type="button" class="tiny close" onclick={() => { if (confirm(copy.removeConfirm)) onremove(); }} aria-label={copy.remove} data-testid="remove-{index}">×</button>
+      {#if canUp}<IconButton icon="up" size={32} label={copy.moveUp} onclick={() => onmove?.(-1)} testid="up-{index}" />{/if}
+      {#if canDown}<IconButton icon="down" size={32} label={copy.moveDown} onclick={() => onmove?.(1)} testid="down-{index}" />{/if}
+      <IconButton icon="delete" tone="danger" size={32} label={copy.remove} onclick={() => { if (confirm(copy.removeConfirm)) onremove(); }} testid="remove-{index}" />
     </div>
   {/if}
   <a {href} class="head" data-testid="stop-link-{index}" onclick={(e) => { if (onopen) { e.preventDefault(); onopen(stop.id); } }}><span class="num">{index + 1}</span>{#if photo}<img class="photo" src={photo} alt="" width="48" height="48" loading="lazy" data-testid="stop-photo-{index}" />{/if}<strong>{stop.name}</strong></a>
@@ -82,12 +83,9 @@
 <style>
   .stop { position: relative; background: #1b1b1b; border: 1px solid #333; border-radius: 12px; padding: 10px 12px; margin-bottom: 10px; text-align: left; font-size: 15px; }
   .corner { position: absolute; top: 4px; right: 4px; display: flex; gap: 2px; }
-  .tiny { width: 32px; height: 32px; margin: 0; padding: 0; background: transparent; color: #999; border: 0; font-size: 18px; line-height: 1; border-radius: 50%; }
-  .tiny.close { font-size: 24px; }
-  .tiny:hover { color: #fff; background: #2a2a2a; }
   .head { display: flex; gap: 8px; align-items: center; color: inherit; text-decoration: none; padding-right: 36px; }
-  .stop:has(.corner > :nth-child(2)) .head { padding-right: 70px; }
-  .stop:has(.corner > :nth-child(3)) .head { padding-right: 104px; }
+  .stop:has(.corner > :global(:nth-child(2))) .head { padding-right: 70px; }
+  .stop:has(.corner > :global(:nth-child(3))) .head { padding-right: 104px; }
   .num { flex: 0 0 24px; height: 24px; border-radius: 50%; background: #ffb400; color: #111; font-weight: 800; font-size: 13px; display: grid; place-items: center; }
   .head strong { overflow-wrap: anywhere; }
   .photo { flex: 0 0 48px; width: 48px; height: 48px; border-radius: 8px; object-fit: cover; background: #2a2a2a; }

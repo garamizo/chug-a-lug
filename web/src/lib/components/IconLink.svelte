@@ -1,15 +1,14 @@
 <script lang="ts">
   // A link that is only an icon: the back arrow on return links, the pen on edit links. The words
   // stay in labels.ts and become its accessible name.
-  let { href, label, icon, testid }: { href: string; label: string; icon: 'back' | 'edit'; testid?: string } = $props();
+  import { ICONS, type IconName } from '$lib/icons';
+  let { href, label, icon, testid }: { href: string; label: string; icon: IconName; testid?: string } = $props();
 </script>
 
 <a {href} class="icon {icon}" aria-label={label} title={label} data-testid={testid}>
-  {#if icon === 'back'}
-    <svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true"><path d="M15 5l-7 7 7 7" /></svg>
-  {:else}
-    <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path d="M4 20h4L19 9l-4-4L4 16v4z" /><path d="M13.5 6.5l4 4" /></svg>
-  {/if}
+  <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true">
+    {#each ICONS[icon] as d}<path {d} />{/each}
+  </svg>
 </a>
 
 <style>
