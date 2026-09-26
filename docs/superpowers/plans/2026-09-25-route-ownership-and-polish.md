@@ -32,7 +32,7 @@
 1. **A crew member on someone else's draft via deep link** (`/plan/{id}/edit`, `/plan/{id}/add`) — expect a redirect to the read-only view and no stop written. Pinned in Task 5 (e2e deep-link case).
 2. **Deleting the route another phone is watching on Live** — the other phone falls back to the next locked route or the empty state, and never resurrects the deleted one from its mirror. Pinned in Task 4 (unit) and Task 8 (e2e: second browser context after Conductor delete).
 3. **Photo-only chat message** (empty text, one image) on the planner — must post and render as a thumbnail with no empty text bubble. Pinned in Task 12.
-4. **Chat box with a long message and the phone keyboard open** — Enter sends; Shift+Enter is not needed (single-line input); `maxlength` still enforced; the send button never submits whitespace. Pinned in Task 11 (unit on `composerMode`, e2e whitespace case).
+4. **Typing while a send is in flight on a slow connection** — the box empties on send and stays usable; text typed meanwhile is never cleared, and a failed send restores its text only into an empty box. The send button never submits whitespace. Pinned in Task 11 (unit on `draftAfterFailedSend`/`composerMode`, e2e slow-send and whitespace cases).
 5. **A route whose stops are all return stops, or all off-line** — the unfolded view renders the empty outbound section with its stations and does not crash; off-line stops still list under the off-line heading. Pinned in Task 9 (unit on `unfold`).
 
 ---
@@ -275,6 +275,44 @@ describe('comment and vote targets', () => {
     expect((await patch(`/api/collections/comments/records/${c.id}`, { body: 'Edited' }, crew.token)).status).toBe(200);
   });
 
+  it('rejects a non-media attachment even when the client is bypassed', async () => {
+    const { id } = await (await createItinerary(crew.token)).json();
+    const form = new FormData();
+    form.set('user', crew.id); form.set('target_collection', 'itineraries'); form.set('target_id', id);
+    form.set('file', new Blob(['#!/bin/sh'], { type: 'text/plain' }), 'run.sh');
+    expect((await postForm('/api/collections/comments/records', form, crew.token)).status).toBe(400);
+  });
+
+  it('a route delete that fails keeps its comments and votes (cleanup rolls back)', async () => {
+    const su = await superuserToken();
+    const { id } = await (await createItinerary(crew.token)).json();
+    await comment(crew.token, crew.id, 'itineraries', id);
+    // A throwaway collection with a required, non-cascading relation makes PocketBase refuse the delete.
+    const itCol = await (await get('/api/collections/itineraries', su)).json();
+    const hold = await post('/api/collections', { name: 'zz_hold', type: 'base', fields: [
+      { name: 'it', type: 'relation', collectionId: itCol.id, maxSelect: 1, required: true, cascadeDelete: false }
+    ] }, su);
+    expect(hold.status).toBe(200);
+    try {
+      expect((await post('/api/collections/zz_hold/records', { it: id }, su)).status).toBe(200);
+      expect((await del(`/api/collections/itineraries/records/${id}`, admin.token)).status).toBe(400);
+      const left = await (await get(`/api/collections/comments/records?filter=${encodeURIComponent(`target_id="${id}"`)}`, crew.token)).json();
+      expect(left.totalItems).toBe(1);
+    } finally {
+      await del('/api/collections/zz_hold', su);
+    }
+  });
+
+  it('comments racing a route delete never outlive it', async () => {
+    const { id } = await (await createItinerary(crew.token)).json();
+    const writes = Array.from({ length: 12 }, (_, i) => comment(crew.token, crew.id, 'itineraries', id, `race ${i}`));
+    const gone = del(`/api/collections/itineraries/records/${id}`, crew.token);
+    await Promise.all([...writes, gone]);
+    const su = await superuserToken();
+    const left = await (await get(`/api/collections/comments/records?filter=${encodeURIComponent(`target_id="${id}"`)}`, su)).json();
+    expect(left.totalItems).toBe(0);
+  });
+
   it('deleting a stop removes its comments and votes; deleting a route removes its and its stops\'', async () => {
     const { id } = await (await createItinerary(crew.token)).json();
     const s1 = await (await createStop(crew.token, id)).json();
@@ -299,12 +337,12 @@ describe('comment and vote targets', () => {
 });
 ```
 
-Import `PB` from `./setup` at the top of the file.
+Import `PB` and `superuserToken` from `./setup` at the top of the file (`superuserToken` is already imported).
 
 - [ ] **Step 2: Run to verify they fail**
 
 Run: `bash scripts/test-hooks.sh`
-Expected: FAIL — empty body is currently a 400 already (required), but the file-only case, missing-target cases and cleanup cases fail.
+Expected: FAIL — empty body is currently a 400 already (required), but the file-only, missing-target, cleanup and race cases fail (the rollback case may pass trivially until cleanup exists; it guards the transaction). If `del('/api/collections/zz_hold', su)` is not how this PocketBase deletes a collection, use `DELETE /api/collections/zz_hold` with the superuser token — same thing — and make sure `truncate` in `beforeAll` never touches it.
 
 - [ ] **Step 3: Write the migration**
 
@@ -329,41 +367,56 @@ migrate((app) => {
 })
 ```
 
-Check `1758700000_live.js`'s `media.file` for whether it sets `mimeTypes`; if it does not, drop `mimeTypes` here too and rely on the client's `prepare()` check — keep the two collections consistent.
+Keep the `mimeTypes` allowlist even though `media.file` has none: the server, not `prepare()`, is the gate (the non-media test pins it). If a real phone format is rejected in manual testing, add it to the list rather than removing the list.
 
 - [ ] **Step 4: Write the hooks**
 
-`pocketbase/pb_hooks/targets.pb.js` (model hooks run inside the write's transaction, so validation and cleanup cannot interleave):
+`pocketbase/pb_hooks/targets.pb.js`. Model hooks are not transactional on their own in PocketBase 0.40, so each wraps its entire chain — lookups, cleanup **and `e.next()`** — in `runInTransaction`, with `e.app` pointed at the transaction exactly as `pocketbase/pb_hooks/action_order.pb.js` does (using `$app` inside would deadlock SQLite's single writer). PocketBase runs transactions on one write connection, so a check-then-insert and a cleanup-then-delete cannot interleave, and a failed delete rolls its cleanup back.
 
 ```js
 // Comments and votes point at their target by text. These hooks keep that link honest: a new one
 // must point at a route or stop that exists, and deleting a route or stop takes its comments and
-// votes with it. Model hooks (not request hooks) run inside the write's own transaction.
+// votes with it. Each wraps its whole chain, e.next() included, in one transaction (see
+// action_order.pb.js): a failed delete keeps its comments, and a comment cannot be validated
+// against a route that is deleted before the comment lands.
 
 onRecordCreate((e) => {
-  const col = e.record.getString('target_collection')
-  const id = e.record.getString('target_id')
-  if (col !== 'itineraries' && col !== 'stops') throw new BadRequestError('Comments and cheers are for routes and stops.')
-  try { e.app.findRecordById(col, id) } catch (_) { throw new BadRequestError('That route or stop no longer exists.') }
-  if (e.record.collection().name === 'comments' && !e.record.getString('body').trim() && !e.record.getString('file')) {
-    throw new BadRequestError('Write something or attach a photo.')
-  }
-  e.next()
+  const original = e.app
+  try {
+    original.runInTransaction((tx) => {
+      e.app = tx
+      const col = e.record.getString('target_collection')
+      const id = e.record.getString('target_id')
+      if (col !== 'itineraries' && col !== 'stops') throw new BadRequestError('Comments and cheers are for routes and stops.')
+      try { tx.findRecordById(col, id) } catch (_) { throw new BadRequestError('That route or stop no longer exists.') }
+      if (e.record.collection().name === 'comments' && !e.record.getString('body').trim() &&
+          !e.record.getString('file') && !e.record.getUnsavedFiles('file').length) {
+        throw new BadRequestError('Write something or attach a photo.')
+      }
+      e.next()
+    })
+  } finally { e.app = original }
 }, 'comments', 'votes')
 
 onRecordDelete((e) => {
-  const col = e.record.collection().name
-  for (const name of ['comments', 'votes']) {
-    const rows = e.app.findRecordsByFilter(name, 'target_collection = {:c} && target_id = {:id}', '', 0, 0, { c: col, id: e.record.id })
-    for (const r of rows) e.app.delete(r)
-  }
-  e.next()
+  const original = e.app
+  try {
+    original.runInTransaction((tx) => {
+      e.app = tx
+      const col = e.record.collection().name
+      for (const name of ['comments', 'votes']) {
+        const rows = tx.findRecordsByFilter(name, 'target_collection = {:c} && target_id = {:id}', '', 0, 0, { c: col, id: e.record.id })
+        for (const r of rows) tx.delete(r)
+      }
+      e.next()
+    })
+  } finally { e.app = original }
 }, 'itineraries', 'stops')
 ```
 
-If the cleanup test for a stop's comments after a **route** delete fails (i.e. cascaded stop deletes do not fire `onRecordDelete` in this PocketBase version), extend the `itineraries` branch: before `e.next()`, `for (const s of e.app.findRecordsByFilter('stops', 'itinerary = {:id}', '', 0, 0, { id: e.record.id }))` run the same two-collection sweep with `c: 'stops', id: s.id`.
+If the cleanup test for a stop's comments after a **route** delete fails (cascaded stop deletes do not fire `onRecordDelete` in this PocketBase version), extend the `itineraries` branch inside the same transaction: before `e.next()`, `for (const s of tx.findRecordsByFilter('stops', 'itinerary = {:id}', '', 0, 0, { id: e.record.id }))` run the same two-collection sweep with `c: 'stops', id: s.id`.
 
-Note: the file field is only populated on `e.record` after upload processing; if the file-only test is rejected by the body-or-file check, read the file from `e.record.getUnsavedFiles('file').length` in addition to `getString('file')`.
+If `getUnsavedFiles` is not exposed to JSVM in 0.40.4, check the file via `e.record.get('file')` (an unsaved upload is a `*filesystem.File`, a truthy value) — the file-only test decides.
 
 - [ ] **Step 5: Update the type**
 
@@ -1820,6 +1873,7 @@ git commit -m "feat(route): board header with builder and stats, icon edit/delet
   export type ComposerMode = 'send' | 'camera';
   export function composerMode(text: string, mediaEnabled: boolean): ComposerMode;
   export function insertAt(text: string, insert: string, start: number, end: number): { text: string; caret: number };
+  export function draftAfterFailedSend(current: string, submitted: string): string;
   // upload.ts
   export async function compressForUpload(file: File): Promise<Prepared>; // prepare() with the browser-image-compression worker
   ```
@@ -1842,7 +1896,7 @@ git commit -m "feat(route): board header with builder and stats, icon edit/delet
 
 ```ts
 import { describe, expect, it } from 'vitest';
-import { CHAT_EMOJI, composerMode, insertAt } from '../../src/lib/chatBox';
+import { CHAT_EMOJI, composerMode, draftAfterFailedSend, insertAt } from '../../src/lib/chatBox';
 
 describe('chat box', () => {
   it('offers sixteen crawl emoji', () => {
@@ -1854,6 +1908,11 @@ describe('chat box', () => {
     expect(composerMode('   ', true)).toBe('camera');
     expect(composerMode('hi', true)).toBe('send');
     expect(composerMode('', false)).toBe('send');
+  });
+  it('a failed send gives the text back only if nothing new was typed', () => {
+    expect(draftAfterFailedSend('', 'On my way')).toBe('On my way');
+    expect(draftAfterFailedSend('  ', 'On my way')).toBe('On my way');
+    expect(draftAfterFailedSend('Also bring cash', 'On my way')).toBe('Also bring cash');
   });
   it('inserts at the caret, replacing a selection', () => {
     expect(insertAt('Save me', '🍕', 7, 7)).toEqual({ text: 'Save me🍕', caret: 9 });
@@ -1873,6 +1932,10 @@ export type ComposerMode = 'send' | 'camera';
 
 /** WhatsApp style: the round button is the camera while there is nothing to send. */
 export const composerMode = (text: string, mediaEnabled: boolean): ComposerMode => (mediaEnabled && !text.trim() ? 'camera' : 'send');
+
+/** Sending clears the box at once; a failed send restores its text unless the person has already
+ *  typed something new, which is never thrown away. */
+export const draftAfterFailedSend = (current: string, submitted: string): string => (current.trim() ? current : submitted);
 
 /** `start`/`end` are UTF-16 offsets (what an input's selectionStart/End report). */
 export function insertAt(text: string, insert: string, start: number, end: number): { text: string; caret: number } {
@@ -1908,7 +1971,7 @@ If unit tests import `upload.ts` and Vitest cannot resolve the `?url` import, mo
   // that is the camera until there is something to send. Pinned to the bottom of the page.
   import { tick } from 'svelte';
   import { copy } from '$lib/labels';
-  import { CHAT_EMOJI, composerMode, insertAt } from '$lib/chatBox';
+  import { CHAT_EMOJI, composerMode, draftAfterFailedSend, insertAt } from '$lib/chatBox';
   import IconButton from './IconButton.svelte';
 
   let { onsend, onfiles, busy = false, mediaOff, maxlength = 280, placeholder, inputTestid, sendTestid, fileTestid, cameraTestid }: {
@@ -1926,8 +1989,10 @@ If unit tests import `upload.ts` and Vitest cannot resolve the `?url` import, mo
   async function send() {
     const body = text.trim();
     if (!body || busy) return;
-    // Only a delivered message clears the box; the host shows why a send failed.
-    try { await onsend(body); text = ''; } catch { /* keep the text for a retry */ }
+    // WhatsApp style: the box empties at once and stays usable while the message is in flight.
+    // Never clear it on completion — that would eat whatever was typed meanwhile.
+    text = '';
+    try { await onsend(body); } catch { text = draftAfterFailedSend(text, body); }
   }
   async function pick(list: FileList | null) {
     const files = Array.from(list ?? []);
@@ -2049,6 +2114,33 @@ test('the chat box sends with Enter, never sends blanks, and inserts emoji at th
   await page.getByTestId('chat-input').press('Enter');
   await expect(page.getByTestId('crew-chat')).toContainText('Save me a seat🍕');
   await expect(page.getByTestId('chat-input')).toHaveValue('');
+});
+```
+
+Add a slow-send case to `chat.spec.ts` (same setup):
+
+```ts
+test('typing during a slow send is never lost, and a failed send gives its text back', async ({ page }) => {
+  // (same login + live route setup as the test above)
+  let release!: () => void;
+  const held = new Promise<void>((r) => (release = r));
+  await page.route('**/api/collections/chat_messages/records', async (route) => {
+    if (route.request().method() !== 'POST') return route.continue();
+    await held;
+    await route.abort('failed');
+  });
+  await page.getByTestId('chat-input').fill('First');
+  await page.getByTestId('chat-input').press('Enter');
+  await expect(page.getByTestId('chat-input')).toHaveValue('');
+  await page.getByTestId('chat-input').fill('Second, typed while waiting');
+  release();
+  await expect(page.getByTestId('chat-input')).toHaveValue('Second, typed while waiting');
+  await page.getByTestId('chat-input').fill('');
+  await page.unroute('**/api/collections/chat_messages/records');
+  await page.route('**/api/collections/chat_messages/records', (route) => route.request().method() === 'POST' ? route.abort('failed') : route.continue());
+  await page.getByTestId('chat-input').fill('Retry me');
+  await page.getByTestId('chat-input').press('Enter');
+  await expect(page.getByTestId('chat-input')).toHaveValue('Retry me');
 });
 ```
 

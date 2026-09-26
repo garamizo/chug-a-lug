@@ -84,8 +84,12 @@ PocketBase cascades the delete (`cascadeDelete: true`) to stops, legs, broadcast
 (`1758840000_crew_chat.js`), approval votes and, through stops, to check-ins and drink entries.
 `media.stop` is `cascadeDelete: false`, so photos survive with a cleared stop. `votes` and
 `comments` point at their target by text (`target_collection`/`target_id`), so nothing cascades to
-them. Cleanup and validation both run in model hooks, which execute inside the write's own
-transaction (SQLite serialises writers), so a comment cannot slip in between a check and a delete:
+them. Model hooks are **not** transactional by themselves in PocketBase 0.40 (the delete cascade
+only opens its transaction in `onRecordDeleteExecute`), so each hook wraps its whole chain,
+including `e.next()`, in `e.app.runInTransaction` and points `e.app` at the transaction, the same
+way `pb_hooks/action_order.pb.js` does. PocketBase runs transactions on its single write
+connection, so a target check plus insert and a cleanup plus delete are serialised against each
+other, and a delete that fails rolls its cleanup back:
 
 - `onRecordDelete` on `itineraries` (before `e.next()`) deletes the votes and comments whose target
   is the route or one of its stops, then lets the cascade run.
@@ -163,6 +167,9 @@ edit any.
   while the tray is open. No emoji library.
 - Attach opens a hidden `<input type="file" accept="image/*,video/*" multiple>`; camera a hidden
   `<input type="file" accept="image/*" capture="environment">`.
+- Sending clears the field at once (WhatsApp style) and the person can keep typing while it is
+  in flight; if the send fails and the field is still empty, the sent text comes back, otherwise
+  whatever was typed since is kept.
 - Props: `onsend(text): Promise<void>`, `onfiles?(files: File[]): Promise<void>` (absent → no
   attach/camera), `busy`, `disabledMedia?: string` (reason shown as the icons' title when media
   is off), `maxlength`, `placeholder`, `testid` prefix.
@@ -197,7 +204,8 @@ edit any.
 
 - `comments.body`: `required: false` (keep `max: 1000`).
 - `comments.file`: new `file` field, `maxSelect: 1`, same `maxSize` and `thumbs` as `media.file`,
-  MIME types limited to image/* and video/*.
+  with a server-side `mimeTypes` allowlist of image and video types (enforced by PocketBase, not
+  only by the client's `prepare()`), even though `media.file` has none today.
 - Hook (`pb_hooks/planning.pb.js`, the `onRecordCreate` model hook for `comments` described under
   "Deleting a locked route"): reject when the body is blank and there is no file, and when the
   target does not exist.
