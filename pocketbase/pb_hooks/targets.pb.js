@@ -36,3 +36,11 @@ onRecordDelete((e) => {
     })
   } finally { e.app = original }
 }, 'itineraries', 'stops')
+
+// An edit may not leave a comment empty: after the change it still needs text or a file.
+onRecordUpdate((e) => {
+  if (!e.record.getString('body').trim() && !e.record.getString('file') && !e.record.getUnsavedFiles('file').length) {
+    throw new BadRequestError('Write something or attach a photo.')
+  }
+  e.next()
+}, 'comments')

@@ -223,6 +223,23 @@ describe('comment and vote targets', () => {
     expect((await res.json()).file).toMatch(/\.gif$/);
   });
 
+  it('an edit cannot empty a comment', async () => {
+    const { id } = await (await createItinerary(crew.token)).json();
+    const text = await (await comment(crew.token, crew.id, 'itineraries', id)).json();
+    expect((await patch(`/api/collections/comments/records/${text.id}`, { body: '' }, crew.token)).status).toBe(400);
+    expect((await patch(`/api/collections/comments/records/${text.id}`, { body: '  ' }, crew.token)).status).toBe(400);
+    const form = new FormData();
+    form.set('user', crew.id); form.set('target_collection', 'itineraries'); form.set('target_id', id);
+    form.set('file', new Blob([GIF], { type: 'image/gif' }), 'pic.gif');
+    const photo = await (await postForm('/api/collections/comments/records', form, crew.token)).json();
+    expect((await patch(`/api/collections/comments/records/${photo.id}`, { file: null }, crew.token)).status).toBe(400);
+    expect((await patch(`/api/collections/comments/records/${photo.id}`, { 'file-': [photo.file] }, crew.token)).status).toBe(400);
+    const kept = await (await get(`/api/collections/comments/records/${photo.id}`, crew.token)).json();
+    expect(kept.file).toBe(photo.file);
+    expect((await patch(`/api/collections/comments/records/${photo.id}`, { body: 'Caption' }, crew.token)).status).toBe(200);
+    expect((await patch(`/api/collections/comments/records/${photo.id}`, { file: null }, crew.token)).status).toBe(200);
+  });
+
   it('rejects a comment or vote whose target does not exist, with or without a file', async () => {
     expect((await comment(crew.token, crew.id, 'itineraries', 'aaaaaaaaaaaaaaa')).status).toBe(400);
     expect((await comment(crew.token, crew.id, 'stops', 'aaaaaaaaaaaaaaa')).status).toBe(400);
@@ -255,17 +272,19 @@ describe('comment and vote targets', () => {
     const su = await superuserToken();
     const { id } = await (await createItinerary(crew.token)).json();
     await comment(crew.token, crew.id, 'itineraries', id);
+    await post('/api/collections/votes/records', { user: crew.id, target_collection: 'itineraries', target_id: id, value: 'up' }, crew.token);
     // A throwaway collection with a required, non-cascading relation makes PocketBase refuse the delete.
     const itCol = await (await get('/api/collections/itineraries', su)).json();
-    const hold = await post('/api/collections', { name: 'zz_hold', type: 'base', fields: [
-      { name: 'it', type: 'relation', collectionId: itCol.id, maxSelect: 1, required: true, cascadeDelete: false }
-    ] }, su);
-    expect(hold.status).toBe(200);
     try {
+      const hold = await post('/api/collections', { name: 'zz_hold', type: 'base', fields: [
+        { name: 'it', type: 'relation', collectionId: itCol.id, maxSelect: 1, required: true, cascadeDelete: false }
+      ] }, su);
+      expect(hold.status).toBe(200);
       expect((await post('/api/collections/zz_hold/records', { it: id }, su)).status).toBe(200);
       expect((await del(`/api/collections/itineraries/records/${id}`, admin.token)).status).toBe(400);
-      const left = await (await get(`/api/collections/comments/records?filter=${encodeURIComponent(`target_id="${id}"`)}`, crew.token)).json();
-      expect(left.totalItems).toBe(1);
+      const filter = encodeURIComponent(`target_id="${id}"`);
+      expect((await (await get(`/api/collections/comments/records?filter=${filter}`, crew.token)).json()).totalItems).toBe(1);
+      expect((await (await get(`/api/collections/votes/records?filter=${filter}`, crew.token)).json()).totalItems).toBe(1);
     } finally {
       await del('/api/collections/zz_hold', su);
     }
