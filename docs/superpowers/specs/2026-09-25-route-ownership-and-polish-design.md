@@ -64,15 +64,38 @@ names what goes with it.
   `U && ((status = 'draft' && created_by = @request.auth.id) || ADMIN)`.
 - Down migration restores both previous rules verbatim.
 
+### Privileged write paths
+
+Collection rules only guard direct PocketBase writes. Every SvelteKit endpoint that writes stops
+as the superuser (`adminPb()`) must apply the same ownership check itself:
+
+- `POST /api/places/attach` (`web/src/lib/server/places/attach.ts`): today `AttachCaller` is
+  `{ is_admin }` and a non-admin is only checked for `status === 'draft'` (`attach.ts:52-56`).
+  `AttachCaller` becomes `{ id, is_admin }` (the route handler passes `locals` user's id), and a
+  non-admin must also be the itinerary's `created_by`. The check runs **before** any Google call
+  or write, so a refused request spends no Places budget and leaves `photos_status` untouched.
+- `POST /api/plan/preview` only reads; `POST /api/plan/commit` and `lib/server/recompute.ts` are
+  already admin- or hook-only. The implementation plan re-audits `grep adminPb` for any other
+  stop or itinerary write before landing.
+
 ### Deleting a locked route
 
 PocketBase cascades the delete (`cascadeDelete: true`) to stops, legs, broadcasts, crew chat
 (`1758840000_crew_chat.js`), approval votes and, through stops, to check-ins and drink entries.
 `media.stop` is `cascadeDelete: false`, so photos survive with a cleared stop. `votes` and
 `comments` point at their target by text (`target_collection`/`target_id`), so nothing cascades to
-them: an `onRecordAfterDeleteSuccess` hook on `itineraries` deletes the votes and comments that
-target the route and the comments that target its stops (collected before the cascade, in an
-`onRecordDeleteRequest` hook, since the stops are gone afterwards).
+them. Cleanup and validation both run in model hooks, which execute inside the write's own
+transaction (SQLite serialises writers), so a comment cannot slip in between a check and a delete:
+
+- `onRecordDelete` on `itineraries` (before `e.next()`) deletes the votes and comments whose target
+  is the route or one of its stops, then lets the cascade run.
+- `onRecordDelete` on `stops` does the same for comments and votes on that stop, so removing a
+  single stop from a draft cleans up too.
+- `onRecordCreate` on `comments` and `votes` (not the request hook) rejects a target that does not
+  exist in `target_collection` (only `itineraries` and `stops` are accepted). An upload that
+  finishes after the route is gone therefore fails with 400, and its file is never stored.
+- `comments.updateRule` and `votes.updateRule` add `@request.body.target_collection:isset = false
+  && @request.body.target_id:isset = false`, so a target can never be changed after creation.
 `crawl_settings.current_itinerary` is optional and non-cascading: PocketBase clears it and the
 client/hook fallback (`$lib/live/route.ts`, `pb_hooks/current.js`) picks the newest locked route.
 
@@ -84,6 +107,15 @@ client/hook fallback (`$lib/live/route.ts`, `pb_hooks/current.js`) picks the new
   ("The crew is riding this route today").
 - After a delete the client navigates to `/plan`; `liveDay` reloads through its existing
   `crawl_settings`/`itineraries` subscriptions.
+- **Offline mirror.** Today `liveDay.loadRoute()` (`web/src/lib/live/day.svelte.ts`) clears its
+  in-memory route when `readRoute()` returns null but leaves the IndexedDB mirror, so a later
+  offline reload would resurrect a deleted last route through `readMirror()`. New
+  `clearMirror(readStartedAt: Date)` in `web/src/lib/offline.ts` deletes the stored mirror in one
+  readwrite transaction **only if** its `savedAt` is older than the authoritative read that
+  returned no route; a save that raced in afterwards survives. `loadRoute()` calls it on the
+  null-read branch. When the current route is deleted but another locked route exists, the
+  existing path already overwrites the mirror with the fallback route. The same fix covers a
+  route being unlocked back to draft, which has the same gap today.
 
 ### Client gates
 
@@ -166,8 +198,9 @@ edit any.
 - `comments.body`: `required: false` (keep `max: 1000`).
 - `comments.file`: new `file` field, `maxSelect: 1`, same `maxSize` and `thumbs` as `media.file`,
   MIME types limited to image/* and video/*.
-- Hook (`pb_hooks/planning.pb.js`, `onRecordCreateRequest` for `comments`): reject when the body
-  is blank and there is no file.
+- Hook (`pb_hooks/planning.pb.js`, the `onRecordCreate` model hook for `comments` described under
+  "Deleting a locked route"): reject when the body is blank and there is no file, and when the
+  target does not exist.
 - Upload from the planner reuses `prepare()` from `$lib/live/upload` for image downscaling; a
   multi-file pick creates one comment per file.
 - Down migration removes `file` and restores `body.required = true` (rows with no body are
@@ -285,7 +318,16 @@ Tests are written before the code they cover; each task ends with
   - the builder cannot delete their locked route; the Conductor can delete a locked and an
     archived route, `crawl_settings.current_itinerary` is cleared afterwards, and the route's
     votes and comments (and its stops' comments) are gone;
-  - a comment with neither body nor file is rejected; body-only and file-only are accepted.
+  - a comment with neither body nor file is rejected; body-only and file-only are accepted;
+  - a comment or vote targeting a deleted route or stop is rejected (400), with and without a
+    file; changing a comment's or vote's target on update is refused; deleting a single draft
+    stop removes its comments and votes.
+- **Server unit tests** (`web/tests/unit/attach.test.ts`): a non-owner crew member's attach on
+  someone else's draft is refused with 403 before any Google fetch or stop write (the fetch and
+  PocketBase mocks record no calls); the builder and the Conductor still attach.
+- **Offline unit tests** (`web/tests/unit/offlineDay.test.ts`/`offline.test.ts`): deleting the
+  last locked route clears the mirror, and a subsequent offline load finds no route;
+  `clearMirror` leaves a mirror saved after the read began.
 - **Unit tests**: `permissions.ts`, `home.ts` chip mapping and countdown (Chicago dates),
   `planList.ts` counts, `lineMap.ts` `unfold()` ordering (outbound top-down, return bottom-up,
   every station twice, off-line stops untouched), `labels.test.ts` for new keys.
