@@ -95,12 +95,12 @@ users see. Bars and restaurants keep their plain names.
 | Home station | **Home Terminal** | Rail | |
 | Metra proxy service | **Dispatcher** | Rail | Internal name; never shown to users |
 | Home card for the current route | **Ticket** | Rail | Gold, with the route's title, date/start time and a day countdown; links to `/route`, or to `/plan` with no route yet |
-| Home and Route Planner list layout | **Departure board** | Rail | Split-flap rows: destination, subtitle, status chip |
+| Home and Route Planner list layout | **Station board** | Rail | Split-flap rows: destination, subtitle, status chip |
 | The one message composer | **Chat box** | Plain | Emoji tray, photo/video and camera, send; shared by Live's crew chat and the planner's comments |
 | Midpoint of the unfolded line | **Turn around** | Rail | Divides the going stops (Aurora → Chicago) from the return stops (Chicago → Aurora) |
 
-Only the builder and the Conductor can change a route: reroute it, hold or annul a stop, add an extra
-one, lock it, or delete it.
+A draft can be changed or deleted only by its builder or the Conductor; once locked, only the Conductor
+can change or delete it.
 
 ---
 
@@ -172,8 +172,8 @@ Goal: nobody misses a train, nobody is lost, and the plan can change without cha
   Bulletin. Ranking uses shot + cocktail + beer, then non-alcoholic drinks, then food. It does not track individual locations.
 - **Live** reads top to bottom: the route strip (punched stops, 🚂 where the crew is, tap any stop), the
   Departure Board, the current stop (tap for its sheet: hours, walking directions, call, photos), the
-  one-tap Tab with the day's personal total and an Undo toast, Photo and Bulletin, the leaderboard line
-  and the crew chat. On the event day a tab bar (Live · The Route · Crew Board · Menu) replaces the
+  one-tap Tab with the day's personal total and an Undo toast, Bulletin, the leaderboard line
+  and the crew chat, whose chat box also sends photos and videos to the current stop's Freight. On the event day a tab bar (Live · The Route · Crew Board · Menu) replaces the
   back links and opening the app lands on Live. Stop sheets and the photo viewer close with the back
   gesture and never leave the screen underneath.
 - **Crew chat** merges Tab activity, Bulletins, Freight, computed milestones (firsts, crew totals, a

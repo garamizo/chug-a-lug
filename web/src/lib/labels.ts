@@ -122,6 +122,8 @@ export const copy = {
   arrives: 'arrives',
   changeAt: 'change at',
   deleteDraftConfirm: 'Delete this draft and all its stops?',
+  // The Metra license's disclaimer (see the README's data sources); keep it even while unrendered.
+  notAffiliated: 'Schedule from Metra’s public feed. Not affiliated with Metra. Saturday timetable, published',
   newRoutePlaceholder: 'Name a new route…',
   newRoute: 'New route',
   byBuilder: 'by',
@@ -332,7 +334,7 @@ export const copy = {
   googlePhoto: 'Photo via Google',
   leaderboard: 'Leaderboard',
   you: 'you',
-  // Home: the current route as a ticket, other phases as a departure board.
+  // Home: the current route as a ticket, other phases as a station board.
   ticketKicker: 'The Route · Admit crew',
   noRouteYet: 'No route yet',
   noRouteHint: 'Build one or cheer one in the Route Planner',
