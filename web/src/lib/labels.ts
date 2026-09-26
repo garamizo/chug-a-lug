@@ -334,6 +334,23 @@ export const copy = {
   googlePhoto: 'Photo via Google',
   leaderboard: 'Leaderboard',
   you: 'you',
+  // Home: the current route as a ticket, other phases as a departure board.
+  ticketKicker: 'The Route · Admit crew',
+  noRouteYet: 'No route yet',
+  noRouteHint: 'Build one or cheer one in the Route Planner',
+  boardDestination: 'Destination',
+  boardStatus: 'Status',
+  boardRoute: 'Route',
+  chipBoarding: 'Boarding',
+  chipToday: 'Today',
+  chipSoon: 'Soon',
+  countdownDays: 'days',
+  countdownTomorrow: 'Tomorrow',
+  countdownToday: 'Today',
+  draftsCount: 'drafts',
+  draftsOne: 'draft',
+  voteOpenShort: 'vote open',
+  wrapUpHint: 'After the crawl',
 } as const;
 
 // Operator-facing rehearsal setup messages; these never include passwords or tokens.

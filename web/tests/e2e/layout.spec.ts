@@ -94,4 +94,9 @@ test('off the event day there is no tab bar and home stays home', async ({ page 
   await page.goto('/');
   await expect(page.getByTestId('name')).toBeVisible();
   await expect(page.getByTestId('tab-bar')).toHaveCount(0);
+
+  await expect(page.getByTestId('role')).toHaveCount(0);
+  await expect(page.getByText('Conductor', { exact: true })).toHaveCount(0);
+  await expect(page.getByTestId('nav-plan')).toBeVisible();
+  await expect(page.getByTestId('nav-route')).toBeVisible();
 });

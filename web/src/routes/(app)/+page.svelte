@@ -1,8 +1,14 @@
 <script lang="ts">
+  import { onMount } from 'svelte';
   import { goto } from '$app/navigation';
-  import { auth } from '$lib/pb';
+  import { pb, auth, subscribe } from '$lib/pb';
   import { label, copy } from '$lib/labels';
+  import { fmtDate } from '$lib/time';
   import { liveDay } from '$lib/live/day.svelte';
+  import { countdownText, liveChip, plannerChip, wrapUpChip } from '$lib/home';
+  import Ticket from '$lib/components/Ticket.svelte';
+  import Board from '$lib/components/Board.svelte';
+  import BoardRow from '$lib/components/BoardRow.svelte';
 
   // liveDay already resolves and follows the current route (the same newest-locked fallback, kept
   // fresh by liveDay.start() in the layout); a one-shot onMount resolve here would go stale the
@@ -12,26 +18,46 @@
   // On the day itself the app is the Departure Board; the planner is reached through the menu, not
   // a tab — the event-day TabBar links Live, The Route and the Crew Board only.
   $effect(() => { if (liveDay.isEventDay) void goto('/live', { replaceState: true }); });
+
+  let drafts = $state(0);
+  let voting = $state(false);
+  async function loadCounts() {
+    try {
+      const [d, v] = await Promise.all([
+        pb.collection('itineraries').getList(1, 1, { filter: "status = 'draft'", fields: 'id' }),
+        pb.collection('itineraries').getList(1, 1, { filter: "status = 'draft' && vote_open = true", fields: 'id' })
+      ]);
+      drafts = d.totalItems;
+      voting = v.totalItems > 0;
+    } catch { /* keep the last counts */ }
+  }
+  onMount(() => { void loadCounts(); return subscribe('itineraries', '', loadCounts); });
+
+  const plannerSub = $derived(`${drafts} ${drafts === 1 ? copy.draftsOne : copy.draftsCount}${voting ? ` · ${copy.voteOpenShort}` : ''}`);
 </script>
 
-<h1>{copy.welcome} <span data-testid="name">{$auth.user?.name}</span></h1>
-<p data-testid="role">{$auth.user?.is_admin ? label('admin') : label('users')}</p>
-<ul>
-  <li><a href="/plan" data-testid="nav-plan"><strong><span aria-hidden="true">🗺️</span> {label('planningPhase')} →</strong><span>{copy.plannerTeaser}</span></a></li>
-  <li><a href="/route" data-testid="nav-route"><strong><span aria-hidden="true">🚂</span> {label('lockedItinerary')} →</strong><span>{locked ? locked.title : copy.noRoute}</span></a></li>
-  {#if liveDay.hasRoute}<li><a href="/live" data-testid="nav-live"><strong><span aria-hidden="true">🎟️</span> {label('livePhase')} →</strong><span>{copy.liveHint}</span></a></li>
-  {:else}<li><strong>{label('livePhase')}</strong><span>{copy.comingSoon}</span></li>{/if}
-  <li><strong>{label('wrapUpPhase')}</strong><span>{copy.comingSoon}</span></li>
-</ul>
-<p>{copy.notYou}</p>
+<p class="hello">{copy.welcome}</p>
+<h1 data-testid="name">{$auth.user?.name}</h1>
+
+{#if locked}
+  <Ticket testid="nav-route" href="/route" kicker={copy.ticketKicker} title={locked.title}
+    when="{fmtDate(locked.event_date)} · {locked.start_time}" countdown={countdownText(locked.event_date, liveDay.today)} />
+{:else}
+  <Ticket testid="nav-route" href="/plan" kicker={copy.ticketKicker} title={copy.noRouteYet} when={copy.noRouteHint} />
+{/if}
+
+<Board heads={[copy.boardDestination, copy.boardStatus]}>
+  <BoardRow index={0} icon="🗺️" href="/plan" testid="nav-plan" title={label('planningPhase')} subtitle={plannerSub} chip={plannerChip(drafts)} />
+  <BoardRow index={1} icon="🎟️" href={liveDay.hasRoute ? '/live' : undefined} testid={liveDay.hasRoute ? 'nav-live' : undefined}
+    title={label('livePhase')} subtitle={liveDay.hasRoute ? copy.liveHint : copy.comingSoon}
+    chip={liveChip({ hasRoute: liveDay.hasRoute, isEventDay: liveDay.isEventDay, eventDate: locked?.event_date ?? null })} />
+  <BoardRow index={2} icon="🍻" title={label('wrapUpPhase')} subtitle={copy.wrapUpHint} chip={wrapUpChip} />
+</Board>
+
+<p class="foot">{copy.notYou}</p>
 
 <style>
-  ul { list-style: none; padding: 0; margin: 28px 0; }
-  li { margin-bottom: 12px; }
-  li, li a { padding: 18px 0; display: flex; justify-content: space-between; gap: 16px; align-items: center; }
-  li a { padding: 20px; border: 2px solid #b17d16; border-radius: 16px; background: #292216; box-shadow: 0 4px 0 #6b4c10; flex: 1; color: inherit; text-decoration: none; min-height: 48px; }
-  li a:hover { background: #3a2e18; border-color: #ffb400; }
-  li a:active { transform: translateY(2px); box-shadow: 0 2px 0 #6b4c10; }
-  li strong { font-size: 18px; }
-  li span { font-size: 14px; color: #aaa; text-align: right; }
+  .hello { margin: 16px 0 0; color: #999; font-size: 15px; }
+  h1 { margin: 0 0 4px; }
+  .foot { color: #777; font-size: 13px; text-align: center; margin-top: 20px; }
 </style>

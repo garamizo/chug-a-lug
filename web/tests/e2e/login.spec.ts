@@ -15,7 +15,6 @@ test('crew login by name and shared password persists in a cookie, then logs out
   await page.getByTestId('password').fill(CREW);
   await page.getByTestId('login').click();
   await expect(page.getByTestId('name')).toHaveText('E2E Rider');
-  await expect(page.getByTestId('role')).toHaveText('Crew');
 
   const cookies = await context.cookies();
   expect(cookies.find((c) => c.name === 'pb_auth')?.value).toBeTruthy();
@@ -37,5 +36,4 @@ test('admin password makes the name a Conductor', async ({ page }) => {
   await page.getByTestId('password').fill(ADMIN);
   await page.getByTestId('login').click();
   await expect(page.getByTestId('name')).toHaveText('e2e boss');
-  await expect(page.getByTestId('role')).toHaveText('Conductor');
 });

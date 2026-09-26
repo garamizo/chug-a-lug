@@ -64,6 +64,12 @@
 <main class="col">{@render children()}</main>
 
 <style>
+  :global(:root) {
+    --gold: #ffb400; --gold-soft: #ffce5c; --gold-deep: #6b4c10; --metra: #29C233; --board-bg: #0b0b0b; --danger: #ff8a80;
+    --mono: ui-monospace, SFMono-Regular, Menlo, monospace;
+  }
+  @keyframes -global-flip { from { transform: rotateX(90deg); opacity: 0; } to { transform: none; opacity: 1; } }
+  @media (prefers-reduced-motion: reduce) { :global(.flip) { animation: none !important; } }
   :global(*) { box-sizing: border-box; }
   :global(a) { color: #ffce5c; }
   :global(a:focus-visible), :global(button:focus-visible), :global(label:focus-within) { outline: 3px solid #fff; outline-offset: 3px; }
