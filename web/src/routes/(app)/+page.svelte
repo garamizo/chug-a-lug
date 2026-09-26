@@ -47,10 +47,10 @@
 {/if}
 
 <Board heads={[copy.boardDestination, copy.boardStatus]}>
-  <BoardRow index={0} icon="🗺️" href="/plan" testid="nav-plan" title={label('planningPhase')} subtitle={plannerSub} chip={plannerChip(drafts)} />
+  <BoardRow index={0} icon="🗺️" href="/plan" testid="nav-plan" title={label('planningPhase')} subtitle={plannerSub} chip={plannerChip()} />
   <BoardRow index={1} icon="🎟️" href={liveDay.hasRoute ? '/live' : undefined} testid={liveDay.hasRoute ? 'nav-live' : undefined}
     title={label('livePhase')} subtitle={liveDay.hasRoute ? copy.liveHint : copy.comingSoon}
-    chip={liveChip({ hasRoute: liveDay.hasRoute, isEventDay: liveDay.isEventDay, eventDate: locked?.event_date ?? null })} />
+    chip={liveChip({ hasRoute: liveDay.hasRoute, isEventDay: liveDay.isEventDay })} />
   <BoardRow index={2} icon="🍻" title={label('wrapUpPhase')} subtitle={copy.wrapUpHint} chip={wrapUpChip} />
 </Board>
 

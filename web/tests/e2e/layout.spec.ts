@@ -99,4 +99,8 @@ test('off the event day there is no tab bar and home stays home', async ({ page 
   await expect(page.getByText('Conductor', { exact: true })).toHaveCount(0);
   await expect(page.getByTestId('nav-plan')).toBeVisible();
   await expect(page.getByTestId('nav-route')).toBeVisible();
+  // A locked route exists, so the ticket opens it and Live is reachable from the board.
+  await expect(page.getByTestId('nav-plan')).toHaveAttribute('href', '/plan');
+  await expect(page.getByTestId('nav-route')).toHaveAttribute('href', '/route');
+  await expect(page.getByTestId('nav-live')).toHaveAttribute('href', '/live');
 });

@@ -27,6 +27,8 @@
   import Leaderboard from '$lib/components/Leaderboard.svelte';
 
   let error = $state('');
+  // Upload trouble shows in the chat box that sent the photos, not up by the Tab.
+  let uploadError = $state('');
   let uploading = $state(false);
   const here = $derived(liveDay.here);
   // The board retains a stop before and after the crawl, when the Tab and Freight must stay closed.
@@ -111,13 +113,13 @@
   async function upload(selected: File[]) {
     const stop = tabStop, user = $auth.user;
     if (!selected.length || !stop || !user || uploading) return;
-    error = '';
+    uploadError = '';
     uploading = true;
     try {
       await clientClock.ready();
       liveDay.syncNow();
       if (tabStop?.id !== stop.id) throw new Error(copy.simClockConflict);
-      error = await uploadBatch(selected, async (file) => {
+      uploadError = await uploadBatch(selected, async (file) => {
         const prepared = await compressForUpload(file);
         const form = new FormData();
         form.set('user', user.id);
@@ -128,7 +130,7 @@
         await clientClock.ready();
         await pb.collection('media').create(form);
       }, () => liveDay.loadFeed());
-    } catch { error = copy.noSignal; } finally { uploading = false; }
+    } catch { uploadError = copy.noSignal; } finally { uploading = false; }
   }
 </script>
 
@@ -176,7 +178,7 @@
 <Leaderboard {leaders} />
 
 {#if liveDay.itinerary && $auth.user}<CrewChat itineraryId={liveDay.itinerary.id} userId={$auth.user.id}
-  onfiles={(files) => upload(files)} {uploading} mediaOff={tabStop ? undefined : here?.source === 'after' ? copy.noPhotosAfterCrawl : copy.noTabStopForPhotos} />{/if}
+  onfiles={(files) => upload(files)} {uploading} {uploadError} mediaOff={tabStop ? undefined : here?.source === 'after' ? copy.noPhotosAfterCrawl : copy.noTabStopForPhotos} />{/if}
 
 {#if liveDay.itinerary}
   <StopSheet stops={liveDay.stops} media={liveDay.feed.media} eventDate={liveDay.itinerary.event_date}

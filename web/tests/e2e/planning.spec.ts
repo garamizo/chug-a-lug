@@ -151,17 +151,38 @@ test('another crew member can read and cheer a draft but not change it, even by 
   await page.getByTestId('create-draft').click();
   await expect(page).toHaveURL(/\/plan\/[a-z0-9]{15}\/edit$/);
   const draftUrl = page.url().replace(/\/edit$/, '');
+  await page.goto(`${draftUrl}/add?station=NAPERVILLE&side=left`);
+  await page.getByTestId('venue-node-2').click();
+  await expect(page.getByTestId('stop-row-0')).toContainText('Naperville Wine Bar');
+  const stopUrl = await page.getByTestId('stop-link-0').getAttribute('href');
+  expect(stopUrl).toMatch(/\/stops\/[a-z0-9]{15}$/);
+  // The builder's own stop page offers the controls the onlooker must not get.
+  await page.goto(stopUrl!);
+  await expect(page.getByTestId('save-stop')).toBeVisible();
+  await expect(page.getByTestId('notes')).toBeEnabled();
 
   const other = await browser.newPage();
   await login(other, 'E2E Onlooker', process.env.CREW_PASSWORD ?? 'crew-test-password');
   await other.goto(draftUrl);
   await expect(other.getByTestId('vote-up')).toBeVisible();
+  // The cheers pills sit under the route's header, above the line map.
+  await expect(other.getByTestId('section-out')).toBeVisible();
+  const pills = await other.getByTestId('vote-up').boundingBox();
+  const line = await other.getByTestId('section-out').boundingBox();
+  expect(pills!.y).toBeLessThan(line!.y);
   await expect(other.getByTestId('edit-draft')).toHaveCount(0);
   await expect(other.getByTestId('delete-route')).toHaveCount(0);
   await other.goto(`${draftUrl}/edit`);
   await expect(other).toHaveURL(draftUrl);
   await other.goto(`${draftUrl}/add?station=NAPERVILLE&side=left`);
   await expect(other).toHaveURL(draftUrl);
+  // The stop page reads fine but offers no edits: no save, no photo retry, notes locked.
+  await other.goto(stopUrl!);
+  await expect(other.getByTestId('stop-name')).toHaveText('Naperville Wine Bar');
+  await expect(other.getByTestId('notes')).toBeDisabled();
+  await expect(other.getByTestId('confirmed-open')).toBeDisabled();
+  await expect(other.getByTestId('save-stop')).toHaveCount(0);
+  await expect(other.getByTestId('retry-photos')).toHaveCount(0);
   await other.close();
 });
 
@@ -194,4 +215,27 @@ test('the Conductor deletes a locked route for everyone from its view page', asy
   await expect(page).toHaveURL(/\/plan$/);
   expect(dialogMessage).toContain(copy.deleteLockedConfirm.split('?')[0]);
   await expect(page.getByTestId(`route-link-${seeded.itineraryId}`)).toHaveCount(0);
+});
+
+test('the route board drops its load error once a later reload succeeds', async ({ page, browser }) => {
+  await login(page, 'E2E Flaky', process.env.CREW_PASSWORD ?? 'crew-test-password');
+  let failed = false;
+  await page.route('**/api/collections/itineraries/records*', (route) => {
+    if (!failed && route.request().method() === 'GET') { failed = true; return route.fulfill({ status: 500, json: { message: 'boom' } }); }
+    return route.continue();
+  });
+  await page.goto('/plan');
+  await expect(page.getByRole('alert')).toHaveText(copy.loadError);
+
+  // Someone else builds a draft; the realtime reload that follows succeeds and clears the error.
+  const other = await browser.newPage();
+  await login(other, 'E2E Fixer', process.env.CREW_PASSWORD ?? 'crew-test-password');
+  await other.getByTestId('nav-plan').click();
+  await other.getByTestId('draft-title').fill('Back Online');
+  await other.getByTestId('create-draft').click();
+  await expect(other).toHaveURL(/\/edit$/);
+  const id = other.url().match(/plan\/([a-z0-9]{15})/)![1];
+  await other.close();
+  await expect(page.getByTestId(`route-link-${id}`)).toBeVisible();
+  await expect(page.getByRole('alert')).toHaveCount(0);
 });

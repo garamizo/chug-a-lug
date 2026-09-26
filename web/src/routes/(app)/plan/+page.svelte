@@ -39,6 +39,7 @@
       items = sortRoutes(its);
       stops = countBy(st.map((s) => s.itinerary));
       cheers = countBy(vs.map((v) => v.target_id));
+      error = '';
     } catch { if (seq === loadSeq) error = copy.loadError; }
   }
   // Coalesces a burst of subscription events (many rows changing at once) into one reload instead

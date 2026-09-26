@@ -16,10 +16,12 @@
   import { HoldMenu } from '$lib/live/holdMenu.svelte';
   import ChatBox from './ChatBox.svelte';
 
-  let { itineraryId, userId, onfiles, uploading = false, mediaOff }: {
+  let { itineraryId, userId, onfiles, uploading = false, uploadError = '', mediaOff }: {
     itineraryId: string; userId: string;
     /** Photos from the chat box; Live attaches them to the current Tab stop. */
-    onfiles?: (files: File[]) => Promise<void>; uploading?: boolean; mediaOff?: string;
+    onfiles?: (files: File[]) => Promise<void>; uploading?: boolean;
+    /** Why the last photo batch did not all send; shown beside the box that sent it. */
+    uploadError?: string; mediaOff?: string;
   } = $props();
   let sendError = $state(''), shown = $state(40);
   const marks = $derived(milestones(liveDay.feed.drinks, liveDay.feed.media, liveDay.stops, liveDay.today));
@@ -121,6 +123,7 @@
     {:else}<p class="empty">{copy.chatEmpty}</p>{/each}
   </div>
   {#if error}<p role="status">{error}</p>{/if}
+  {#if uploadError}<p role="alert" class="upload-error">{uploadError}</p>{/if}
   <ChatBox onsend={send} {onfiles} busy={uploading} status={uploading ? copy.uploading : undefined} {mediaOff} maxlength={280} placeholder={copy.messagePlaceholder}
     inputTestid="chat-input" sendTestid="chat-send" fileTestid="freight-input" cameraTestid="freight-camera" />
 </section>
@@ -143,6 +146,7 @@
   .pad { display: inline-block; width: 64px; }
   time { position: absolute; right: 8px; bottom: 3px; font-size: 11px; color: #9a927f; font-variant-numeric: tabular-nums; }
   .empty { color: #aaa; }
+  .upload-error { color: #ff8a80; margin: 6px 0; }
   .react { position: absolute; left: 8px; bottom: -13px; padding: 0 6px; border-radius: 999px; background: #2b2821; border: 1px solid #111;
     font-size: 12px; line-height: 20px; color: #ddd; }
   .react.on { background: #4a3a14; }

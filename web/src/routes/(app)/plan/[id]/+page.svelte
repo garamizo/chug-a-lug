@@ -65,8 +65,9 @@
 {#if draft}
   <ItineraryView itinerary={draft.itinerary} stops={draft.stops} legs={draft.legs} editable={false} canManage={false}
     builder={draft.itinerary.expand?.created_by?.name} current={liveDay.itinerary?.id === draft.itinerary.id}
-    actions={recordActions(draft.itinerary.id, (m) => (error = m))} />
-  <Votes targetCollection="itineraries" targetId={draft.itinerary.id} />
+    actions={recordActions(draft.itinerary.id, (m) => (error = m))}>
+    {#snippet belowHeader()}<Votes targetCollection="itineraries" targetId={draft!.itinerary.id} />{/snippet}
+  </ItineraryView>
   <ApprovalPanel itinerary={draft.itinerary} />
   {#if isAdmin && draft.itinerary.status === 'locked'}
     {#if liveDay.itinerary?.id === draft.itinerary.id}

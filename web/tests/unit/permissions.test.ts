@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { canDelete, canEditSettings, canEditStops, isLockedEdit } from '../../src/lib/permissions';
+import { canDelete, canEditSettings, canEditStops } from '../../src/lib/permissions';
 
 const builder = { id: 'b' }, other = { id: 'o' }, boss = { id: 'c', is_admin: true };
 const draft = { status: 'draft' as const, created_by: 'b' };
@@ -30,7 +30,5 @@ describe('permissions', () => {
       expect(canEditStops(it, boss)).toBe(true);
       expect(canDelete(it, boss)).toBe(true);
     }
-    expect(isLockedEdit(locked, boss)).toBe(true);
-    expect(isLockedEdit(draft, boss)).toBe(false);
   });
 });

@@ -2,6 +2,7 @@
   import { pb, auth, subscribe } from '$lib/pb';
   import { api } from '$lib/api';
   import { copy } from '$lib/labels';
+  import { canEditStops } from '$lib/permissions';
   import Votes from '$lib/components/Votes.svelte';
   import Comments from '$lib/components/Comments.svelte';
   import type { AttachResult, Itinerary, Place, Stop, StopPhoto } from '$lib/types';
@@ -61,7 +62,7 @@
     ...photos.map((p) => ({ id: p.id, url: pb.files.getURL(p, p.file, { thumb: '800x0' }), attribution: p.attribution }))
   ]);
 
-  const editable = $derived(!!itinerary && (itinerary.status === 'draft' || !!$auth.user?.is_admin));
+  const editable = $derived(!!itinerary && canEditStops(itinerary, $auth.user));
   const mapsUrl = $derived(!stop ? '' : stop.place_id
     ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(stop.name)}&query_place_id=${encodeURIComponent(stop.place_id)}`
     : `https://www.google.com/maps/search/?api=1&query=${stop.lat},${stop.lon}`);

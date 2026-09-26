@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onMount, tick } from 'svelte';
+  import { onMount, tick, type Snippet } from 'svelte';
   import { api } from '$lib/api';
   import { copy } from '$lib/labels';
   import { fmtDate, fmtTime, fmtWeekday, localToUtc, parseHm } from '$lib/time';
@@ -11,7 +11,7 @@
   import LineMap from './LineMap.svelte';
   import StopRow from './StopRow.svelte';
 
-  let { itinerary, stops, legs, editable, canManage, actions, onerror, onopenstop, photos, builder, current }: {
+  let { itinerary, stops, legs, editable, canManage, actions, onerror, onopenstop, photos, builder, current, belowHeader }: {
     itinerary: Itinerary; stops: StopLike[]; legs: Leg[]; editable: boolean; canManage: boolean; actions: PlanActions; onerror?: (message: string) => void;
     /** Card photos by stop id, for staged stops that carry no place; otherwise read off each stop. */
     photos?: Record<string, string>;
@@ -21,6 +21,8 @@
     builder?: string;
     /** Whether this is the current locked route (Live follows it); adds the gold "Current" chip. */
     current?: boolean;
+    /** Rendered right under the header, above the line — the view page's cheers pills. */
+    belowHeader?: Snippet;
   } = $props();
 
   const sorted = $derived([...stops].sort((a, b) => a.order - b.order || (a.created ?? '').localeCompare(b.created ?? '')));
@@ -138,6 +140,7 @@
     <div><strong>{finish ? fmtTime(finish) : '—'}</strong><small>{copy.statFinish}</small></div>
   </div>
 </header>
+{@render belowHeader?.()}
 
 <h2>{copy.stops}</h2>
 {#if sorted.length === 0}<p>{editable ? copy.noStopsTap : copy.noStops}</p>{/if}

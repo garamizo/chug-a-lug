@@ -11,5 +11,3 @@ const ownDraft = (it: Route, who: Who) => !!who && it.status === 'draft' && it.c
 export const canEditStops = (it: Route, who: Who): boolean => !!who?.is_admin || ownDraft(it, who);
 export const canEditSettings = canEditStops;
 export const canDelete = canEditStops;
-/** The Conductor editing a locked or archived route goes through the staged editor. */
-export const isLockedEdit = (it: Route, who: Who): boolean => !!who?.is_admin && it.status !== 'draft';

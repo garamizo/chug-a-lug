@@ -56,7 +56,9 @@ test('a rejected middle upload still sends the last photo and reports the partia
   await page.getByTestId('freight-input').setInputFiles(
     ['first.gif', 'middle.gif', 'last.gif'].map((name) => ({ name, mimeType: 'image/gif', buffer: GIF }))
   );
-  await expect(page.getByRole('alert')).toHaveText(`2 ${copy.uploadSent} 1 ${copy.uploadNotSent} ${copy.uploadFailed}`);
+  // The report lands in the chat box that sent the batch, not up by the Leaderboard.
+  await expect(page.getByTestId('crew-chat').getByRole('alert')).toHaveText(`2 ${copy.uploadSent} 1 ${copy.uploadNotSent} ${copy.uploadFailed}`);
+  await expect(page.getByRole('alert')).toHaveCount(1);
   expect(attempts).toBe(3);
   await expect(page.getByTestId('freight-strip').locator('img')).toHaveCount(2);
   await expect(page.getByTestId('freight-input')).toBeEnabled();

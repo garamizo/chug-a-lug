@@ -92,7 +92,8 @@ test('the route still reads when PocketBase cannot be reached', async ({ page })
   await page.getByTestId('drink-beer').click();
   await expect(page.getByRole('alert')).toHaveText(copy.noSignal);
   await page.getByTestId('freight-input').setInputFiles({ name: 'tunnel.mp4', mimeType: 'video/mp4', buffer: Buffer.from('offline video') });
-  await expect(page.getByRole('alert')).toContainText(copy.noSignal);
+  // The failed upload reports in the chat box that sent it.
+  await expect(page.getByTestId('crew-chat').getByRole('alert')).toContainText(copy.noSignal);
 
   // A days-old mirror must name its saved date. The itinerary remains readable off the live day.
   await page.clock.setFixedTime(new Date('2026-12-29T19:00:00.000Z'));

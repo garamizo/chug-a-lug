@@ -16,11 +16,10 @@ describe('home', () => {
     expect(countdownText('2026-12-26', '2026-12-27')).toBeNull();
   });
   it('chips', () => {
-    expect(plannerChip(3)).toEqual({ text: 'Boarding', tone: 'go' });
-    expect(plannerChip(0)).toEqual({ text: 'Boarding', tone: 'go' });
-    expect(liveChip({ hasRoute: false, isEventDay: false, eventDate: null })).toEqual({ text: 'Soon', tone: 'muted' });
-    expect(liveChip({ hasRoute: true, isEventDay: false, eventDate: '2026-12-26' })).toEqual({ text: 'Practice', tone: 'gold' });
-    expect(liveChip({ hasRoute: true, isEventDay: true, eventDate: '2026-12-26' })).toEqual({ text: 'Today', tone: 'red' });
+    expect(plannerChip()).toEqual({ text: 'Boarding', tone: 'go' });
+    expect(liveChip({ hasRoute: false, isEventDay: false })).toEqual({ text: 'Soon', tone: 'muted' });
+    expect(liveChip({ hasRoute: true, isEventDay: false })).toEqual({ text: 'Practice', tone: 'gold' });
+    expect(liveChip({ hasRoute: true, isEventDay: true })).toEqual({ text: 'Today', tone: 'red' });
     expect(wrapUpChip).toEqual({ text: 'Soon', tone: 'muted' });
   });
 });

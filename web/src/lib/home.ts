@@ -17,9 +17,9 @@ export function countdownText(eventDate: string, today: string): string | null {
 
 export type Chip = { text: string; tone: 'go' | 'gold' | 'muted' | 'red' };
 
-export const plannerChip = (_drafts: number): Chip => ({ text: copy.chipBoarding, tone: 'go' });
+export const plannerChip = (): Chip => ({ text: copy.chipBoarding, tone: 'go' });
 
-export function liveChip(s: { hasRoute: boolean; isEventDay: boolean; eventDate: string | null }): Chip {
+export function liveChip(s: { hasRoute: boolean; isEventDay: boolean }): Chip {
   if (!s.hasRoute) return { text: copy.chipSoon, tone: 'muted' };
   if (s.isEventDay) return { text: copy.chipToday, tone: 'red' };
   // Same word as the Live practice banner (copy.practiceBadge) — one key for one piece of text.
