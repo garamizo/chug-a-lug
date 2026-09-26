@@ -51,7 +51,9 @@ test('the chat box sends with Enter, never sends blanks, and inserts emoji at th
   await page.getByTestId('chat-input').fill('Save me a seat');
   await expect(page.getByTestId('camera-button')).toHaveCount(0);
   await expect(page.getByTestId('chat-send')).toBeEnabled();
+  await expect(page.getByTestId('emoji-toggle')).toHaveAttribute('aria-expanded', 'false');
   await page.getByTestId('emoji-toggle').click();
+  await expect(page.getByTestId('emoji-toggle')).toHaveAttribute('aria-expanded', 'true');
   await page.getByRole('button', { name: '🍕' }).click();
   await expect(page.getByTestId('chat-input')).toHaveValue('Save me a seat🍕');
   await page.getByTestId('chat-input').press('Enter');

@@ -176,7 +176,7 @@
 <Leaderboard {leaders} />
 
 {#if liveDay.itinerary && $auth.user}<CrewChat itineraryId={liveDay.itinerary.id} userId={$auth.user.id}
-  onfiles={(files) => upload(files)} {uploading} mediaOff={tabStop ? undefined : copy.noTabStopForPhotos} />{/if}
+  onfiles={(files) => upload(files)} {uploading} mediaOff={tabStop ? undefined : here?.source === 'after' ? copy.noPhotosAfterCrawl : copy.noTabStopForPhotos} />{/if}
 
 {#if liveDay.itinerary}
   <StopSheet stops={liveDay.stops} media={liveDay.feed.media} eventDate={liveDay.itinerary.event_date}

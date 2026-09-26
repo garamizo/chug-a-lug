@@ -1,13 +1,15 @@
 <script lang="ts">
   // A button that is only an icon. The words stay in labels.ts and become its accessible name.
   import { ICONS, type IconName } from '$lib/icons';
-  let { icon, label, onclick, testid, tone = 'default', disabled = false, size = 44, type = 'button' }: {
+  let { icon, label, onclick, testid, tone = 'default', disabled = false, size = 44, type = 'button', expanded }: {
     icon: IconName; label: string; onclick?: (e: MouseEvent) => void; testid?: string;
     tone?: 'default' | 'danger' | 'primary'; disabled?: boolean; size?: number; type?: 'button' | 'submit';
+    /** For a button that shows and hides something: its aria-expanded. */
+    expanded?: boolean;
   } = $props();
 </script>
 
-<button {type} class="icon {tone}" style:--size="{size}px" aria-label={label} title={label} {disabled} {onclick} data-testid={testid}>
+<button {type} class="icon {tone}" style:--size="{size}px" aria-label={label} aria-expanded={expanded} title={label} {disabled} {onclick} data-testid={testid}>
   <svg viewBox="0 0 24 24" width={Math.round(size / 2)} height={Math.round(size / 2)} aria-hidden="true">
     {#each ICONS[icon] as d}<path {d} />{/each}
   </svg>

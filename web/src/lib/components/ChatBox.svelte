@@ -6,10 +6,12 @@
   import { CHAT_EMOJI, composerMode, draftAfterFailedSend, insertAt } from '$lib/chatBox';
   import IconButton from './IconButton.svelte';
 
-  let { onsend, onfiles, busy = false, mediaOff, maxlength = 280, placeholder, inputTestid, sendTestid, fileTestid, cameraTestid }: {
+  let { onsend, onfiles, busy = false, mediaOff, status, maxlength = 280, placeholder, inputTestid, sendTestid, fileTestid, cameraTestid }: {
     onsend: (text: string) => Promise<void>; onfiles?: (files: File[]) => Promise<void>; busy?: boolean;
     /** Why photos are off right now; attach and camera are hidden while set. */
-    mediaOff?: string; maxlength?: number; placeholder: string;
+    mediaOff?: string;
+    /** A short note under the box while something is under way (e.g. an upload). */
+    status?: string; maxlength?: number; placeholder: string;
     inputTestid: string; sendTestid: string; fileTestid?: string; cameraTestid?: string;
   } = $props();
 
@@ -49,7 +51,7 @@
   {/if}
   <div class="line">
     <div class="field">
-      <IconButton icon={tray ? 'keyboard' : 'emoji'} size={34} label={tray ? copy.keyboard : copy.emojiTray} onclick={() => { tray = !tray; if (!tray) input?.focus(); }} testid="emoji-toggle" />
+      <IconButton icon={tray ? 'keyboard' : 'emoji'} size={34} label={tray ? copy.keyboard : copy.emojiTray} onclick={() => { tray = !tray; if (!tray) input?.focus(); }} expanded={tray} testid="emoji-toggle" />
       <label class="sr" for={inputTestid}>{placeholder}</label>
       <input id={inputTestid} bind:this={input} bind:value={text} {maxlength} {placeholder} autocomplete="off" data-testid={inputTestid} />
       {#if media}
@@ -66,7 +68,8 @@
       <IconButton type="submit" icon="send" tone="primary" size={48} label={copy.sendMessage} disabled={!text.trim()} testid={sendTestid} />
     {/if}
   </div>
-  {#if mediaOff && onfiles}<p class="off">{mediaOff}</p>{/if}
+  {#if status}<p class="off" role="status">{status}</p>
+  {:else if mediaOff && onfiles}<p class="off">{mediaOff}</p>{/if}
 </form>
 
 <style>

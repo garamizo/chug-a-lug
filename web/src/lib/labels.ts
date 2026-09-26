@@ -259,6 +259,7 @@ export const copy = {
   keyboard: 'Keyboard',
   attachMedia: 'Photo or video',
   noTabStopForPhotos: 'Photos open once the crew reaches its first stop',
+  noPhotosAfterCrawl: 'Photos closed with the last stop',
   uploading: 'Sending…',
   uploadTooBig: 'That file is over 90 MB — the tunnel will not take it.',
   uploadFailed: 'An upload failed. Try the unsent files again.',

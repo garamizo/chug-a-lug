@@ -20,8 +20,18 @@ test('a photo uploads and appears in the strip for this stop', async ({ page }) 
   await page.goto('/live');
 
   await expect(page.getByTestId('attach-media')).toBeEnabled();
+  // Hold the upload so its progress note can be seen.
+  let release!: () => void;
+  const held = new Promise<void>((r) => (release = r));
+  await page.route('**/api/collections/media/records*', async (route) => {
+    if (route.request().method() === 'POST') await held;
+    await route.continue();
+  });
   await page.getByTestId('freight-input').setInputFiles({ name: 'bar.gif', mimeType: 'image/gif', buffer: GIF });
+  await expect(page.getByTestId('crew-chat').getByText(copy.uploading)).toBeVisible();
+  release();
   await expect(page.getByTestId('freight-strip').locator('img')).toHaveCount(1);
+  await expect(page.getByTestId('crew-chat').getByText(copy.uploading)).toHaveCount(0);
 });
 
 test('a rejected middle upload still sends the last photo and reports the partial batch', async ({ page }) => {
@@ -52,9 +62,9 @@ test('a rejected middle upload still sends the last photo and reports the partia
   await expect(page.getByTestId('freight-input')).toBeEnabled();
 });
 
-for (const [phase, time] of [
-  ['before', '2026-12-26T17:00:00.000Z'],
-  ['after', '2026-12-26T22:00:00.000Z']
+for (const [phase, time, reason] of [
+  ['before', '2026-12-26T17:00:00.000Z', copy.noTabStopForPhotos],
+  ['after', '2026-12-26T22:00:00.000Z', copy.noPhotosAfterCrawl]
 ]) {
   test(`Freight stays closed ${phase} the crawl even though the board retains a stop`, async ({ page }) => {
     await page.route('**/api/metra/**', (r) => r.fulfill({ json: { mode: 'schedule_only', fetchedAt: null, trips: [], alerts: [] } }));
@@ -74,6 +84,6 @@ for (const [phase, time] of [
     await expect(page.getByTestId('freight-camera')).toHaveCount(0);
     await expect(page.getByTestId('attach-media')).toHaveCount(0);
     await expect(page.getByTestId('camera-button')).toHaveCount(0);
-    await expect(page.getByText(copy.noTabStopForPhotos)).toBeVisible();
+    await expect(page.getByText(reason)).toBeVisible();
   });
 }

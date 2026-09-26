@@ -141,7 +141,7 @@
     {:else}<p class="empty">{copy.chatEmpty}</p>{/each}
   </div>
   {#if error}<p role="status">{error}</p>{/if}
-  <ChatBox onsend={send} {onfiles} busy={uploading} {mediaOff} maxlength={280} placeholder={copy.messagePlaceholder}
+  <ChatBox onsend={send} {onfiles} busy={uploading} status={uploading ? copy.uploading : undefined} {mediaOff} maxlength={280} placeholder={copy.messagePlaceholder}
     inputTestid="chat-input" sendTestid="chat-send" fileTestid="freight-input" cameraTestid="freight-camera" />
 </section>
 
