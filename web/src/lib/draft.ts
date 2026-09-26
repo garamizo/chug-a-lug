@@ -9,10 +9,27 @@ export async function loadDraft(id: string): Promise<Draft> {
   const filter = pb.filter('itinerary = {:id}', { id });
   const [itinerary, stops, legs] = await Promise.all([
     pb.collection('itineraries').getOne<Itinerary>(id),
-    pb.collection('stops').getFullList<Stop>({ filter, sort: 'order,created' }),
+    pb.collection('stops').getFullList<Stop>({ filter, sort: 'order,created', expand: 'place' }),
     pb.collection('legs').getFullList<Leg>({ filter })
   ]);
   return { itinerary, stops, legs };
+}
+
+/** A read started by the route's `load`, so it overlaps the page's own code loading (and starts
+ *  on the tap itself when SvelteKit preloads). */
+export type EarlyDraft = { id: string; at: number; read: Promise<Draft> };
+const EARLY_MAX_AGE_MS = 5_000;
+
+export function preloadDraft(id: string): EarlyDraft {
+  const read = loadDraft(id);
+  read.catch(() => {});
+  return { id, at: Date.now(), read };
+}
+
+/** The early read if it is for this draft and recent — a preload from a hover long ago may be
+ *  stale, and the page's realtime subscription only starts once it mounts. Otherwise a new read. */
+export function draftFrom(early: EarlyDraft | undefined, id: string): Promise<Draft> {
+  return early && early.id === id && Date.now() - early.at < EARLY_MAX_AGE_MS ? early.read : loadDraft(id);
 }
 
 /** Calls `onchange` whenever the itinerary, its stops, or its legs change. Returns the unsubscribe. */

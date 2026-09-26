@@ -138,7 +138,23 @@ export class LiveDay {
 
   private routeRead = 0;
   private routeRun: string | undefined;
-  async loadRoute() {
+  /** The network half of `loadRoute`: the current route with its stops and legs. Throws offline. */
+  private async readRoute(): Promise<{ itinerary: Itinerary; stops: Stop[]; legs: Leg[] } | null> {
+    // Workbox also respects no-store: a cached HTTP success must not re-date an old plan.
+    const itinerary = await resolveCurrentRoute();
+    if (!itinerary) return null;
+    const filter = pb.filter('itinerary = {:id}', { id: itinerary.id });
+    const [stops, legs] = await Promise.all([
+      pb.collection('stops').getFullList<Stop>({ filter, sort: 'order,created', expand: 'place', cache: 'no-store' }),
+      pb.collection('legs').getFullList<Leg>({ filter, cache: 'no-store' })
+    ]);
+    return { itinerary, stops, legs };
+  }
+
+  /** `early` is the read started with the day at start: used only if no other load began since,
+   *  for the same simulation run — a newer reload's answer must not be overwritten by it. */
+  async loadRoute(early?: { runId: string | undefined; at: number; read: Promise<Awaited<ReturnType<LiveDay['readRoute']>>> }) {
+    const fresh = !!early && early.at === this.routeRead;
     const request = ++this.routeRead, runId = clientClock.runId;
     if (clientClock.enabled && runId && this.routeRun !== runId) {
       this.itinerary = null; this.stops = []; this.legs = []; this.anchor = null;
@@ -147,10 +163,9 @@ export class LiveDay {
       await scopeMirror(runId);
     }
     try {
-      // Workbox also respects no-store: a cached HTTP success must not re-date an old plan.
-      const itinerary = await resolveCurrentRoute();
+      const read = await (fresh && early!.runId === runId ? early!.read : this.readRoute());
       if (request !== this.routeRead || runId !== clientClock.runId) return;
-      if (!itinerary) {
+      if (!read) {
         const had = this.itinerary;
         this.itinerary = null; this.stops = []; this.legs = []; this.anchor = null;
         this.fromMirror = false; this.mirrorSavedAt = null;
@@ -158,12 +173,7 @@ export class LiveDay {
         if (had) this.enterScope();
         return;
       }
-      const filter = pb.filter('itinerary = {:id}', { id: itinerary.id });
-      const [stops, legs] = await Promise.all([
-        pb.collection('stops').getFullList<Stop>({ filter, sort: 'order,created', expand: 'place', cache: 'no-store' }),
-        pb.collection('legs').getFullList<Leg>({ filter, cache: 'no-store' })
-      ]);
-      if (request !== this.routeRead || runId !== clientClock.runId) return;
+      const { itinerary, stops, legs } = read;
       // Keep the raw responses for IndexedDB: reading them back through $state gives proxies,
       // which structured cloning rejects. Publish only after all three reads succeed.
       if (!clientClock.enabled || clientClock.runId) void saveMirror(mirrorPayload(itinerary, stops, legs, new Date(), clientClock.runId));
@@ -310,8 +320,12 @@ export class LiveDay {
     // The day first, so the first route load enters a scope on the server's day.
     // A load that entered a new scope has already asked for everything; a second train request
     // would race the first, and the later answer wins whatever it says.
+    // The route is read at the same time — only applied once the day has answered — so the
+    // first screen does not wait for two round trips in a row.
     const reloads = this.scopeReloads;
-    void this.loadDay().then(() => { if (!stopped) return this.loadRoute(); })
+    const early = { runId: clientClock.runId, at: this.routeRead, read: this.readRoute() };
+    early.read.catch(() => {});
+    void this.loadDay().then(() => { if (!stopped) return this.loadRoute(early); })
       .then(() => { if (stopped || this.scopeReloads !== reloads) return; void this.loadBulletins(); void this.loadTrains(); void this.loadFeed(); }).catch(() => {});
     void this.loadAlerts();
     void fetchStatus().then((s) => { if (stopped) return; this.rtFetchedAt = s.feeds?.tripupdates?.fetchedAt ?? null; this.mode = s.mode; }).catch(() => {});

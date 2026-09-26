@@ -9,13 +9,16 @@ import type { CrawlSettings, Itinerary } from '$lib/types';
 const isNetworkFailure = (e: unknown) => (e as { status?: number })?.status === 0;
 
 export async function resolveCurrentRoute(): Promise<Itinerary | null> {
+  // Both at once: over the tunnel a missing selection would otherwise cost a second round trip on
+  // every screen's first load. The list's own failure only matters if the selection is unusable.
+  const fallback = pb.collection('itineraries').getFullList<Itinerary>({ filter: 'status = "locked"', sort: '-locked_at', cache: 'no-store' });
+  fallback.catch(() => {});
   try {
     const settings = await pb.collection('crawl_settings').getOne<CrawlSettings>('crawlsettings', { expand: 'current_itinerary', cache: 'no-store' });
     const chosen = settings.expand?.current_itinerary;
     if (chosen?.status === 'locked') return chosen;
   } catch (e) { if (isNetworkFailure(e)) throw e; }
-  const list = await pb.collection('itineraries').getFullList<Itinerary>({ filter: 'status = "locked"', sort: '-locked_at', cache: 'no-store' });
-  return list[0] ?? null;
+  return (await fallback)[0] ?? null;
 }
 
 export async function setCurrentRoute(id: string): Promise<void> {

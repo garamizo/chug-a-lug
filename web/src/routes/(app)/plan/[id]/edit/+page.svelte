@@ -6,7 +6,7 @@
   import { pb, auth } from '$lib/pb';
   import { api } from '$lib/api';
   import { copy } from '$lib/labels';
-  import { loadDraft, watchDraft, type Draft } from '$lib/draft';
+  import { draftFrom, loadDraft, watchDraft, type Draft } from '$lib/draft';
   import { recordActions, type PlanActions } from '$lib/planActions';
   import { addStop, commitPayload, moveStop, newRecordId, removeStop, setAnchor, setDwell, stagePlan, type StagedPlan, type StagedStop } from '$lib/live/staged';
   import { insertionIndex, plannerStations } from '$lib/lineMap';
@@ -46,9 +46,9 @@
   const editable = $derived(!!draft && (draft.itinerary.status === 'draft' || isAdmin));
   const canManage = $derived(!!draft && (isAdmin || (draft.itinerary.created_by === $auth.user?.id && draft.itinerary.status === 'draft')));
 
-  async function load() {
+  async function load(first?: Promise<Draft>) {
     try {
-      draft = await loadDraft(data.id);
+      draft = await (first ?? loadDraft(data.id));
       // On The Route the staged plan is built once: from a plan parked before the add screen if
       // there is one, otherwise from the records. Later realtime reloads must not clobber an edit
       // in progress.
@@ -101,10 +101,10 @@
 
   $effect(() => {
     draft = null; error = ''; saveError = ''; plan = null; before = null; previewLegs = [];
-    void load();
+    void load(draftFrom(data.early, data.id));
     // A staged edit must not be clobbered by the realtime reload, so on The Route only the first
     // load builds the plan (see `load`); the watcher keeps the draft path live as before.
-    return watchDraft(data.id, load);
+    return watchDraft(data.id, () => void load());
   });
 
   // Re-plan whenever the staged plan changes, and once a minute so a plan that has quietly become

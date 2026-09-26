@@ -3,7 +3,7 @@
   // stops happens on the edit screen.
   import { auth } from '$lib/pb';
   import { copy } from '$lib/labels';
-  import { loadDraft, watchDraft, type Draft } from '$lib/draft';
+  import { draftFrom, loadDraft, watchDraft, type Draft } from '$lib/draft';
   import { recordActions } from '$lib/planActions';
   import { liveDay } from '$lib/live/day.svelte';
   import { setCurrentRoute } from '$lib/live/route';
@@ -16,15 +16,15 @@
   let draft = $state<Draft | null>(null);
   let error = $state('');
 
-  async function load() {
-    try { draft = await loadDraft(data.id); } catch { error = copy.loadError; }
+  async function load(first?: Promise<Draft>) {
+    try { draft = await (first ?? loadDraft(data.id)); } catch { error = copy.loadError; }
   }
   $effect(() => {
     // Clear the previous itinerary first so navigating between drafts never shows the old one's
     // stops and legs while the new one loads.
     draft = null; error = '';
-    void load();
-    return watchDraft(data.id, load);
+    void load(draftFrom(data.early, data.id));
+    return watchDraft(data.id, () => void load());
   });
 
   const isAdmin = $derived(!!$auth.user?.is_admin);

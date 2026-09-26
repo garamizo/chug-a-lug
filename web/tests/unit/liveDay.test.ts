@@ -387,3 +387,40 @@ describe('the Conductor’s position belongs to its route', () => {
     expect(day.anchor).toBeNull();
   });
 });
+
+it('reads the route while the day is still being asked, and applies it only after the day answers', async () => {
+  let answerDay!: () => void;
+  mocks.fetchDay.mockReturnValue(new Promise((r) => (answerDay = () => r({ today: '2026-12-26', now: '2026-12-26T18:00:00.000Z' }))));
+  mocks.resolve.mockResolvedValue(route);
+  mocks.getFullList.mockResolvedValue([]);
+  mocks.fetchAlerts.mockResolvedValue({ alerts: [] });
+  const day = new LiveDay();
+  const stop = day.start();
+  try {
+    await vi.advanceTimersByTimeAsync(0);
+    expect(mocks.resolve).toHaveBeenCalledOnce();
+    expect(day.itinerary).toBeNull();
+    answerDay();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(day.itinerary?.id).toBe('r1');
+    expect(mocks.resolve).toHaveBeenCalledOnce();
+  } finally { stop(); }
+});
+
+it('does not apply the early route read over a reload that started after it', async () => {
+  let answerDay!: () => void;
+  mocks.fetchDay.mockReturnValue(new Promise((r) => (answerDay = () => r({ today: '2026-12-26', now: '2026-12-26T18:00:00.000Z' }))));
+  mocks.resolve.mockResolvedValueOnce(route).mockResolvedValue({ ...route, start_time: '12:00' });
+  mocks.getFullList.mockResolvedValue([]);
+  mocks.fetchAlerts.mockResolvedValue({ alerts: [] });
+  const day = new LiveDay();
+  const stop = day.start();
+  try {
+    await vi.advanceTimersByTimeAsync(0);
+    await day.loadRoute();
+    expect(day.itinerary?.start_time).toBe('12:00');
+    answerDay();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(day.itinerary?.start_time).toBe('12:00');
+  } finally { stop(); }
+});
