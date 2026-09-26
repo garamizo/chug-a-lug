@@ -12,9 +12,14 @@
   import { liveDay } from '$lib/live/day.svelte';
   import { openLightbox } from '$lib/nav';
   import type { LightboxItem } from '$lib/types';
+  import ChatBox from './ChatBox.svelte';
 
-  let { itineraryId, userId }: { itineraryId: string; userId: string } = $props();
-  let draft = $state(''), sending = $state(false), sendError = $state(''), shown = $state(40);
+  let { itineraryId, userId, onfiles, uploading = false, mediaOff }: {
+    itineraryId: string; userId: string;
+    /** Photos from the chat box; Live attaches them to the current Tab stop. */
+    onfiles?: (files: File[]) => Promise<void>; uploading?: boolean; mediaOff?: string;
+  } = $props();
+  let sendError = $state(''), shown = $state(40);
   const marks = $derived(milestones(liveDay.feed.drinks, liveDay.feed.media, liveDay.stops, liveDay.today));
   const all = $derived(chatEntries(liveDay.feed.drinks, liveDay.bulletins, { messages: liveDay.feed.messages, media: liveDay.feed.media, milestones: marks }));
   const entries = $derived(all.slice(-shown));
@@ -30,17 +35,15 @@
   // until the feed settles.
   const pending = new SvelteSet<string>();
 
-  async function send() {
-    const body = draft.trim();
-    if (!body || sending) return;
-    sending = true; sendError = '';
+  // ChatBox has already emptied its box; throwing hands the text back to it (if nothing new was typed).
+  async function send(body: string) {
+    sendError = '';
     try {
       await clientClock.ready();
       await pb.collection('chat_messages').create({ itinerary: itineraryId, user: userId, body });
-      draft = '';
-      await liveDay.loadFeed();
-    } catch { sendError = copy.noSignal; }
-    finally { sending = false; }
+    } catch (err) { sendError = copy.noSignal; throw err; }
+    // Outside the try: the message is saved, and loadFeed reports its own failures (feedError).
+    await liveDay.loadFeed();
   }
 
   async function toggle(entry: ChatEntry) {
@@ -138,11 +141,8 @@
     {:else}<p class="empty">{copy.chatEmpty}</p>{/each}
   </div>
   {#if error}<p role="status">{error}</p>{/if}
-  <form class="composer" onsubmit={(e) => { e.preventDefault(); void send(); }}>
-    <label class="sr" for="chat-input">{copy.messagePlaceholder}</label>
-    <input id="chat-input" bind:value={draft} maxlength="280" placeholder={copy.messagePlaceholder} autocomplete="off" data-testid="chat-input" />
-    <button type="submit" disabled={sending || !draft.trim()} data-testid="chat-send">{copy.sendMessage}</button>
-  </form>
+  <ChatBox onsend={send} {onfiles} busy={uploading} {mediaOff} maxlength={280} placeholder={copy.messagePlaceholder}
+    inputTestid="chat-input" sendTestid="chat-send" fileTestid="freight-input" cameraTestid="freight-camera" />
 </section>
 
 <style>
@@ -177,14 +177,6 @@
   .photo { display: block; width: auto; min-height: 0; margin: 2px 0 14px; padding: 0; background: none; border: 0; }
   .photo img { border-radius: 8px; object-fit: cover; display: block; -webkit-user-drag: none; }
   .video { display: grid; place-items: center; width: 160px; height: 120px; background: #222; border-radius: 8px; color: #fff; }
-  .composer { display: flex; gap: 8px; margin: 14px 0 0; position: sticky; bottom: 0; background: #111; padding-block: 8px; }
-  /* The TabBar only mounts on the event day (see (app)/+layout.svelte); without it there is nothing
-     to clear, so the composer sits flush with the viewport bottom instead of leaving a phantom gap.
-     A practice day's footer banner is shorter but needs the same clearance. */
-  :global(body:has(.tabbar)) .composer { bottom: calc(64px + env(safe-area-inset-bottom)); }
-  :global(body:has(.practice-banner)) .composer { bottom: calc(24px + env(safe-area-inset-bottom)); }
-  .composer input { margin: 0; flex: 1; }
-  .composer button { width: auto; margin: 0; }
   .more { width: auto; margin: 8px 0; }
   .sr { position: absolute; left: -9999px; }
 </style>

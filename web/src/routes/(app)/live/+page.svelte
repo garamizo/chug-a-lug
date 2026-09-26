@@ -1,7 +1,6 @@
 <script lang="ts">
   // The live day: where the crawl is, the run it has to catch, and what Metra is saying about it.
   // The shared `liveDay` owns the data so a Tab tap reaches every screen through the same tally.
-  import compressionWorkerUrl from 'browser-image-compression/dist/browser-image-compression.js?url';
   import { ClientResponseError } from 'pocketbase';
   import { SvelteSet } from 'svelte/reactivity';
   import { clientClock } from '$lib/sim/clock.svelte';
@@ -11,7 +10,7 @@
   import { auth, pb } from '$lib/pb';
   import type { DrinkEntry, DrinkKind } from '$lib/types';
   import { liveDay } from '$lib/live/day.svelte';
-  import { prepare, uploadBatch } from '$lib/live/upload';
+  import { compressForUpload, uploadBatch } from '$lib/live/upload';
   import { openStop } from '$lib/nav';
   import { stripStops } from '$lib/live/strip';
   import { withPending } from '$lib/live/tab';
@@ -21,7 +20,6 @@
   import CrewChat from '$lib/components/CrewChat.svelte';
   import StopSheet from '$lib/components/StopSheet.svelte';
   import RouteStrip from '$lib/components/RouteStrip.svelte';
-  let fileInput = $state<HTMLInputElement>();
   import DepartureBoard from '$lib/components/DepartureBoard.svelte';
   import AlertBubbles from '$lib/components/AlertBubbles.svelte';
   import TabRow from '$lib/components/TabRow.svelte';
@@ -110,8 +108,7 @@
     }
   }
 
-  async function upload(files: FileList | null) {
-    const selected = Array.from(files ?? []);
+  async function upload(selected: File[]) {
     const stop = tabStop, user = $auth.user;
     if (!selected.length || !stop || !user || uploading) return;
     error = '';
@@ -121,10 +118,7 @@
       liveDay.syncNow();
       if (tabStop?.id !== stop.id) throw new Error(copy.simClockConflict);
       error = await uploadBatch(selected, async (file) => {
-        const prepared = await prepare(file, async (f) => {
-          const { default: compressImage } = await import('browser-image-compression');
-          return compressImage(f, { maxWidthOrHeight: 2000, initialQuality: 0.8, useWebWorker: true, libURL: new URL(compressionWorkerUrl, location.href).href });
-        });
+        const prepared = await compressForUpload(file);
         const form = new FormData();
         form.set('user', user.id);
         form.set('stop', stop.id);
@@ -168,16 +162,9 @@
   showUndoLast={!toast && !pending.length}
   onlog={(kind) => void logDrink(kind)} onundo={(entry) => void undoDrink(entry)} />
 <div class="actions">
-  <div class="photo-action">
-    <button class="action photo" data-testid="action-photo" disabled={!tabStop || uploading} onclick={() => fileInput?.click()}><span aria-hidden="true">📸</span>{uploading ? copy.uploading : copy.addPhoto}</button>
-    {#if tabStop && $auth.user}
-      <input class="file" bind:this={fileInput} type="file" accept="image/*,video/*" multiple disabled={uploading} onchange={e => { void upload(e.currentTarget.files); e.currentTarget.value = ''; }} data-testid="freight-input" />
-      <label class="camera">{copy.takePhoto}<input type="file" accept="image/*" capture="environment" disabled={uploading} onchange={e => { void upload(e.currentTarget.files); e.currentTarget.value = ''; }} data-testid="freight-camera" /></label>
-    {/if}
-  </div>
   <button class="action speaker" data-testid="action-bulletin" disabled={!$auth.user?.is_admin || !liveDay.itinerary} title={!$auth.user?.is_admin ? copy.conductorBulletinOnly : copy.tellTheCrew} onclick={() => liveDay.composing = true}><span aria-hidden="true">📣</span>{copy.bulletinAction}</button>
 </div>
-{#if tabStop && liveDay.media.length}<FreightStrip media={liveDay.media} busy={uploading} showPicker={false} onpick={(files) => void upload(files)} />{/if}
+{#if tabStop && liveDay.media.length}<FreightStrip media={liveDay.media} />{/if}
 {#if error}<p role="alert">{error}</p>{/if}
 {#if toast}
   <div class="toast" role="status" data-testid="tab-toast">
@@ -188,7 +175,8 @@
 
 <Leaderboard {leaders} />
 
-{#if liveDay.itinerary && $auth.user}<CrewChat itineraryId={liveDay.itinerary.id} userId={$auth.user.id} />{/if}
+{#if liveDay.itinerary && $auth.user}<CrewChat itineraryId={liveDay.itinerary.id} userId={$auth.user.id}
+  onfiles={(files) => upload(files)} {uploading} mediaOff={tabStop ? undefined : copy.noTabStopForPhotos} />{/if}
 
 {#if liveDay.itinerary}
   <StopSheet stops={liveDay.stops} media={liveDay.feed.media} eventDate={liveDay.itinerary.event_date}
@@ -200,16 +188,12 @@
   .practice-banner { position: fixed; left: 0; right: 0; bottom: 0; z-index: 15; margin: 0; padding: 4px 0 calc(4px + env(safe-area-inset-bottom));
     background: #1d3440; color: #bfe3f2; text-align: center; font-size: 11px; font-weight: 700; letter-spacing: .14em; text-transform: uppercase; line-height: 1.4; }
   :global(body:has(.practice-banner)) { padding-bottom: calc(24px + env(safe-area-inset-bottom)); }
-  .actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; padding: 0 0 14px; align-items: start; }
+  .actions { display: grid; grid-template-columns: minmax(0, 1fr); gap: 10px; padding: 0 0 14px; align-items: start; }
   .action { display: flex; width: 100%; margin: 0; flex-direction: row; align-items: center; justify-content: center; gap: 8px; border-radius: 16px; padding: 8px 5px; border: 1px solid #b5873b; color: #ffe3a3; background: linear-gradient(145deg, #443319, #211b13); box-shadow: 0 3px 0 #695024; font-size: 13px; }
   .action span { font-size: 22px; line-height: 1.2; }
   .action:active { transform: translateY(2px); box-shadow: none; }
-  .photo { background: linear-gradient(145deg, #203e42, #152225); border-color: #547c83; box-shadow: 0 3px 0 #345057; color: #cfedf2; }
   .speaker { background: linear-gradient(145deg, #403050, #241d2d); border-color: #886a9b; box-shadow: 0 3px 0 #574363; color: #efdcff; }
   .action:disabled { opacity: .45; box-shadow: none; }
-  .file { display: none; }
-  .camera { position: relative; display: block; font-size: 11px; text-align: center; margin-top: 8px; color: #cfedf2; text-decoration: underline; min-height: 24px; }
-  .camera input { position: absolute; inset: 0; opacity: 0; width: 100%; height: 100%; cursor: pointer; }
   .stale { margin: 12px 0; padding: 10px 12px; border: 1px solid #555; border-radius: 9px; font-size: 13px; color: #cfcfcf; }
   .toast { position: fixed; left: 50%; bottom: calc(76px + env(safe-area-inset-bottom)); transform: translateX(-50%); z-index: 16;
     display: flex; align-items: center; gap: 14px; padding: 8px 8px 8px 16px; border-radius: 999px; background: #f2efe6; color: #111;

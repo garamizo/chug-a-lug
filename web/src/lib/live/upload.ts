@@ -1,6 +1,7 @@
 // Getting a phone photo to the server. Images shrink first — a modern phone's 12 MP JPEG is several
 // megabytes of nothing useful on a 400 px strip — and videos go as they are, under the hard ceiling
 // the Cloudflare free plan imposes on the tunnel.
+import compressionWorkerUrl from 'browser-image-compression/dist/browser-image-compression.js?url';
 import { copy } from '$lib/labels';
 import { ClientResponseError } from 'pocketbase';
 
@@ -22,6 +23,14 @@ export async function prepare(file: File, compress: (f: File) => Promise<File>):
     // A browser that will not give us a canvas is not a reason to lose the photo.
     return { file, kind, takenAt };
   }
+}
+
+/** `prepare()` with the real compressor, loaded only when a photo is actually picked. */
+export function compressForUpload(file: File): Promise<Prepared> {
+  return prepare(file, async (f) => {
+    const { default: compressImage } = await import('browser-image-compression');
+    return compressImage(f, { maxWidthOrHeight: 2000, initialQuality: 0.8, useWebWorker: true, libURL: new URL(compressionWorkerUrl, location.href).href });
+  });
 }
 
 // One rejected file must not strand the rest of a phone's selection.
