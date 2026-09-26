@@ -55,24 +55,24 @@ test('draft with real train times, layover change, card edits, votes, comments, 
   await expect(page.getByTestId('leg-0')).toContainText('BNSF');
   await expect(page.getByTestId('leg-0')).toContainText('12:05 PM');
   await expect(page.getByTestId('stop-row-1')).toContainText('12:32 PM');
-  // Both are going stops: left of the line, each in its station's row.
+  // Both are going stops, each in its station's row of the outbound half.
   await expect(page.getByTestId('map-row-NAPERVILLE').getByTestId('stop-row-0')).toHaveAttribute('data-side', 'left');
   await expect(page.getByTestId('map-row-LAGRANGE').getByTestId('stop-row-1')).toHaveAttribute('data-side', 'left');
 
-  // A circle tapped on the return pane makes a return stop, slotted after the going stops.
-  await page.getByTestId('side-right').click();
-  await expect(page.getByTestId('side-right')).toHaveAttribute('aria-selected', 'true');
-  await page.getByTestId('station-dot-NAPERVILLE').click();
+  // A circle tapped on the way-back half makes a return stop, slotted after the going stops.
+  await expect(page.getByTestId('section-back')).toBeVisible();
+  await page.getByTestId('station-dot-back-NAPERVILLE').click();
   await expect(page).toHaveURL(/side=right$/);
   await expect(page.getByTestId('dir-back')).toHaveAttribute('aria-checked', 'true');
   await page.getByTestId('venue-node-2').click();
-  await expect(page.getByTestId('map-row-NAPERVILLE').getByTestId('stop-row-2')).toHaveAttribute('data-side', 'right');
+  await expect(page.getByTestId('map-row-back-NAPERVILLE').getByTestId('stop-row-2')).toHaveAttribute('data-side', 'right');
+  await expect(page.getByTestId('map-row-NAPERVILLE').getByTestId('stop-row-2')).toHaveCount(0);
   await expect(page.getByTestId('stop-row-1')).toContainText('Test Tavern');
   // And a going stop added afterwards still lands among the going stops, before the return ones.
   await page.goto(`${draftUrl}/add?station=LAGRANGE&side=left`);
   await page.getByTestId('venue-p1').click();
   await expect(page.getByTestId('map-row-LAGRANGE').getByTestId('stop-row-2')).toHaveAttribute('data-side', 'left');
-  await expect(page.getByTestId('map-row-NAPERVILLE').getByTestId('stop-row-3')).toHaveAttribute('data-side', 'right');
+  await expect(page.getByTestId('map-row-back-NAPERVILLE').getByTestId('stop-row-3')).toHaveAttribute('data-side', 'right');
   page.once('dialog', (d) => d.accept());
   await page.getByTestId('remove-2').click();
   await expect(page.getByTestId('stop-row-3')).toHaveCount(0);
@@ -102,6 +102,7 @@ test('draft with real train times, layover change, card edits, votes, comments, 
   await page.getByTestId('done-editing').click();
   await expect(page).toHaveURL(draftUrl);
   await expect(page.getByTestId('station-dot-LAGRANGE')).toHaveCount(0);
+  await expect(page.getByTestId('station-dot-back-LAGRANGE')).toHaveCount(0);
   await expect(page.getByTestId('dwell-0')).toHaveCount(0);
   await expect(page.getByTestId('stop-row-0')).toContainText('3 h 3 min layover');
   await page.getByTestId('vote-up').click();
@@ -122,6 +123,7 @@ test('draft with real train times, layover change, card edits, votes, comments, 
   await expect(page.getByTestId('leg-0')).toContainText('2:05 PM');
   await expect(page.getByTestId('locked-on')).toBeVisible();
   await expect(page.getByTestId('station-dot-LAGRANGE')).toHaveCount(0);
+  await expect(page.getByTestId('station-dot-back-LAGRANGE')).toHaveCount(0);
   await expect(page.getByTestId('remove-0')).toHaveCount(0);
   await expect(page.getByTestId('dwell-0')).toHaveCount(0);
 });

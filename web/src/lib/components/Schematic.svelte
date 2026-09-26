@@ -1,5 +1,5 @@
 <script lang="ts">
-  // Station picker: the line down the middle, one big button per station on the right, and a
+  // Station picker: the line on the left, one big button per station beside it, and a
   // plain select underneath for anyone who prefers a list.
   import { copy } from '$lib/labels';
   import LineMap from './LineMap.svelte';
@@ -15,7 +15,7 @@
 </script>
 
 <LineMap {stations} {color} {selected}>
-  {#snippet right(station, i)}
+  {#snippet cell(station, i)}
     <button type="button" class="station" class:terminal={i === 0 || i === stations.length - 1} data-testid="station-{station.id}"
       aria-pressed={selected === station.id} disabled={station.served === false} onclick={() => onpick(station)}>{station.name}{#if station.served === false}<span class="off"> · {copy.noTrainsShort}</span>{/if}</button>
   {/snippet}

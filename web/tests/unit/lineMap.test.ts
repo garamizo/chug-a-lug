@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { insertionIndex, placeStops, plannerStations } from '../../src/lib/lineMap';
+import { insertionIndex, placeStops, plannerStations, unfold } from '../../src/lib/lineMap';
 import type { Line, Station } from '../../src/lib/types';
 
 const st = (id: string): Station => ({ id, name: id, lat: 0, lon: 0 });
@@ -95,5 +95,31 @@ describe('insertionIndex', () => {
     expect(insertionIndex(stations, [], 'LAGRANGE', 'back')).toBe(0);
     expect(insertionIndex(stations, crawl, 'ELMHURST', 'out')).toBe(2);
     expect(insertionIndex(stations, crawl, 'ELMHURST', 'back')).toBe(3);
+  });
+});
+
+describe('unfold', () => {
+  it('lists every station twice: toward Chicago top-down, then back out bottom-up', () => {
+    const p = placeStops(stations, dir('NAPERVILLE+', 'CUS+', 'LAGRANGE-'));
+    const u = unfold(p);
+    expect(u.out.map((r) => [r.station.id, r.stops])).toEqual([['AURORA', []], ['NAPERVILLE', [0]], ['LAGRANGE', []], ['CUS', [1]]]);
+    expect(u.back.map((r) => [r.station.id, r.stops])).toEqual([['CUS', []], ['LAGRANGE', [2]], ['NAPERVILLE', []], ['AURORA', []]]);
+  });
+  it('an all-return route leaves the outbound section empty but present', () => {
+    const u = unfold(placeStops(stations, dir('LAGRANGE-', 'AURORA-')));
+    expect(u.out.every((r) => r.stops.length === 0)).toBe(true);
+    expect(u.out).toHaveLength(4);
+    expect(u.back.flatMap((r) => r.stops)).toEqual([0, 1]);
+  });
+  it('does not include off-line stops and does not mutate the placement', () => {
+    const p = placeStops(stations, stops('ELMHURST', 'LAGRANGE'));
+    const before = JSON.stringify(p);
+    const u = unfold(p);
+    expect([...u.out, ...u.back].flatMap((r) => r.stops)).toEqual([1]);
+    expect(p.offLine).toEqual([0]);
+    expect(JSON.stringify(p)).toBe(before);
+  });
+  it('handles no stations', () => {
+    expect(unfold(placeStops([], []))).toEqual({ out: [], back: [] });
   });
 });

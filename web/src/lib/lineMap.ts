@@ -80,3 +80,21 @@ export function insertionIndex(stations: Station[], sorted: StopLike[], stationI
   }
   return at;
 }
+
+/** Which half of the unfolded line: toward Chicago (the left side) or back out (the right side). */
+export type Section = 'out' | 'back';
+export type SectionRow = { station: Station; stops: number[] };
+
+/**
+ * The line drawn as the day is ridden: every station top to bottom with the stops reached heading
+ * toward Chicago, then every station again bottom to top with the stops reached on the way back.
+ * Off-line stops stay in `placement.offLine`.
+ */
+export function unfold(p: Placement): { out: SectionRow[]; back: SectionRow[] } {
+  return {
+    out: p.rows.map((r) => ({ station: r.station, stops: [...r.left] })),
+    back: [...p.rows].reverse().map((r) => ({ station: r.station, stops: [...r.right] }))
+  };
+}
+
+export const sideOfSection = (s: Section): Side => (s === 'back' ? 'right' : 'left');

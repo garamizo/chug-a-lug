@@ -1,67 +1,41 @@
 <script lang="ts">
-  // One line drawn top to bottom through the middle of the screen, with a row per station. The
-  // caller fills the cells left and right of the line (stop cards, station buttons, labels).
-  //
-  // In `panes` mode each side is wider than half the screen and the map sits in a horizontally
-  // snapping viewport: one side is in focus, the line stays in view, and about a fifth of the
-  // other side peeks in. Dragging, the focusSide() method, or focusing something on the other
-  // side shifts it.
+  // One line drawn top to bottom with a row per station: the circle on the line, the station's
+  // cell to its right (label and stop cards). The unfolded route draws two of these — toward
+  // Chicago, then back out — so `section` namespaces the test ids.
   import type { Snippet } from 'svelte';
   import type { Station } from '$lib/types';
-  import type { Side } from '$lib/lineMap';
+  import type { Section } from '$lib/lineMap';
 
-  let { stations, color = '#29C233', selected, panes = false, onpick, pickLabel, onside, left, right }: {
-    stations: Station[]; color?: string; selected?: string; panes?: boolean;
+  let { stations, color = '#29C233', selected, section = 'out', onpick, pickLabel, cell }: {
+    stations: Station[]; color?: string; selected?: string; section?: Section;
     /** When set, each station's circle is a button. */
     onpick?: (station: Station) => void; pickLabel?: (station: Station) => string;
-    onside?: (side: Side) => void;
-    left?: Snippet<[Station, number]>; right?: Snippet<[Station, number]>;
+    cell?: Snippet<[Station, number]>;
   } = $props();
-
-  let viewport: HTMLDivElement | undefined = $state();
-  let side: Side = 'left';
-
-  export function focusSide(next: Side) {
-    if (!viewport) return;
-    viewport.scrollTo({ left: next === 'left' ? 0 : viewport.scrollWidth, behavior: 'smooth' });
-  }
-  // Focusing (or tapping) anything on the other side brings that side in.
-  function onfocusin(event: FocusEvent) {
-    if (!panes) return;
-    const cell = (event.target as HTMLElement).closest('.cell');
-    if (cell) focusSide(cell.classList.contains('left') ? 'left' : 'right');
-  }
-  function onscroll() {
-    if (!viewport) return;
-    const next: Side = viewport.scrollLeft < (viewport.scrollWidth - viewport.clientWidth) / 2 ? 'left' : 'right';
-    if (next !== side) { side = next; onside?.(next); }
-  }
+  const tid = (kind: string, id: string) => (section === 'back' ? `${kind}-back-${id}` : `${kind}-${id}`);
 </script>
 
-<div class="viewport" class:panes bind:this={viewport} {onscroll} {onfocusin}>
-  <div class="map" style:--line={color} role="list">
-    {#each stations as station, i (station.id)}
-      <div class="row" role="listitem" data-testid="map-row-{station.id}" data-served={station.served === false ? 'false' : 'true'}>
-        <div class="cell left">{@render left?.(station, i)}</div>
-        <div class="track" class:first={i === 0} class:last={i === stations.length - 1}>
-          {#if station.served === false}
-            <span class="dot off" aria-hidden="true"></span>
-          {:else if onpick}
-            <button type="button" class="pick" data-testid="station-dot-{station.id}" aria-label={pickLabel?.(station) ?? station.name}
-              aria-pressed={selected === station.id} onclick={() => onpick(station)}><span class="dot plus" class:on={selected === station.id} aria-hidden="true"></span></button>
-          {:else}
-            <span class="dot" class:on={selected === station.id} aria-hidden="true"></span>
-          {/if}
-        </div>
-        <div class="cell right">{@render right?.(station, i)}</div>
+<div class="map" style:--line={color} role="list" data-section={section}>
+  {#each stations as station, i (station.id)}
+    <div class="row" role="listitem" data-testid={tid('map-row', station.id)} data-served={station.served === false ? 'false' : 'true'}>
+      <div class="track" class:first={i === 0} class:last={i === stations.length - 1}>
+        {#if station.served === false}
+          <span class="dot off" aria-hidden="true"></span>
+        {:else if onpick}
+          <button type="button" class="pick" data-testid={tid('station-dot', station.id)} aria-label={pickLabel?.(station) ?? station.name}
+            aria-pressed={selected === station.id} onclick={() => onpick(station)}><span class="dot plus" class:on={selected === station.id} aria-hidden="true"></span></button>
+        {:else}
+          <span class="dot" class:on={selected === station.id} aria-hidden="true"></span>
+        {/if}
       </div>
-    {/each}
-  </div>
+      <div class="cell">{@render cell?.(station, i)}</div>
+    </div>
+  {/each}
 </div>
 
 <style>
-  .viewport { --track: 36px; --dot-y: 24px; }
-  .row { display: grid; grid-template-columns: minmax(0, 1fr) var(--track) minmax(0, 1fr); column-gap: 8px; min-height: 48px; }
+  .map { --track: 36px; --dot-y: 24px; }
+  .row { display: grid; grid-template-columns: var(--track) minmax(0, 1fr); column-gap: 10px; min-height: 48px; }
   .track { position: relative; }
   .track::before { content: ''; position: absolute; left: 50%; top: 0; bottom: 0; width: 12px; margin-left: -6px; background: var(--line); }
   .track.first::before { top: var(--dot-y); border-radius: 6px 6px 0 0; }
@@ -80,15 +54,4 @@
   .plus.on::before, .plus.on::after { background: #fff; }
   .pick:hover .dot { background: #ffe9b3; }
   .cell { min-width: 0; padding-bottom: 8px; }
-  .left { text-align: right; }
-
-  /* Two panes: each side is (viewport - track) / 1.2 wide, so the focused side, the line and a
-     fifth of the other side fill the viewport exactly. */
-  .panes { overflow-x: auto; overscroll-behavior-x: contain; scroll-snap-type: x mandatory; -webkit-overflow-scrolling: touch; scrollbar-width: none; }
-  .panes::-webkit-scrollbar { display: none; }
-  .panes .map { width: calc((100% - var(--track)) / 0.6 + var(--track)); }
-  .panes .row { column-gap: 0; }
-  .panes .cell { padding: 0 8px 8px; }
-  .panes .left { scroll-snap-align: start; }
-  .panes .right { scroll-snap-align: end; }
 </style>

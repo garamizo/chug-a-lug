@@ -102,14 +102,14 @@ users see. Bars and restaurants keep their plain names.
 Goal: by early December, one locked itinerary that everyone has seen and voted on.
 
 **Must have (MVP)**
-- The BNSF line drawn top to bottom down the middle of the screen, Aurora at the top and Union Station at
+- The BNSF line drawn top to bottom, Aurora at the top and Union Station at
   the bottom. Tap a station to see the best rated bars and restaurants within 250 m of it (Google Places
   Nearby Search, one call per station cached forever; OpenStreetMap, nearest first, when no key is set).
-- The draft is laid out on that same line: a stop sits left of the line while the crawl heads toward
-  Chicago and right of it on the way back to Aurora, in its station's row, with its train leg underneath.
-  The two sides are panes wider than half the screen; one is in focus and a fifth of the other peeks in.
-  Drag, tap the direction tab, or focus a card on the other side to shift. Tap a station's circle to add
-  a stop there: the side of the map you tap on is the stop's direction (going or return), and the crawl
+- The draft is laid out on that line unfolded: every station top to bottom toward Chicago
+  (**Aurora → Chicago**), a **Turn around** divider, then every station again bottom to top on the way
+  back (**Chicago → Aurora**). Each stop sits right of the line in its station's row of the half it is
+  reached in, with its train leg underneath. Tap a station's circle to add
+  a stop there: the half you tap in is the stop's direction (going or return), and the crawl
   is always the going stops top to bottom, then the return stops bottom to top, so a new stop slots in
   by station rather than at the end. Stations no train stops at on the crawl date (Metra skips Congress
   Park, Highlands, LaVergne, Stone Ave and West Hinsdale on weekends) are greyed out with no circle to

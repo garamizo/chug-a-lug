@@ -3,7 +3,7 @@
   import { api } from '$lib/api';
   import { copy } from '$lib/labels';
   import { fmtDate, fmtWeekday, localToUtc, parseHm } from '$lib/time';
-  import { PLANNER_ROUTE, placeStops, plannerStations, type Side } from '$lib/lineMap';
+  import { PLANNER_ROUTE, placeStops, plannerStations, sideOfSection, unfold, type Section, type SectionRow } from '$lib/lineMap';
   import type { Itinerary, Leg, Line, Station, Stop, StopLike } from '$lib/types';
   import { stopPhoto } from '$lib/photo';
   import type { PlanActions } from '$lib/planActions';
@@ -49,6 +49,9 @@
     } catch { stations = []; }
   });
   const placement = $derived(placeStops(stations ?? [], sorted));
+  // The line as the day is ridden: toward Chicago top to bottom, then every station again on the way back.
+  const sections = $derived(unfold(placement));
+  const halves = $derived([['out', sections.out], ['back', sections.back]] as [Section, SectionRow[]][]);
   const stationLabel = (s: Station) => ({ OTC: copy.stationOTC, CUS: copy.stationCUS } as Record<string, string>)[s.id] ?? s.name;
   // Stations no train stops at on the crawl date (Metra skips a few on weekends). A leg from or
   // to one can never work, and the message should say so rather than blame the layover.
@@ -57,11 +60,6 @@
     const bad = [sorted[i], sorted[i + 1]].find((s) => s && unserved.has(s.station_id));
     return bad ? `${names[bad.station_id]} ${copy.noServiceLeg} ${fmtWeekday(itinerary.event_date)}. ${copy.noServiceHint}` : undefined;
   };
-
-  // Which pane is in focus: the outbound (toward Chicago, left) or the return (right). Empty
-  // stations are labelled on the focused side so the name is readable there.
-  let focused = $state<Side>('left');
-  let map: { focusSide: (side: Side) => void } | undefined = $state();
 
   // Adding a stop leaves and comes back; remember where the page was scrolled so the crawl does
   // not jump back to the top every time.
@@ -109,8 +107,8 @@
   {/if}
 {/snippet}
 
-{#snippet label(station: Station, i: number)}
-  <span class="name" class:terminal={i === 0 || i === stations!.length - 1} class:off={station.served === false}>{stationLabel(station)}{#if station.served === false}<small> · {copy.noTrainsShort} {fmtWeekday(itinerary.event_date, 'short')}</small>{/if}</span>
+{#snippet label(station: Station, i: number, n: number)}
+  <span class="name" class:terminal={i === 0 || i === n - 1} class:off={station.served === false}>{stationLabel(station)}{#if station.served === false}<small> · {copy.noTrainsShort} {fmtWeekday(itinerary.event_date, 'short')}</small>{/if}</span>
 {/snippet}
 
 <header class="it">
@@ -128,21 +126,19 @@
 {#if stations === null}
   <p>{copy.working}</p>
 {:else if stations.length}
-  <div class="tabs" role="tablist">
-    <button type="button" role="tab" class="tab" aria-selected={focused === 'left'} onclick={() => map?.focusSide('left')} data-testid="side-left">{copy.inbound}</button>
-    <button type="button" role="tab" class="tab" aria-selected={focused === 'right'} onclick={() => map?.focusSide('right')} data-testid="side-right">{copy.outbound}</button>
-  </div>
-  <LineMap bind:this={map} {stations} color={lineColor} panes onside={(s) => (focused = s)}
-    onpick={editable ? (s) => { rememberScroll(); actions.add(s.id, focused); } : undefined} pickLabel={(s) => `${copy.addAt} ${stationLabel(s)}`}>
-    {#snippet left(station, i)}
-      <div class="rowhead">{#if focused === 'left'}{@render label(station, i)}{/if}</div>
-      {#each placement.rows[i].left as k (sorted[k].id)}{@render card(k)}{/each}
-    {/snippet}
-    {#snippet right(station, i)}
-      <div class="rowhead">{#if focused === 'right'}{@render label(station, i)}{/if}</div>
-      {#each placement.rows[i].right as k (sorted[k].id)}{@render card(k)}{/each}
-    {/snippet}
-  </LineMap>
+  {#each halves as [sec, rows] (sec)}
+    {@const list = rows.map((r) => r.station)}
+    <h3 class="dir" data-testid="section-{sec}">{sec === 'out' ? '▼' : '▲'} {sec === 'out' ? copy.inbound : copy.outbound}</h3>
+    <LineMap stations={list} color={lineColor} section={sec}
+      onpick={editable ? (s) => { rememberScroll(); actions.add(s.id, sideOfSection(sec)); } : undefined}
+      pickLabel={(s) => `${copy.addAt} ${stationLabel(s)}`}>
+      {#snippet cell(station, i)}
+        {@render label(station, i, list.length)}
+        {#each rows[i].stops as k (sorted[k].id)}{@render card(k)}{/each}
+      {/snippet}
+    </LineMap>
+    {#if sec === 'out'}<p class="turn" aria-hidden="true">↩ {copy.turnAround}</p>{/if}
+  {/each}
   {#if placement.offLine.length}
     <h3>{copy.offLine}</h3>
     <div class="list">{#each placement.offLine as k (sorted[k].id)}{@render card(k)}{/each}</div>
@@ -159,12 +155,10 @@
   .inline input { width: auto; margin: 0; padding: 8px; font-size: 16px; }
   h2 { font-size: 18px; margin-top: 28px; }
   h3 { font-size: 15px; color: #aaa; margin: 20px 0 8px; }
-  .tabs { display: flex; gap: 6px; margin: 0 0 10px; }
-  .tab { flex: 1; margin: 0; padding: 8px; min-height: 44px; font-size: 14px; font-weight: 600; background: transparent; color: #aaa; border: 1px solid #444; border-radius: 10px; }
-  .tab[aria-selected='true'] { background: #2a2a2a; color: #fff; border-color: #777; }
-  /* The station name sits at circle height; cards start below it on both sides. */
-  .rowhead { height: 36px; }
-  .name { display: inline-block; padding: 14px 6px 0; font-size: 13px; color: #888; line-height: 1.3; white-space: nowrap; }
+  .dir { font-size: 12px; letter-spacing: .14em; text-transform: uppercase; color: var(--gold); margin: 18px 0 6px 46px; }
+  .turn { text-align: center; color: var(--metra); font-weight: 700; font-size: 13px; margin: 8px 0; }
+  /* The station name sits at circle height, right of the line; its cards follow below it. */
+  .name { display: block; padding: 14px 0 6px; font-size: 13px; color: #888; line-height: 1.3; }
   .name.terminal { font-size: 15px; font-weight: 800; color: #eee; }
   .name.off { color: #666; }
   .name small { font-size: 11px; }
