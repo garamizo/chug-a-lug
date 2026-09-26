@@ -67,7 +67,6 @@
     builder={draft.itinerary.expand?.created_by?.name} current={liveDay.itinerary?.id === draft.itinerary.id}
     actions={recordActions(draft.itinerary.id, (m) => (error = m))} />
   <Votes targetCollection="itineraries" targetId={draft.itinerary.id} />
-  <Comments targetCollection="itineraries" targetId={draft.itinerary.id} />
   <ApprovalPanel itinerary={draft.itinerary} />
   {#if isAdmin && draft.itinerary.status === 'locked'}
     {#if liveDay.itinerary?.id === draft.itinerary.id}
@@ -76,6 +75,7 @@
       <button type="button" data-testid="make-current" disabled={choosing} onclick={() => void makeCurrent(draft!.itinerary.id)}>{copy.makeCurrent}</button>
     {/if}
   {/if}
+  <Comments targetCollection="itineraries" targetId={draft.itinerary.id} />
 {/if}
 
 <style>

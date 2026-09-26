@@ -115,7 +115,18 @@ test('draft with real train times, layover change, card edits, votes, comments, 
   await page.getByTestId('comment-input').fill('Nice route');
   await page.getByTestId('comment-post').click();
   await expect(page.getByTestId('comments')).toContainText('Nice route');
-  await expect(page.getByTestId('comments')).toContainText('E2E Skipper');
+  // Your own bubble sits on the right with no name over it, WhatsApp style.
+  await expect(page.getByTestId('comments').locator('article.mine')).toContainText('Nice route');
+  await expect(page.getByTestId('comments')).not.toContainText('E2E Skipper');
+  const GIF = Buffer.from('R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7', 'base64');
+  await page.getByTestId('comment-file').setInputFiles({ name: 'route.gif', mimeType: 'image/gif', buffer: GIF });
+  await expect(page.getByTestId('comments').locator('[data-testid^="comment-photo-"]')).toHaveCount(1);
+  // Delete is in the bubble's menu: right-click opens it.
+  await expect(page.locator('[data-testid^="comment-delete-"]')).toHaveCount(0);
+  await page.getByTestId('comments').getByText('Nice route').click({ button: 'right' });
+  await page.locator('[data-testid^="comment-delete-"]').click();
+  await expect(page.getByTestId('comments')).not.toContainText('Nice route');
+  await expect(page.getByTestId('comments').locator('[data-testid^="comment-photo-"]')).toHaveCount(1);
 
   await page.getByTestId('open-vote').click();
   await page.getByTestId('vote-go').click();
