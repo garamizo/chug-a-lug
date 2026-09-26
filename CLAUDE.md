@@ -27,10 +27,26 @@ git worktree remove .worktrees/m3-live && git branch -d feat/m3-live
 Everything below is git-ignored, so a new worktree starts without it:
 
 - **`web/node_modules`** — run `npm install` in `web/` before any test or type check.
-- **`.env` and `.secrets/`** — copy or symlink them from the main checkout. Without them Google
-  Places and the Metra realtime feed are unconfigured, and the app degrades to "Timetable only".
-- **`data/`** — the GTFS zip, the Places budget counters and `data/recordings/`. The GTFS zip
-  re-downloads on first use; recordings do not, so point at the main checkout's copy if you need one.
+- **`.env` and `.secrets/`** — **copy** them from the main checkout (`cp .env`, `cp -r .secrets`).
+  Never symlink anything into a worktree. Without them Google Places and the Metra realtime feed are
+  unconfigured, and the app degrades to "Timetable only".
+
+Runtime state is *not* on that list: the database, GTFS zip, Places budget counters and recordings
+live in **`~/.chug-a-lug`** (`CHUG_DATA`), outside every checkout, and every worktree already reads
+the same copy. Backups go to `~/.chug-a-lug-backups` (`BACKUP_DIR`), never inside `CHUG_DATA`.
+
+## Never let git near runtime state
+
+On 2026-09-26 a symlink named `data`, created in a worktree and swept in by `git add -A`, reached
+`main`. The fast-forward then deleted the real `data/` directory, production database and its
+backups included: **git treats ignored files as expendable** whenever a tracked path needs their
+place. So:
+
+- Stage explicit paths (`git add web/src/... README.md`), not `git add -A` or `git add .`, and read
+  `git status --short` before every commit for anything you did not mean to write.
+- `.githooks/pre-commit` refuses symlinks and anything at `data`, `.env`, `.secrets` or `pb_data`.
+  It is enabled per clone with `git config core.hooksPath .githooks`; do not bypass it with `--no-verify`.
+- Never point `CHUG_DATA` or `BACKUP_DIR` inside a checkout.
 
 ## One test run at a time, across all worktrees
 

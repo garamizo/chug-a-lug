@@ -7,6 +7,7 @@ import { parseEnv } from 'node:util';
 import { createRecording, validRecordingId, atomicRecordingWrite, appendPoll } from '../src/lib/server/metra/recording.ts';
 import { createRecorder } from '../src/lib/server/metra/recorder.ts';
 import { recordingCopy } from '../src/lib/labels.ts';
+import { dataHome } from '../src/lib/server/dataHome.ts';
 const root = fileURLToPath(new URL('../../', import.meta.url));
 const [recordingId, serviceDate, windowStart, windowEnd, ...extra] = process.argv.slice(2);
 if (!recordingId || !validRecordingId(recordingId) || !serviceDate || !windowStart || !windowEnd || extra.length) {
@@ -28,7 +29,7 @@ try {
     if (!response.ok) throw new Error(recordingCopy.failed);
     zip = new Uint8Array(await response.arrayBuffer());
   }
-  const { dir, manifest } = await createRecording(join(root, 'data/recordings'), { recordingId, serviceDate, windowStart, windowEnd }, zip);
+  const { dir, manifest } = await createRecording(join(dataHome(env), 'recordings'), { recordingId, serviceDate, windowStart, windowEnd }, zip);
   const recorder = createRecorder({ base: env.METRA_RT_BASE || 'https://gtfspublic.metrarr.com/gtfs/public', token: env.METRA_API_TOKEN,
     saveSnapshot: (file, bytes) => atomicRecordingWrite(dir, file, bytes),
     appendObservation: observation => appendPoll(dir, manifest, observation) });

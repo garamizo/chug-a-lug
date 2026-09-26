@@ -1,0 +1,19 @@
+#!/usr/bin/env bash
+# Refuses commits that could make git delete runtime state or leak secrets on another checkout.
+# A committed symlink named `data` let a fast-forward wipe the production database on 2026-09-26:
+# git treats ignored files as expendable when a tracked path needs their place.
+# Enable once per clone: git config core.hooksPath .githooks
+set -euo pipefail
+bad=0
+# --raw lines look like ":000000 120000 <sha> <sha> A<TAB>path"; the second field is the new mode.
+while IFS=$'\t' read -r meta path; do
+  read -r _ mode _ <<<"$meta"
+  if [[ $mode == 120000 ]]; then
+    echo "pre-commit: refusing symlink '$path'. Copy the file instead; runtime state lives in CHUG_DATA." >&2; bad=1
+  fi
+  case "$path" in
+    data|data/*|.env|.secrets|.secrets/*|pocketbase/pb_data|pocketbase/pb_data/*)
+      echo "pre-commit: refusing runtime state or secret '$path'." >&2; bad=1 ;;
+  esac
+done < <(git diff --cached --no-renames --diff-filter=AMT --raw)
+exit $bad

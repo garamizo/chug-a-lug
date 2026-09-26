@@ -1,6 +1,6 @@
 // The only module that reads private env. Everything else takes config as parameters so it can be unit-tested.
 import { env } from '$env/dynamic/private';
-import { resolve } from 'node:path';
+import { dataHome } from './dataHome';
 
 export const serverEnv = {
   get simEnabled() { return env.SIM === '1'; },
@@ -16,6 +16,6 @@ export const serverEnv = {
   get metraToken() { return env.METRA_API_TOKEN || ''; },
   get metraRtBase() { return env.METRA_RT_BASE || 'https://gtfspublic.metrarr.com/gtfs/public'; },
   get overpassUrl() { return env.OVERPASS_URL || 'https://overpass-api.de/api/interpreter'; },
-  /** Runtime state root: data/ next to the repo in dev, /data in the container. */
-  get dataDir() { return env.DATA_DIR || resolve(process.cwd(), '..', 'data'); }
+  /** Runtime state root: ~/.chug-a-lug (or CHUG_DATA) in dev, /data in the container. */
+  get dataDir() { return dataHome(env); }
 };

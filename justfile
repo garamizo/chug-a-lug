@@ -6,7 +6,7 @@ default:
 pb-download:
     bash scripts/pb-download.sh
 
-pb DATA_DIR="data/pb_dev":
+pb DATA_DIR=env("CHUG_DATA", env("HOME") + "/.chug-a-lug") + "/pb_dev":
     bash scripts/pb-dev.sh "{{DATA_DIR}}"
 
 web:

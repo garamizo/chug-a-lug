@@ -1,9 +1,11 @@
-.secrets/
+.secrets
 .env
 .env.*
 !.env.example
 node_modules/
-data/
+# Runtime state lives in ~/.chug-a-lug (CHUG_DATA), never in a checkout. No trailing slash: a
+# file or symlink named data is ignored too, not only a directory.
+/data
 web/build/
 web/.svelte-kit/
 web/test-results/
@@ -16,7 +18,6 @@ pocketbase/pb_data/
 test-results/
 playwright-report/
 .superpowers/
-data/recordings/
 
 .simulations/
 !.env.sim.example

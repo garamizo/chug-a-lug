@@ -10,6 +10,7 @@ import { mkdir, readdir, readFile, stat, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { buildSchedule, servicesOn, unzipGtfs } from '../src/lib/metra/gtfs.ts';
 import { todayInTz } from '../src/lib/time.ts';
+import { dataHome } from '../src/lib/server/dataHome.ts';
 import { CANNED_TITLE, PLAN, nextFreeSaturday, pickBar, pickDeepDish, pickLunch, placesClient } from './practice-venues.mjs';
 import { CannedRouteError, buildCannedRoute } from './practice-build.mjs';
 
@@ -118,7 +119,7 @@ async function main() {
   if (!covered) throw new Error('The timetable does not cover the next Saturdays.');
 
   // Step 3: pick venues in PLAN order, one `used` set, caching raw Places JSON and photos.
-  const directory = join(import.meta.dirname, '..', '..', 'data', 'practice-route');
+  const directory = join(dataHome(process.env), 'practice-route');
   await mkdir(directory, { recursive: true });
   const client = placesClient(googlePlacesKey);
   const used = new Set();

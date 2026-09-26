@@ -45,7 +45,12 @@ def main():
             raise RuntimeError("PocketBase backup did not finish within five minutes.")
         time.sleep(1)
 
-    destination = Path(os.environ.get("BACKUP_DIR", "data/backups")).resolve()
+    home = Path.home()
+    data_home = Path(os.environ.get("CHUG_DATA") or home / ".chug-a-lug").expanduser()
+    # Backups sit beside the data, never inside it: one bad delete must not take both.
+    destination = Path(os.environ.get("BACKUP_DIR") or home / ".chug-a-lug-backups").expanduser().resolve()
+    if destination == data_home.resolve() or data_home.resolve() in destination.parents:
+        raise RuntimeError("BACKUP_DIR cannot be inside CHUG_DATA.")
     destination.mkdir(parents=True, exist_ok=True)
     staging = Path(tempfile.mkdtemp(prefix=".partial-", dir=destination))
     try:
@@ -57,12 +62,9 @@ def main():
         with zipfile.ZipFile(archive) as backup:
             if backup.testzip() is not None or "data.db" not in backup.namelist():
                 raise RuntimeError("PocketBase backup failed integrity validation.")
-        # Explicit directories avoid recursion when BACKUP_DIR is under data/.
         for directory in ("places", "gtfs", "recordings"):
-            source = Path("data") / directory
+            source = data_home / directory
             if source.exists():
-                if destination == source.resolve() or source.resolve() in destination.parents:
-                    raise RuntimeError("BACKUP_DIR cannot be inside a supplementary data directory.")
                 shutil.copytree(source, staging / directory)
         (staging / "manifest.json").write_text(json.dumps({
             "created_utc": stamp, "pocketbase_version": "0.40.4", "source_backup": name

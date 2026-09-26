@@ -255,7 +255,7 @@ deletes it automatically.)
 canned out-and-back route once against the real stack: it validates the route while still a
 draft, then locks it. It becomes current through the newest-locked fallback until a real route is
 locked. A re-run replaces its own leftover draft and refuses if a locked canned route already
-exists; its Places answers and photos are cached under `data/practice-route/` so a retry does not
+exists; its Places answers and photos are cached under `~/.chug-a-lug/practice-route/` so a retry does not
 spend the budget again. The Conductor makes any locked route current from its page in the planner
 with **Make current**.
 
@@ -306,7 +306,7 @@ just record saturday 2026-12-26 2026-12-26T16:00:00Z 2026-12-27T04:00:00Z
 ```
 
 The command first archives `GTFS_URL` (or Metra's default static zip), verifies BNSF service for that
-date, and creates `data/recordings/saturday/`. It refuses an existing name. Each feed is polled at
+date, and creates `~/.chug-a-lug/recordings/saturday/`. It refuses an existing name. Each feed is polled at
 least 30 real seconds apart; duplicate snapshots still get successful poll observations. Ctrl-C or
 SIGTERM finishes the in-flight tick before stopping. Fetch/decode/snapshot-write failures become
 failed observations; an observation-storage failure stops recording. Tokens and raw errors are not
@@ -341,7 +341,9 @@ Recommendation, not yet decided. See the references doc for the alternatives con
 
 - **Host**: the admin's home computer, Docker Compose, published through a Cloudflare Tunnel.
   chugalug.app is on the HSTS preload list, so HTTPS is mandatory; the tunnel provides the certificate
-  and needs no port forwarding. Nightly backup of the data directory to a second disk or drive.
+  and needs no port forwarding. Runtime state (database, GTFS, Places budget, recordings) lives in
+  `~/.chug-a-lug` (`CHUG_DATA`), outside every git checkout; `just backup` writes snapshots to
+  `~/.chug-a-lug-backups` (`BACKUP_DIR`). Still to do: a nightly copy to a second disk or drive.
 - **Frontend**: SvelteKit PWA (`@vite-pwa/sveltekit`), MapLibre GL for the map, a generated SVG schematic
   of the three lines (stations ordered from GTFS), PhotoSwipe for the gallery.
 - **Backend**: PocketBase, a single binary with SQLite, file storage on local disk, and server-sent-event realtime.

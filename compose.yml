@@ -2,14 +2,15 @@ services:
   pocketbase:
     build: ./pocketbase
     restart: unless-stopped
-    # Run as the host user so files under ./data stay owned by you (backups, cleanup, no sudo).
+    # Run as the host user so files under CHUG_DATA stay owned by you (backups, cleanup, no sudo).
     user: "1000:1000"
     env_file: .env
     environment:
       SIM: "0"
       WEB_INTERNAL_URL: http://web:3000
     volumes:
-      - ./data/pb_data:/pb/pb_data
+      # Runtime state lives outside the checkout (see scripts/up.sh), so git can never delete it.
+      - ${CHUG_DATA:-${HOME}/.chug-a-lug}/pb_data:/pb/pb_data
       - ./pocketbase/pb_hooks:/pb/pb_hooks:ro
       - ./pocketbase/pb_migrations:/pb/pb_migrations:ro
     ports:
@@ -30,9 +31,9 @@ services:
       PB_URL: http://pocketbase:8090
       DATA_DIR: /data
     volumes:
-      - ./data/gtfs:/data/gtfs
-      - ./data/places:/data/places
-      - ./data/recordings:/data/recordings
+      - ${CHUG_DATA:-${HOME}/.chug-a-lug}/gtfs:/data/gtfs
+      - ${CHUG_DATA:-${HOME}/.chug-a-lug}/places:/data/places
+      - ${CHUG_DATA:-${HOME}/.chug-a-lug}/recordings:/data/recordings
     depends_on:
       pocketbase:
         condition: service_healthy
