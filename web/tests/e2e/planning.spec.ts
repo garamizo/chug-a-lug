@@ -146,3 +146,18 @@ test('another crew member can read and cheer a draft but not change it, even by 
   await expect(other).toHaveURL(draftUrl);
   await other.close();
 });
+
+test('the builder deletes their draft from the board with the trash icon', async ({ page }) => {
+  await login(page, 'E2E Tidy', process.env.CREW_PASSWORD ?? 'crew-test-password');
+  await page.getByTestId('nav-plan').click();
+  await page.getByTestId('draft-title').fill('Short Lived');
+  await page.getByTestId('create-draft').click();
+  await expect(page).toHaveURL(/\/edit$/);
+  const id = page.url().match(/plan\/([a-z0-9]{15})/)![1];
+  await page.goto('/plan');
+  await expect(page.getByTestId(`route-link-${id}`)).toContainText(/short lived/i);
+  await expect(page.getByTestId(`route-link-${id}`).locator('..')).toContainText('by E2E Tidy');
+  page.once('dialog', (d) => d.accept());
+  await page.getByTestId(`delete-route-${id}`).click();
+  await expect(page.getByTestId(`route-link-${id}`)).toHaveCount(0);
+});

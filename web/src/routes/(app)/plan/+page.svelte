@@ -3,19 +3,41 @@
   import { goto } from '$app/navigation';
   import { pb, auth, subscribe } from '$lib/pb';
   import { label, copy } from '$lib/labels';
-  import { fmtDate } from '$lib/time';
-  import type { Itinerary } from '$lib/types';
+  import { liveDay } from '$lib/live/day.svelte';
+  import { canDelete, canEditSettings } from '$lib/permissions';
+  import { countBy, deleteRoute, routeChip, sortRoutes } from '$lib/planList';
+  import Board from '$lib/components/Board.svelte';
+  import BoardRow from '$lib/components/BoardRow.svelte';
+  import IconButton from '$lib/components/IconButton.svelte';
+  import type { Itinerary, UserRecord } from '$lib/types';
 
-  let items = $state<Itinerary[]>([]);
+  // `created` is redeclared explicitly (RecordModel otherwise only implies it through its index
+  // signature) so `sortRoutes`'s `Pick<Itinerary, 'status' | 'created'>` constraint is satisfied.
+  type Row = Itinerary & { created: string; expand?: { created_by?: UserRecord } };
+  let items = $state<Row[]>([]);
+  let stops = $state(new Map<string, number>());
+  let cheers = $state(new Map<string, number>());
   let title = $state('');
   let busy = $state(false);
   let error = $state('');
 
   async function load() {
-    try { items = await pb.collection('itineraries').getFullList<Itinerary>({ sort: '-created' }); }
-    catch { error = copy.loadError; }
+    try {
+      const [its, st, vs] = await Promise.all([
+        pb.collection('itineraries').getFullList<Row>({ sort: '-created', expand: 'created_by' }),
+        pb.collection('stops').getFullList<{ itinerary: string }>({ fields: 'itinerary' }),
+        pb.collection('votes').getFullList<{ target_id: string }>({ filter: "target_collection = 'itineraries' && value = 'up'", fields: 'target_id' })
+      ]);
+      items = sortRoutes(its);
+      stops = countBy(st.map((s) => s.itinerary));
+      cheers = countBy(vs.map((v) => v.target_id));
+    } catch { error = copy.loadError; }
   }
-  onMount(() => { void load(); return subscribe('itineraries', '', load); });
+  onMount(() => {
+    void load();
+    const offs = [subscribe('itineraries', '', load), subscribe('stops', '', load), subscribe('votes', '', load)];
+    return () => offs.forEach((off) => off());
+  });
 
   async function create(event: SubmitEvent) {
     event.preventDefault();
@@ -28,42 +50,42 @@
     finally { busy = false; }
   }
 
-  const drafts = $derived(items.filter((i) => i.status === 'draft'));
-  const others = $derived(items.filter((i) => i.status !== 'draft'));
-  const statusLabel = (s: Itinerary['status']) => copy[`status_${s}` as keyof typeof copy];
+  const currentId = $derived(liveDay.itinerary?.id ?? null);
+  const hrefFor = (it: Row) => (it.status === 'locked' && it.id === currentId ? '/route' : `/plan/${it.id}`);
+  const subtitle = (it: Row) => `${copy.byBuilder} ${it.expand?.created_by?.name ?? '…'} · ${stops.get(it.id) ?? 0} ${copy.stopsShort} · 🍻 ${cheers.get(it.id) ?? 0}`;
+
+  async function remove(it: Row) {
+    error = '';
+    try { if (await deleteRoute(it, currentId, liveDay.today)) await load(); }
+    catch (err) { error = (err as Error).message || copy.genericError; }
+  }
 </script>
 
 <h1>{label('planningPhase')}</h1>
-<p>{copy.plannerIntro}</p>
+<p class="intro">{copy.plannerIntro}</p>
 
-<form onsubmit={create} aria-busy={busy}>
-  <label for="title">{copy.draftTitle}</label>
-  <input id="title" bind:value={title} placeholder={copy.draftTitlePlaceholder} maxlength="80" required data-testid="draft-title" disabled={busy} />
-  <button type="submit" disabled={busy} data-testid="create-draft">{busy ? copy.working : copy.newDraft}</button>
+<form class="new" onsubmit={create} aria-busy={busy}>
+  <label for="title" class="sr">{copy.draftTitle}</label>
+  <input id="title" bind:value={title} placeholder={copy.newRoutePlaceholder} maxlength="80" required data-testid="draft-title" disabled={busy} />
+  <IconButton type="submit" icon="add" tone="primary" label={copy.newRoute} disabled={busy} testid="create-draft" size={48} />
 </form>
 {#if error}<p class="error" role="alert">{error}</p>{/if}
 
-<h2>{copy.drafts}</h2>
-{#if drafts.length === 0}<p>{copy.noDrafts}</p>{/if}
-<ul>
-  {#each drafts as it (it.id)}
-    <li><a href="/plan/{it.id}" data-testid="draft-link-{it.id}"><strong>{it.title}</strong><span>{fmtDate(it.event_date)} · {it.start_time}</span></a></li>
+{#if items.length === 0}<p>{copy.noDrafts}</p>{/if}
+<Board heads={[copy.boardRoute, copy.boardStatus]} testid="route-board">
+  {#each items as it, i (it.id)}
+    <BoardRow index={i} href={hrefFor(it)} testid="route-link-{it.id}" title={it.title} subtitle={subtitle(it)} chip={routeChip(it, currentId)}>
+      {#snippet actions()}
+        {#if canEditSettings(it, $auth.user)}<IconButton icon="edit" size={36} label={copy.editRoute} onclick={() => goto(`/plan/${it.id}/edit`)} testid="edit-route-{it.id}" />{/if}
+        {#if canDelete(it, $auth.user)}<IconButton icon="delete" tone="danger" size={36} label={copy.deleteRoute} onclick={() => void remove(it)} testid="delete-route-{it.id}" />{/if}
+      {/snippet}
+    </BoardRow>
   {/each}
-</ul>
-
-{#if others.length}
-  <h2>{copy.pastRoutes}</h2>
-  <ul>
-    {#each others as it (it.id)}
-      <li><a href={it.status === 'locked' ? '/route' : `/plan/${it.id}`}><strong>{it.title}</strong><span>{statusLabel(it.status)}</span></a></li>
-    {/each}
-  </ul>
-{/if}
+</Board>
 
 <style>
-  h2 { font-size: 18px; margin-top: 32px; }
-  ul { list-style: none; padding: 0; margin: 12px 0; }
-  li { border-top: 1px solid #444; }
-  li a { display: flex; justify-content: space-between; gap: 16px; align-items: center; padding: 16px 0; color: inherit; text-decoration: none; min-height: 48px; }
-  li span { color: #aaa; font-size: 14px; }
+  .intro { color: #aaa; margin-top: 0; }
+  .new { display: flex; gap: 8px; align-items: center; margin: 16px 0; }
+  .new input { flex: 1; margin: 0; border-radius: 24px; }
+  .sr { position: absolute; left: -9999px; }
 </style>

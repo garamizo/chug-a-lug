@@ -26,6 +26,7 @@
     animation: flip .35s ease-out both; transform-origin: top; }
   a.t::after { content: ''; position: absolute; inset: 0; } /* whole row is the tap target */
   .acts { position: relative; z-index: 1; display: flex; gap: 6px; margin-top: 8px; }
+  .acts:empty { display: none; }
   .t.off { color: #777; }
   small { display: block; color: #999; font-size: 13px; margin-top: 2px; }
   .chip { font-family: var(--mono, ui-monospace, SFMono-Regular, Menlo, monospace); font-size: 11px; font-weight: 800; padding: 4px 7px;

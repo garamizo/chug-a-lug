@@ -8,6 +8,24 @@ const CREW = process.env.CREW_PASSWORD ?? 'crew-test-password';
 // any other day. 2026-12-19 13:00 CST practises the 26th's 13:00.
 const PRACTICE = new Date('2026-12-19T19:00:00Z');
 
+/** The mirrored route's id, or null if nothing is stored — read straight from IndexedDB so a
+ *  stale mirror after a delete cannot be missed (see `$lib/offline.ts`: DB `chugalug`, store
+ *  `mirror`, key `route`). */
+async function mirroredRouteId(page: Page): Promise<string | null> {
+  return page.evaluate(() => new Promise<string | null>((resolve, reject) => {
+    const request = indexedDB.open('chugalug', 1);
+    request.onerror = () => reject(request.error);
+    request.onsuccess = () => {
+      const db = request.result;
+      if (!db.objectStoreNames.contains('mirror')) { db.close(); resolve(null); return; }
+      const tx = db.transaction('mirror', 'readonly');
+      const read = tx.objectStore('mirror').get('route');
+      tx.oncomplete = () => { db.close(); resolve((read.result as { itinerary?: { id: string } } | undefined)?.itinerary?.id ?? null); };
+      tx.onabort = () => { db.close(); reject(tx.error); };
+    };
+  }));
+}
+
 async function practise(page: Page, name: string) {
   await page.route('**/api/metra/alerts', (r) => r.fulfill({ json: { mode: 'schedule_only', fetchedAt: null, alerts: [] } }));
   await login(page, name, ADMIN);
@@ -93,4 +111,33 @@ test('yesterday’s activity is not on today’s Live', async ({ page }) => {
   await expect(page.getByTestId('departure-board')).toBeVisible();
   await expect(page.getByText('From today')).toBeVisible();   // the feed has loaded
   await expect(page.getByText('From yesterday')).toHaveCount(0);
+});
+
+test('a watcher falls back after the Conductor deletes the current route', async ({ page, browser }) => {
+  const ids = await practise(page, 'E2E Delete Current');
+  const crew = await (await browser.newContext()).newPage();
+  await crew.route('**/api/metra/alerts', (r) => r.fulfill({ json: { mode: 'schedule_only', fetchedAt: null, alerts: [] } }));
+  await login(crew, 'E2E Delete Current Crew', CREW);
+  await crew.clock.install({ time: PRACTICE });
+  await crew.goto('/live');
+  await expect(crew.getByTestId('departure-board')).toBeVisible();
+  // The offline mirror is saved once the route has loaded, so it can be checked after the delete.
+  await expect.poll(() => mirroredRouteId(crew)).toBe(ids.itineraryId);
+
+  await page.goto('/plan');
+  page.once('dialog', (d) => d.accept());
+  await page.getByTestId(`delete-route-${ids.itineraryId}`).click();
+  await expect(page.getByTestId(`route-link-${ids.itineraryId}`)).toHaveCount(0);
+
+  // The crew phone's own `itineraries`/`crawl_settings` subscriptions pick up the delete without
+  // a reload — no locked route is left, so Live falls back to "no active route", not the deleted
+  // route's title.
+  await expect(crew.getByTestId('no-active-route')).toBeVisible({ timeout: 10_000 });
+  await expect(crew.getByText('The Whistle Stop')).toHaveCount(0);
+
+  // The mirror must not resurrect the deleted route on a later offline reload: `clearMirror` drops
+  // it once the authoritative read comes back empty. This harness has no service worker in dev
+  // mode, so a real `setOffline` reload cannot load the app shell; read the mirror directly instead.
+  await expect.poll(() => mirroredRouteId(crew)).toBeNull();
+  await crew.close();
 });
