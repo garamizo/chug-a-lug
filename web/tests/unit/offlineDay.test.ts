@@ -1,13 +1,13 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Itinerary, Leg, Stop } from '../../src/lib/types';
 
-const mocks = vi.hoisted(() => ({ list: vi.fn(), read: vi.fn(), save: vi.fn(), subscribe: vi.fn(() => () => {}) }));
+const mocks = vi.hoisted(() => ({ list: vi.fn(), read: vi.fn(), save: vi.fn(), clear: vi.fn(), subscribe: vi.fn(() => () => {}) }));
 vi.mock('$lib/pb', () => ({
   pb: { collection: (name: string) => ({ getFullList: (options: unknown) => mocks.list(name, options) }), filter: (s: string) => s },
   subscribe: mocks.subscribe
 }));
 vi.mock('$lib/offline', async (original) => ({
-  ...await original<typeof import('../../src/lib/offline')>(), readMirror: mocks.read, saveMirror: mocks.save
+  ...await original<typeof import('../../src/lib/offline')>(), readMirror: mocks.read, saveMirror: mocks.save, clearMirror: mocks.clear
 }));
 const { LiveDay } = await import('../../src/lib/live/day.svelte');
 
@@ -21,6 +21,7 @@ beforeEach(() => {
   mocks.list.mockImplementation(async (name: string) => ({ itineraries: [itinerary], stops, legs })[name]);
   mocks.read.mockResolvedValue(mirror);
   mocks.save.mockResolvedValue(undefined);
+  mocks.clear.mockResolvedValue(undefined);
 });
 
 describe('live route mirror', () => {
@@ -73,6 +74,24 @@ describe('live route mirror', () => {
     expect(day.legs).toEqual([]);
     expect(day.fromMirror).toBe(false);
     expect(day.mirrorSavedAt).toBeNull();
+  });
+
+  it('forgets the mirror when the server says there is no route, so an offline reload cannot resurrect it', async () => {
+    const day = new LiveDay();
+    await day.loadRoute();
+    mocks.list.mockResolvedValue([]);
+    const before = Date.now();
+    await day.loadRoute();
+    expect(mocks.clear).toHaveBeenCalledOnce();
+    expect((mocks.clear.mock.calls[0][0] as Date).getTime()).toBeLessThanOrEqual(Date.now());
+    expect((mocks.clear.mock.calls[0][0] as Date).getTime()).toBeGreaterThanOrEqual(before);
+  });
+
+  it('does not clear the mirror when the read failed (offline)', async () => {
+    const day = new LiveDay();
+    mocks.list.mockRejectedValue(new Error('offline'));
+    await day.loadRoute();
+    expect(mocks.clear).not.toHaveBeenCalled();
   });
 
   it('leaves the empty state when neither the network nor the mirror is available', async () => {

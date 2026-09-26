@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { mirrorAgeMin, mirrorPayload, mirrorSavedWhen, readMirror, saveMirror } from '../../src/lib/offline';
+import { clearMirror, mirrorAgeMin, mirrorIsStale, mirrorPayload, mirrorSavedWhen, readMirror, saveMirror } from '../../src/lib/offline';
 import { copy } from '../../src/lib/labels';
 import { fmtDateTime } from '../../src/lib/time';
 import type { Itinerary, Leg, Stop } from '../../src/lib/types';
@@ -58,6 +58,19 @@ describe('mirrorSavedWhen', () => {
   it('uses elapsed minutes even across Chicago midnight when still under an hour', () => {
     expect(mirrorSavedWhen('2026-12-27T05:50:00.000Z', new Date('2026-12-27T06:10:00.000Z')))
       .toBe(`20 ${copy.minutesAgo}`);
+  });
+});
+
+describe('mirrorIsStale', () => {
+  it('is stale when saved before the read that found no route began', () => {
+    expect(mirrorIsStale({ savedAt: '2026-12-26T20:00:00.000Z' }, new Date('2026-12-26T20:00:01.000Z'))).toBe(true);
+  });
+  it('keeps a mirror saved at or after the read began (a newer save raced in)', () => {
+    expect(mirrorIsStale({ savedAt: '2026-12-26T20:00:01.000Z' }, new Date('2026-12-26T20:00:01.000Z'))).toBe(false);
+    expect(mirrorIsStale({ savedAt: '2026-12-26T20:00:02.000Z' }, new Date('2026-12-26T20:00:01.000Z'))).toBe(false);
+  });
+  it('clearMirror is a no-op without IndexedDB', async () => {
+    await expect(clearMirror(new Date())).resolves.toBeUndefined();
   });
 });
 

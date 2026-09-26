@@ -4,7 +4,7 @@ import { clientClock } from '$lib/sim/clock.svelte';
 import { untrack } from 'svelte';
 import { pb, subscribe } from '$lib/pb';
 import { dayBounds, localToUtc, parseHm, todayInTz } from '$lib/time';
-import { mirrorPayload, readMirror, saveMirror, scopeMirror } from '$lib/offline';
+import { clearMirror, mirrorPayload, readMirror, saveMirror, scopeMirror } from '$lib/offline';
 import { currentStop, type Current } from './current';
 import { pickTrip } from './board';
 import { fetchAlerts, fetchDay, fetchNext, fetchStatus } from './feed';
@@ -163,12 +163,14 @@ export class LiveDay {
       await scopeMirror(runId);
     }
     try {
+      const readStartedAt = new Date();
       const read = await (fresh && early!.runId === runId ? early!.read : this.readRoute());
       if (request !== this.routeRead || runId !== clientClock.runId) return;
       if (!read) {
         const had = this.itinerary;
         this.itinerary = null; this.stops = []; this.legs = []; this.anchor = null;
         this.fromMirror = false; this.mirrorSavedAt = null;
+        void clearMirror(readStartedAt);
         this.syncPlan();
         if (had) this.enterScope();
         return;

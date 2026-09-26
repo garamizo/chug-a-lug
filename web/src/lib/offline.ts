@@ -111,3 +111,25 @@ export async function scopeMirror(runId: string): Promise<void> {
     });
   } finally { close(db); }
 }
+
+/** True when the stored mirror predates a read that authoritatively found no route. */
+export function mirrorIsStale(mirror: Pick<Mirror, 'savedAt'>, readStartedAt: Date): boolean {
+  return Date.parse(mirror.savedAt) < readStartedAt.getTime();
+}
+
+/** Forget the stored route after the server says there is none — but never a save newer than
+ *  that read, which belongs to a route that appeared since. One transaction, like scopeMirror. */
+export async function clearMirror(readStartedAt: Date): Promise<void> {
+  const db = await open();
+  if (!db) return;
+  try {
+    await new Promise<void>((resolve) => {
+      try {
+        const tx = db.transaction(STORE, 'readwrite');
+        tx.oncomplete = tx.onerror = tx.onabort = () => resolve();
+        const store = tx.objectStore(STORE), request = store.get(KEY);
+        request.onsuccess = () => { if (request.result && mirrorIsStale(request.result as Mirror, readStartedAt)) store.delete(KEY); };
+      } catch { resolve(); }
+    });
+  } finally { close(db); }
+}
