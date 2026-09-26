@@ -1,6 +1,6 @@
 <script lang="ts">
   import { clientClock } from '$lib/sim/clock.svelte';
-  import { goto } from '$app/navigation';
+  import { afterNavigate, goto } from '$app/navigation';
   import { page } from '$app/state';
   import { pb, auth } from '$lib/pb';
   import { copy } from '$lib/labels';
@@ -55,6 +55,9 @@
     void liveDay.loadTrains();
   });
 
+  // The composer belongs to the screen it was opened on: leaving closes it.
+  afterNavigate(() => { liveDay.composing = false; });
+
   async function ack(broadcastId: string) {
     if (!$auth.user) return;
     error = '';
@@ -93,7 +96,7 @@
   {#if liveDay.isEventDay}<TabBar />{/if}
   <Lightbox />
   {#if liveDay.composing}
-    <BulletinSheet text="" onsend={(body) => void postBulletin(body)} onskip={() => (liveDay.composing = false)} />
+    <BulletinSheet text="" onsend={(body) => void postBulletin(body)} onskip={() => (liveDay.composing = false)} ondismiss={() => (liveDay.composing = false)} />
   {/if}
 {/if}
 

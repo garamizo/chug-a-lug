@@ -8,6 +8,7 @@
   import { crewScore, compareScores, hasSeen as seenBulletin } from '$lib/live/crew';
   import { dayBounds } from '$lib/time';
   import type { BroadcastAck, DrinkEntry, UserRecord } from '$lib/types';
+  import IconLink from '$lib/components/IconLink.svelte';
 
   let crew = $state<UserRecord[]>([]);
   let drinks = $state<DrinkEntry[]>([]);
@@ -58,7 +59,7 @@
 
 <svelte:head><title>{labels.userRoster}</title></svelte:head>
 
-{#if !liveDay.isEventDay}<p><a href="/live">← {copy.backToLive}</a></p>{/if}
+{#if !liveDay.isEventDay}<nav><IconLink href="/live" icon="back" label={copy.backToLive} /></nav>{/if}
 <h1>{labels.userRoster}</h1>
 {#if error}<p class="error" role="alert">{error}</p>{/if}
 

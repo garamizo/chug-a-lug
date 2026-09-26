@@ -4,13 +4,16 @@
   import { copy } from '$lib/labels';
   import { fmtDate, fmtWeekday, localToUtc, parseHm } from '$lib/time';
   import { PLANNER_ROUTE, placeStops, plannerStations, type Side } from '$lib/lineMap';
-  import type { Itinerary, Leg, Line, Station, StopLike } from '$lib/types';
+  import type { Itinerary, Leg, Line, Station, Stop, StopLike } from '$lib/types';
+  import { stopPhoto } from '$lib/photo';
   import type { PlanActions } from '$lib/planActions';
   import LineMap from './LineMap.svelte';
   import StopRow from './StopRow.svelte';
 
-  let { itinerary, stops, legs, editable, canManage, actions, onerror, onopenstop }: {
+  let { itinerary, stops, legs, editable, canManage, actions, onerror, onopenstop, photos }: {
     itinerary: Itinerary; stops: StopLike[]; legs: Leg[]; editable: boolean; canManage: boolean; actions: PlanActions; onerror?: (message: string) => void;
+    /** Card photos by stop id, for staged stops that carry no place; otherwise read off each stop. */
+    photos?: Record<string, string>;
     /** When set, stop links open the stop sheet in place of navigating to the planning page. */
     onopenstop?: (id: string) => void;
   } = $props();
@@ -90,7 +93,7 @@
 
 {#snippet card(i: number)}
   {@const stop = sorted[i]}
-  <StopRow {stop} index={i} arriveAt={arriveAt(i)} leaveAt={leaveAt(i)} {editable} last={i === sorted.length - 1}
+  <StopRow {stop} photo={photos ? photos[stop.id] ?? null : stopPhoto(stop as Stop)} index={i} arriveAt={arriveAt(i)} leaveAt={leaveAt(i)} {editable} last={i === sorted.length - 1}
     side={placement.side[i]} leg={legAfter(i)} legReason={legReason(i)} {names} nextStationId={sorted[i + 1]?.station_id} date={itinerary.event_date}
     canUp={sameStation(i, i - 1)} canDown={sameStation(i, i + 1)}
     href="/plan/{itinerary.id}/stops/{stop.id}" onopen={onopenstop}

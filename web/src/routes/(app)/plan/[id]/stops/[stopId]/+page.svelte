@@ -5,6 +5,7 @@
   import Votes from '$lib/components/Votes.svelte';
   import Comments from '$lib/components/Comments.svelte';
   import type { AttachResult, Itinerary, Place, Stop, StopPhoto } from '$lib/types';
+  import IconLink from '$lib/components/IconLink.svelte';
 
   let { data } = $props();
   let itinerary = $state<Itinerary | null>(null);
@@ -92,7 +93,7 @@
   }
 </script>
 
-<p><a href="/plan/{data.id}">← {copy.backToDraft}</a></p>
+<nav><IconLink href="/plan/{data.id}" icon="back" label={copy.backToDraft} /></nav>
 {#if error}<p class="error" role="alert">{error}</p>{/if}
 {#if stop}
   <h1 data-testid="stop-name">{stop.name}</h1>

@@ -9,6 +9,7 @@
   import { PLANNER_ROUTE, insertionIndex, plannerStations, type Direction } from '$lib/lineMap';
   import Schematic from '$lib/components/Schematic.svelte';
   import type { Itinerary, Line, Station, Stop, Venue } from '$lib/types';
+  import IconLink from '$lib/components/IconLink.svelte';
 
   const itineraryId = $derived(page.params.id!);
   let lines = $state<Line[]>([]);
@@ -100,7 +101,7 @@
   const rated = (v: Venue) => v.rating !== undefined ? ` · ★ ${v.rating.toFixed(1)}${v.ratingCount ? ` (${v.ratingCount})` : ''}` : '';
 </script>
 
-<p><a href="/plan/{itineraryId}/edit">← {copy.backToDraft}</a></p>
+<nav><IconLink href="/plan/{itineraryId}/edit" icon="back" label={copy.backToDraft} /></nav>
 <h1>{copy.addStop}</h1>
 
 {#if !station}

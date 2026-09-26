@@ -11,8 +11,8 @@
   import type { Side } from '$lib/lineMap';
   import LegRow from './LegRow.svelte';
 
-  let { stop, index, arriveAt, leaveAt, editable, last, href, side = 'left', leg, legReason, names, nextStationId, date, canUp = false, canDown = false, onupdate, onmove, onremove, onopen }: {
-    stop: StopLike; index: number; arriveAt: Date | null; leaveAt: Date | null; editable: boolean; last: boolean;
+  let { stop, photo = null, index, arriveAt, leaveAt, editable, last, href, side = 'left', leg, legReason, names, nextStationId, date, canUp = false, canDown = false, onupdate, onmove, onremove, onopen }: {
+    stop: StopLike; photo?: string | null; index: number; arriveAt: Date | null; leaveAt: Date | null; editable: boolean; last: boolean;
     href: string; side?: Side; leg: Leg | undefined; legReason?: string; names: Record<string, string>;
     /** Where the crawl goes next, so the departure options are that day's trains toward it. */
     nextStationId?: string; date: string;
@@ -61,7 +61,7 @@
       <button type="button" class="tiny close" onclick={() => { if (confirm(copy.removeConfirm)) onremove(); }} aria-label={copy.remove} data-testid="remove-{index}">×</button>
     </div>
   {/if}
-  <a {href} class="head" data-testid="stop-link-{index}" onclick={(e) => { if (onopen) { e.preventDefault(); onopen(stop.id); } }}><span class="num">{index + 1}</span><strong>{stop.name}</strong></a>
+  <a {href} class="head" data-testid="stop-link-{index}" onclick={(e) => { if (onopen) { e.preventDefault(); onopen(stop.id); } }}><span class="num">{index + 1}</span>{#if photo}<img class="photo" src={photo} alt="" width="48" height="48" loading="lazy" data-testid="stop-photo-{index}" />{/if}<strong>{stop.name}</strong></a>
   <p class="meta">{kind} · {names[stop.station_id] ?? stop.station_name ?? stop.station_id} · {stop.walk_min} {copy.walkMinutes}</p>
   <p class="times">
     {#if arriveAt}<span>{copy.arrive} <strong>{fmtTime(arriveAt)}</strong></span>{/if}
@@ -90,6 +90,7 @@
   .stop:has(.corner > :nth-child(3)) .head { padding-right: 104px; }
   .num { flex: 0 0 24px; height: 24px; border-radius: 50%; background: #ffb400; color: #111; font-weight: 800; font-size: 13px; display: grid; place-items: center; }
   .head strong { overflow-wrap: anywhere; }
+  .photo { flex: 0 0 48px; width: 48px; height: 48px; border-radius: 8px; object-fit: cover; background: #2a2a2a; }
   .meta { color: #aaa; font-size: 13px; margin: 6px 0 0; line-height: 1.4; }
   .times { display: flex; flex-wrap: wrap; gap: 2px 12px; margin: 6px 0 0; font-size: 14px; color: #ccc; line-height: 1.4; }
   .inline { display: flex; flex-direction: column; gap: 4px; margin: 8px 0 0; font-size: 13px; color: #aaa; }

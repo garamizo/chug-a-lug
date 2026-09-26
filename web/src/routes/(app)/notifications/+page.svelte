@@ -8,6 +8,7 @@
   import { markSeen, readSeen } from '$lib/live/seen';
   import { liveDay } from '$lib/live/day.svelte';
   import type { Alert } from '$lib/types';
+  import IconLink from '$lib/components/IconLink.svelte';
 
   let alerts = $state<Alert[]>([]);
   let seen = $state<Set<string>>(new Set());
@@ -29,7 +30,7 @@
 
 <svelte:head><title>{copy.notifications}</title></svelte:head>
 
-{#if !liveDay.isEventDay}<p><a href="/live">← {copy.backToLive}</a></p>{/if}
+{#if !liveDay.isEventDay}<nav><IconLink href="/live" icon="back" label={copy.backToLive} /></nav>{/if}
 <h1>{copy.notifications}</h1>
 
 <h2>{copy.serviceAlerts}</h2>

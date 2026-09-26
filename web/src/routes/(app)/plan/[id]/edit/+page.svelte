@@ -14,9 +14,11 @@
   import { previewPlan } from '$lib/live/preview';
   import { cohesionBlockers } from '$lib/live/cohesion';
   import { liveDay } from '$lib/live/day.svelte';
+  import { stopPhotos } from '$lib/photo';
   import ItineraryView from '$lib/components/ItineraryView.svelte';
   import BulletinSheet from '$lib/components/BulletinSheet.svelte';
   import type { Leg, Line } from '$lib/types';
+  import IconLink from '$lib/components/IconLink.svelte';
 
   let { data } = $props();
   let draft = $state<Draft | null>(null);
@@ -226,7 +228,7 @@
   }
 </script>
 
-{#if draft}<p><a href="/plan/{draft.itinerary.id}" data-testid="done-editing">← {copy.doneEditing}</a></p>{:else}<p><a href="/plan">← {copy.backToPlanner}</a></p>{/if}
+<nav>{#if draft}<IconLink href="/plan/{draft.itinerary.id}" icon="back" label={copy.doneEditing} testid="done-editing" />{:else}<IconLink href="/plan" icon="back" label={copy.backToPlanner} />{/if}</nav>
 {#if error}<p class="error" role="alert">{error}</p>{/if}
 
 {#if draft && editable}
@@ -243,6 +245,7 @@
     <ItineraryView
       itinerary={draft.itinerary}
       stops={live && plan ? plan.stops : draft.stops}
+      photos={live && plan ? stopPhotos(draft.stops) : undefined}
       legs={live ? previewLegs : draft.legs}
       {editable} {canManage}
       actions={live ? stagedActions : recordActions(draft.itinerary.id, (m) => (error = m))}
