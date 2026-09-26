@@ -87,6 +87,15 @@ describe('live route mirror', () => {
     expect((mocks.clear.mock.calls[0][0] as Date).getTime()).toBeGreaterThanOrEqual(before);
   });
 
+  it('uses the early read\'s own start time as the no-route cutoff, not the later moment loadRoute picks it up', async () => {
+    const day = new LiveDay();
+    // Dispatched (per `begin()`) well before `loadDay()`'s round trip finishes and `loadRoute`
+    // is called with it; a cutoff taken later here would wrongly delete a mirror saved in between.
+    const startedAt = new Date('2026-12-26T19:00:00.000Z');
+    await day.loadRoute({ runId: undefined, at: 0, startedAt, read: Promise.resolve(null) });
+    expect(mocks.clear).toHaveBeenCalledExactlyOnceWith(startedAt);
+  });
+
   it('does not clear the mirror when the read failed (offline)', async () => {
     const day = new LiveDay();
     mocks.list.mockRejectedValue(new Error('offline'));

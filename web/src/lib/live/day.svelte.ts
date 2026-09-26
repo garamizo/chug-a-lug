@@ -152,8 +152,12 @@ export class LiveDay {
   }
 
   /** `early` is the read started with the day at start: used only if no other load began since,
-   *  for the same simulation run — a newer reload's answer must not be overwritten by it. */
-  async loadRoute(early?: { runId: string | undefined; at: number; read: Promise<Awaited<ReturnType<LiveDay['readRoute']>>> }) {
+   *  for the same simulation run — a newer reload's answer must not be overwritten by it.
+   *  `startedAt` is the wall time it was dispatched, before `loadDay()`'s own round trip; using
+   *  it (rather than the later moment `loadRoute` picks the read up) keeps the no-route cutoff at
+   *  the actual start of the authoritative read, so a mirror saved afterwards is never mistaken
+   *  for stale. */
+  async loadRoute(early?: { runId: string | undefined; at: number; startedAt: Date; read: Promise<Awaited<ReturnType<LiveDay['readRoute']>>> }) {
     const fresh = !!early && early.at === this.routeRead;
     const request = ++this.routeRead, runId = clientClock.runId;
     if (clientClock.enabled && runId && this.routeRun !== runId) {
@@ -162,9 +166,10 @@ export class LiveDay {
       this.fromMirror = false; this.mirrorSavedAt = null; this.routeRun = runId; this.scopeKey = '';
       await scopeMirror(runId);
     }
+    const usingEarly = fresh && early!.runId === runId;
     try {
-      const readStartedAt = new Date();
-      const read = await (fresh && early!.runId === runId ? early!.read : this.readRoute());
+      const readStartedAt = usingEarly ? early!.startedAt : new Date();
+      const read = await (usingEarly ? early!.read : this.readRoute());
       if (request !== this.routeRead || runId !== clientClock.runId) return;
       if (!read) {
         const had = this.itinerary;
@@ -325,7 +330,7 @@ export class LiveDay {
     // The route is read at the same time — only applied once the day has answered — so the
     // first screen does not wait for two round trips in a row.
     const reloads = this.scopeReloads;
-    const early = { runId: clientClock.runId, at: this.routeRead, read: this.readRoute() };
+    const early = { runId: clientClock.runId, at: this.routeRead, startedAt: new Date(), read: this.readRoute() };
     early.read.catch(() => {});
     void this.loadDay().then(() => { if (!stopped) return this.loadRoute(early); })
       .then(() => { if (stopped || this.scopeReloads !== reloads) return; void this.loadBulletins(); void this.loadTrains(); void this.loadFeed(); }).catch(() => {});
