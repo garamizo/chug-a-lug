@@ -94,8 +94,8 @@ function meta(photoCount: number) {
 
 beforeEach(() => {
   pbState.itineraries.clear();
-  pbState.itineraries.set('draftit', { id: 'draftit', status: 'draft' });
-  pbState.itineraries.set('lockedit', { id: 'lockedit', status: 'locked' });
+  pbState.itineraries.set('draftit', { id: 'draftit', status: 'draft', created_by: 'builder' });
+  pbState.itineraries.set('lockedit', { id: 'lockedit', status: 'locked', created_by: 'builder' });
   pbState.stops.clear();
   pbState.places.clear();
   pbState.nextId = 0;
@@ -138,7 +138,7 @@ describe('attachPlace', () => {
   it('refuses a non-admin caller once the itinerary has left draft, and writes nothing', async () => {
     seedStop('stop4', { itinerary: 'lockedit' });
 
-    await expect(attachPlace('stop4', { is_admin: false })).rejects.toMatchObject({ status: 403 });
+    await expect(attachPlace('stop4', { id: 'builder', is_admin: false })).rejects.toMatchObject({ status: 403 });
 
     expect(stop('stop4').photos_status).toBe('none');
     expect(searchText).not.toHaveBeenCalled();
@@ -149,8 +149,19 @@ describe('attachPlace', () => {
     seedStop('stop5');
     seedStop('stop6', { itinerary: 'lockedit' });
 
-    expect((await attachPlace('stop5', { is_admin: false })).status).toBe('done');
-    expect((await attachPlace('stop6', { is_admin: true })).status).toBe('done');
+    expect((await attachPlace('stop5', { id: 'builder', is_admin: false })).status).toBe('done');
+    expect((await attachPlace('stop6', { id: 'boss', is_admin: true })).status).toBe('done');
+  });
+
+  it('refuses a crew member attaching on someone else\'s draft before any Google call or write', async () => {
+    seedStop('stop8');
+
+    await expect(attachPlace('stop8', { id: 'someone-else', is_admin: false })).rejects.toMatchObject({ status: 403 });
+
+    expect(stop('stop8').photos_status).toBe('none');
+    expect(searchText).not.toHaveBeenCalled();
+    expect(placeDetails).not.toHaveBeenCalled();
+    expect(pbState.places.size).toBe(0);
   });
 
   it('refuses a place_id that is not a plain Google id', async () => {

@@ -11,7 +11,7 @@ import { findPlace } from './store';
 import type { AttachResult, Itinerary, Place, Stop } from '$lib/types';
 
 /** Who asked for the attach. Optional so tests (and future server jobs) can skip the check. */
-export type AttachCaller = { is_admin: boolean };
+export type AttachCaller = { id: string; is_admin: boolean };
 
 const DETAILS_LIMIT = 800;
 const PHOTOS_LIMIT = 800;
@@ -49,11 +49,12 @@ async function doAttachPlace(stopId: string, caller?: AttachCaller): Promise<Att
     console.error('[places] attach: no stop', stopId, err);
     return { status: 'failed', photos: 0, message: (err as Error).message };
   }
-  // This writes as the superuser, so the stops collection rule (draft, or admin) is re-checked here
-  // instead of being bypassed.
+  // This writes as the superuser, so the stops rule (the builder's draft, or the Conductor) is
+  // re-checked here instead of being bypassed — before any Google call spends the budget.
   if (caller && !caller.is_admin) {
     const it = await pb.collection('itineraries').getOne<Itinerary>(stop.itinerary).catch(() => null);
     if (!it || it.status !== 'draft') throw error(403, 'This itinerary is no longer a draft.');
+    if (it.created_by !== caller.id) throw error(403, 'Only the route\'s builder or the Conductor can change it.');
   }
   const fail = async (message: string): Promise<AttachResult> => {
     await pb.collection('stops').update(stop.id, { photos_status: 'failed' });

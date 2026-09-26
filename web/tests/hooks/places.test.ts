@@ -69,7 +69,7 @@ describe('places store', () => {
     }, crew.token)).json();
     expect(stop.id).toMatch(/^[a-z0-9]{15}$/);
 
-    const result = await attachPlace(stop.id, { is_admin: false });
+    const result = await attachPlace(stop.id, { id: crew.id, is_admin: false });
 
     expect(result).toEqual({ status: 'done', photos: 2 });
     expect(placeDetails).toHaveBeenCalledTimes(1);
