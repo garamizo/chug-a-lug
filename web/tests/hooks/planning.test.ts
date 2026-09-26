@@ -67,30 +67,57 @@ describe('itineraries', () => {
     expect((await patch(`/api/collections/itineraries/records/${id}`, { start_time: '12:30' }, crew.token)).status).toBe(200);
   });
 
-  it('owner can delete a draft but not a locked itinerary', async () => {
-    const { id } = await (await createItinerary(crew.token)).json();
-    await patch(`/api/collections/itineraries/records/${id}`, { status: 'locked' }, admin.token);
-    expect((await del(`/api/collections/itineraries/records/${id}`, crew.token)).status).toBe(404);
+  it('builder deletes only their draft; the Conductor deletes any route in any status', async () => {
     const { id: draft } = await (await createItinerary(crew.token)).json();
+    expect((await del(`/api/collections/itineraries/records/${draft}`, other.token)).status).toBe(404);
     expect((await del(`/api/collections/itineraries/records/${draft}`, crew.token)).status).toBe(204);
+
+    const { id: locked } = await (await createItinerary(crew.token)).json();
+    await patch(`/api/collections/itineraries/records/${locked}`, { status: 'locked' }, admin.token);
+    expect((await del(`/api/collections/itineraries/records/${locked}`, crew.token)).status).toBe(404);
+    expect((await del(`/api/collections/itineraries/records/${locked}`, admin.token)).status).toBe(204);
+
+    const { id: othersDraft } = await (await createItinerary(other.token)).json();
+    expect((await del(`/api/collections/itineraries/records/${othersDraft}`, admin.token)).status).toBe(204);
+  });
+
+  it('deleting the current route clears crawl_settings.current_itinerary', async () => {
+    const su = await superuserToken();
+    const { id } = await (await createItinerary(admin.token, { title: 'Current' })).json();
+    await patch(`/api/collections/itineraries/records/${id}`, { status: 'locked' }, admin.token);
+    const settings = await (await get('/api/collections/crawl_settings/records?perPage=1', su)).json();
+    const sid = settings.items[0]?.id;
+    expect(sid).toBeTruthy();
+    expect((await patch(`/api/collections/crawl_settings/records/${sid}`, { current_itinerary: id }, su)).status).toBe(200);
+    expect((await del(`/api/collections/itineraries/records/${id}`, admin.token)).status).toBe(204);
+    const after = await (await get(`/api/collections/crawl_settings/records/${sid}`, su)).json();
+    expect(after.current_itinerary).toBe('');
   });
 });
 
 describe('stops', () => {
-  it('anyone can add a stop to a draft with defaults; nobody but admin once locked', async () => {
+  it('only the builder or the Conductor can write stops on a draft; only the Conductor once locked', async () => {
     const { id } = await (await createItinerary(crew.token)).json();
-    const res = await createStop(other.token, id);
+    // Someone else's draft: create fails the rule (400); update/delete are filtered out (404).
+    expect((await createStop(other.token, id)).status).toBe(400);
+    const res = await createStop(crew.token, id);
     expect(res.status).toBe(200);
     const stop = await res.json();
     expect(stop.dwell_min).toBe(60);
     expect(stop.kind).toBe('bar');
     expect(stop.photos_status).toBe('none');
     expect(stop.order).toBe(1);
-    const second = await (await createStop(other.token, id)).json();
-    expect(second.order).toBe(2);
-    await patch(`/api/collections/itineraries/records/${id}`, { status: 'locked' }, admin.token);
-    expect((await createStop(other.token, id)).status).toBe(400);
     expect((await patch(`/api/collections/stops/records/${stop.id}`, { dwell_min: 30 }, other.token)).status).toBe(404);
+    expect((await del(`/api/collections/stops/records/${stop.id}`, other.token)).status).toBe(404);
+    const second = await (await createStop(admin.token, id)).json();
+    expect(second.order).toBe(2);
+    expect((await patch(`/api/collections/stops/records/${second.id}`, { dwell_min: 45 }, crew.token)).status).toBe(200);
+    // A stop cannot be moved onto another route, even by its builder.
+    const { id: mine2 } = await (await createItinerary(crew.token)).json();
+    expect((await patch(`/api/collections/stops/records/${stop.id}`, { itinerary: mine2 }, crew.token)).status).toBe(404);
+    await patch(`/api/collections/itineraries/records/${id}`, { status: 'locked' }, admin.token);
+    expect((await createStop(crew.token, id)).status).toBe(400);
+    expect((await patch(`/api/collections/stops/records/${stop.id}`, { dwell_min: 30 }, crew.token)).status).toBe(404);
     expect((await createStop(admin.token, id)).status).toBe(200);
     expect((await patch(`/api/collections/stops/records/${stop.id}`, { dwell_min: 30 }, admin.token)).status).toBe(200);
   });
