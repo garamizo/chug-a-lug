@@ -110,20 +110,22 @@
     }
   }
 
+  // Photos go to the chat at any time. While a stop is open they are also filed under it (its strip
+  // and first-photo milestone); before and after the crawl the server files them under the route.
   async function upload(selected: File[]) {
     const stop = tabStop, user = $auth.user;
-    if (!selected.length || !stop || !user || uploading) return;
+    if (!selected.length || !user || uploading) return;
     uploadError = '';
     uploading = true;
     try {
       await clientClock.ready();
       liveDay.syncNow();
-      if (tabStop?.id !== stop.id) throw new Error(copy.simClockConflict);
+      if (stop && tabStop?.id !== stop.id) throw new Error(copy.simClockConflict);
       uploadError = await uploadBatch(selected, async (file) => {
         const prepared = await compressForUpload(file);
         const form = new FormData();
         form.set('user', user.id);
-        form.set('stop', stop.id);
+        if (stop) form.set('stop', stop.id);
         form.set('kind', prepared.kind);
         form.set('taken_at', prepared.takenAt);
         form.set('file', prepared.file);
@@ -178,7 +180,7 @@
 <Leaderboard {leaders} />
 
 {#if liveDay.itinerary && $auth.user}<CrewChat itineraryId={liveDay.itinerary.id} userId={$auth.user.id}
-  onfiles={(files) => upload(files)} {uploading} {uploadError} mediaOff={tabStop ? undefined : here?.source === 'after' ? copy.noPhotosAfterCrawl : copy.noTabStopForPhotos} />{/if}
+  onfiles={(files) => upload(files)} {uploading} {uploadError} />{/if}
 
 {#if liveDay.itinerary}
   <StopSheet stops={liveDay.stops} media={liveDay.feed.media} eventDate={liveDay.itinerary.event_date}

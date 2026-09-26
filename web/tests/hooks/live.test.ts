@@ -165,6 +165,20 @@ describe('media tagging', () => {
     expect(status).toBe(200);
     expect(body).toMatchObject({ stop: '', tagged_by: 'none' });
   });
+
+  it('files every photo under the current route, stop or no stop, whatever the body says', async () => {
+    const tagged = await upload(crew, crewId, stopId);
+    expect(tagged.body.itinerary).toBe(itineraryId);
+    const form = new FormData();
+    form.set('user', crewId);
+    form.set('kind', 'image');
+    form.set('taken_at', '2026-12-26T20:00:00.000Z');
+    form.set('itinerary', 'notarealroute00');
+    form.set('file', new Blob([Uint8Array.from([0xff, 0xd8, 0xff, 0xd9])], { type: 'image/jpeg' }), 'shot.jpg');
+    const res = await fetch(`${PB}/api/collections/media/records`, { method: 'POST', headers: { Authorization: crew }, body: form });
+    expect(res.status).toBe(200);
+    expect(await res.json()).toMatchObject({ stop: '', itinerary: itineraryId });
+  });
 });
 
 describe('bulletin bookkeeping', () => {

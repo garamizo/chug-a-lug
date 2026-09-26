@@ -16,12 +16,12 @@
   import { HoldMenu } from '$lib/live/holdMenu.svelte';
   import ChatBox from './ChatBox.svelte';
 
-  let { itineraryId, userId, onfiles, uploading = false, uploadError = '', mediaOff }: {
+  let { itineraryId, userId, onfiles, uploading = false, uploadError = '' }: {
     itineraryId: string; userId: string;
-    /** Photos from the chat box; Live attaches them to the current Tab stop. */
+    /** Photos from the chat box; Live files them under the open Tab stop, if there is one. */
     onfiles?: (files: File[]) => Promise<void>; uploading?: boolean;
     /** Why the last photo batch did not all send; shown beside the box that sent it. */
-    uploadError?: string; mediaOff?: string;
+    uploadError?: string;
   } = $props();
   let sendError = $state(''), shown = $state(40);
   const marks = $derived(milestones(liveDay.feed.drinks, liveDay.feed.media, liveDay.stops, liveDay.today));
@@ -124,7 +124,7 @@
   </div>
   {#if error}<p role="status">{error}</p>{/if}
   {#if uploadError}<p role="alert" class="upload-error">{uploadError}</p>{/if}
-  <ChatBox onsend={send} {onfiles} busy={uploading} status={uploading ? copy.uploading : undefined} {mediaOff} maxlength={280} placeholder={copy.messagePlaceholder}
+  <ChatBox onsend={send} {onfiles} busy={uploading} status={uploading ? copy.uploading : undefined} maxlength={280} placeholder={copy.messagePlaceholder}
     inputTestid="chat-input" sendTestid="chat-send" fileTestid="freight-input" cameraTestid="freight-camera" />
 </section>
 

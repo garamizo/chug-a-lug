@@ -2,17 +2,19 @@
 // re-instantiated without the file scope), so everything a hook needs is computed inside it.
 
 // Freight: the client sends the stop its board is showing. Trust it only when that stop belongs
-// to the current route; a photo is never lost over a tagging disagreement.
+// to the current route; a photo is never lost over a tagging disagreement. Every photo is filed
+// under the current route, so the chat shows the ones taken before or after the crawl too.
 onRecordCreateRequest((e) => {
   const r = e.record
   const isCrew = !!e.auth && !e.auth.isSuperuser()
   if (isCrew) r.set('user', e.auth.id)
+  const current = require(`${__hooks}/current.js`).currentItineraryId($app) || ''
+  r.set('itinerary', current)
   let ok = false
   const stopId = r.getString('stop')
-  if (stopId) {
+  if (stopId && current) {
     try {
-      const stop = $app.findRecordById('stops', stopId)
-      ok = stop.getString('itinerary') === require(`${__hooks}/current.js`).currentItineraryId($app)
+      ok = $app.findRecordById('stops', stopId).getString('itinerary') === current
     } catch (_) {
       ok = false
     }

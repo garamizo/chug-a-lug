@@ -184,11 +184,12 @@ Goal: nobody misses a train, nobody is lost, and the plan can change without cha
   a drink at the current stop instantly; a toast with Undo confirms it, and it stays up (with a retry
   if the delete fails) until it fades or another tap replaces it — after which "Undo my last one here"
   still undoes your newest entry at the stop. The Tab and Freight are available only while the position
-  source is `clock` or `override`; a stop still appears before and after the crawl, but those controls
-  stay closed (buttons disabled, no toast).
-- **Freight** uploads photos and videos tagged with the stop the uploader's shared board shows. The
-  server checks that the stop belongs to a locked route; an invalid tag is cleared without losing the
-  upload. Images are compressed in the browser (the original is used if compression fails), videos
+  source is `clock` or `override`; a stop still appears before and after the crawl, but the Tab
+  stays closed (buttons disabled, no toast).
+- **Freight** uploads photos and videos from the chat box at any time. Every upload is filed under the
+  current route; while a stop is open it is also tagged with the stop the uploader's shared board
+  shows. The server checks that the stop belongs to the current route; an invalid tag is cleared
+  without losing the upload. Images are compressed in the browser (the original is used if compression fails), videos
   pass through, and each selected file must be at most 90 MB. Unsupported file types are refused with
   a specific message; one failed file does not stop the rest of the batch.
 - **Offline reading**: the app shell is precached and the locked itinerary, stops and legs are mirrored

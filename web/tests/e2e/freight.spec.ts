@@ -64,11 +64,11 @@ test('a rejected middle upload still sends the last photo and reports the partia
   await expect(page.getByTestId('freight-input')).toBeEnabled();
 });
 
-for (const [phase, time, reason] of [
-  ['before', '2026-12-26T17:00:00.000Z', copy.noTabStopForPhotos],
-  ['after', '2026-12-26T22:00:00.000Z', copy.noPhotosAfterCrawl]
+for (const [phase, time] of [
+  ['before', '2026-12-26T17:00:00.000Z'],
+  ['after', '2026-12-26T22:00:00.000Z']
 ]) {
-  test(`Freight stays closed ${phase} the crawl even though the board retains a stop`, async ({ page }) => {
+  test(`a photo still goes to the chat ${phase} the crawl, with no stop to file it under`, async ({ page }) => {
     await page.route('**/api/metra/**', (r) => r.fulfill({ json: { mode: 'schedule_only', fetchedAt: null, trips: [], alerts: [] } }));
     await login(page, 'E2E Freight Skipper', ADMIN);
     await clearLockedCrawls();
@@ -79,13 +79,12 @@ for (const [phase, time, reason] of [
     await page.clock.install({ time: new Date(time) });
     await page.goto('/live');
 
-    // The Tab header now reads "Tab · you N" (the day's personal total), so match by substring.
-    await expect(page.getByRole('heading', { name: 'Tab' })).toBeVisible();
     await expect(page.getByTestId('no-active-route')).toHaveCount(0);
-    await expect(page.getByTestId('freight-input')).toHaveCount(0);
-    await expect(page.getByTestId('freight-camera')).toHaveCount(0);
-    await expect(page.getByTestId('attach-media')).toHaveCount(0);
-    await expect(page.getByTestId('camera-button')).toHaveCount(0);
-    await expect(page.getByText(reason)).toBeVisible();
+    await expect(page.getByTestId('attach-media')).toBeEnabled();
+    await expect(page.getByTestId('camera-button')).toBeVisible();
+    await page.getByTestId('freight-input').setInputFiles({ name: `${phase}.gif`, mimeType: 'image/gif', buffer: GIF });
+    await expect(page.getByTestId('crew-chat').locator('img')).toHaveCount(1);
+    // No stop is open, so there is no stop strip to show it in.
+    await expect(page.getByTestId('freight-strip')).toHaveCount(0);
   });
 }

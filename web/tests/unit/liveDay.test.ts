@@ -139,7 +139,9 @@ describe('live feed', () => {
     Object.defineProperty(day, 'here', { get: () => ({ stop: { id: 'a' } }) });
     await day.loadFeed();
     expect(mocks.filter.mock.calls.map(c => c[0])).toEqual(expect.arrayContaining([
-      'stop.itinerary = {:id} && at >= {:start} && at < {:end}', 'itinerary = {:id} && at >= {:start} && at < {:end}'
+      'stop.itinerary = {:id} && at >= {:start} && at < {:end}', 'itinerary = {:id} && at >= {:start} && at < {:end}',
+      // Photos taken before or after the crawl have no stop, only the route.
+      '(itinerary = {:id} || stop.itinerary = {:id}) && at >= {:start} && at < {:end}'
     ]));
     // A stale Workbox NetworkFirst read must never undo a confirmed Tab tap or clear feedError.
     expect(opts).toHaveLength(4);
