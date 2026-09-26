@@ -202,6 +202,7 @@ export const copy = {
   currentRoute: 'Current route',
   routeProgress: 'Route progress',
   tabTitle: 'Tab',
+  closeTab: 'Close the Tab',
   drink_beer: 'Beer',
   drink_cocktail: 'Cocktail',
   drink_shot: 'Shot',

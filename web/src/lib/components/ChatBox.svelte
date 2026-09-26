@@ -74,11 +74,12 @@
 
 <style>
   .composer { position: sticky; bottom: 0; background: #111; padding: 8px 0; margin-top: 12px; z-index: 4; }
-  /* The TabBar only mounts on the event day (see (app)/+layout.svelte); without it there is nothing
-     to clear, so the composer sits flush with the viewport bottom instead of leaving a phantom gap.
-     A practice day's footer banner is shorter but needs the same clearance. */
+  /* The TabBar mounts on the event day and on a practice day's Live (see (app)/+layout.svelte);
+     without it there is nothing to clear, so the composer sits flush with the viewport bottom. A
+     practice day's footer banner is shorter, and stacks on top of the TabBar when both show. */
   :global(body:has(.tabbar)) .composer { bottom: calc(64px + env(safe-area-inset-bottom)); }
   :global(body:has(.practice-banner)) .composer { bottom: calc(24px + env(safe-area-inset-bottom)); }
+  :global(body:has(.tabbar):has(.practice-banner)) .composer { bottom: calc(88px + env(safe-area-inset-bottom)); }
   .line { display: flex; gap: 8px; align-items: center; }
   .field { flex: 1; min-width: 0; display: flex; align-items: center; gap: 2px; background: #202020; border: 1px solid #444; border-radius: 24px; padding: 3px 4px; }
   .field :global(.icon) { border: 0; }

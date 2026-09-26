@@ -140,3 +140,10 @@ export async function deleteStopDirect(stopId: string): Promise<void> {
   const res = await fetch(`${PB}/api/collections/stops/records/${stopId}`, { method: 'DELETE', headers: { Authorization: token } });
   if (!res.ok) throw new Error(`Delete stop failed: ${res.status} ${await res.text()}`);
 }
+
+/** The Tab lives in a sheet over Live, opened from the tab bar. */
+export async function openTab(page: Page): Promise<void> {
+  if (await page.getByTestId('tab-sheet').isVisible()) return;
+  await page.getByTestId('tab-drinks').click();
+  await page.getByTestId('tab-sheet').waitFor();
+}

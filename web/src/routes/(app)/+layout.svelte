@@ -93,7 +93,8 @@
   {/if}
   {#if error}<p role="alert">{error}</p>{/if}
   {@render children()}
-  {#if liveDay.isEventDay}<TabBar />{/if}
+  <!-- The Tab opens from the tab bar, so a practice day's Live needs it too; practice stays off the other screens. -->
+  {#if liveDay.isEventDay || (liveDay.practice && onLive)}<TabBar />{/if}
   <Lightbox />
   {#if liveDay.composing}
     <BulletinSheet text="" onsend={(body) => void postBulletin(body)} onskip={() => (liveDay.composing = false)} ondismiss={() => (liveDay.composing = false)} />

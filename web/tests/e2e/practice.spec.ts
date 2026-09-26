@@ -1,5 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
-import { PB, clearLockedCrawls, login, seedLockedCrawl, superuserToken } from './helpers';
+import { PB, clearLockedCrawls, login, seedLockedCrawl, superuserToken, openTab } from './helpers';
 import { copy } from '../../src/lib/labels';
 
 const ADMIN = process.env.ADMIN_PASSWORD ?? 'admin-test-password';
@@ -47,7 +47,14 @@ test('on a practice day Live runs the route at today’s time with timetable tra
   await expect(page.getByTestId('departure-board')).toBeVisible();
   await expect(page.getByTestId('strip-stop-0')).toHaveAttribute('aria-current', 'step');
   await expect.poll(() => next.find((u) => u.includes('practice=1') && u.includes('date=2026-12-26'))).toBeTruthy();
-  await expect(page.getByTestId('tab-route')).toHaveCount(0); // TabBar is event-day only
+  // Live carries the tab bar on a practice day so the Tab can be opened; practice drinks count.
+  await expect(page.getByTestId('tab-bar')).toBeVisible();
+  await openTab(page);
+  await page.getByTestId('drink-beer').click();
+  await expect(page.getByTestId('drink-beer').locator('.count')).toHaveText('1');
+  // Other screens stay practice-free: no tab bar off Live.
+  await page.goto('/plan');
+  await expect(page.getByTestId('tab-bar')).toHaveCount(0);
 });
 
 test('a practice Bulletin pins on Live but not on the planner', async ({ page }) => {

@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test';
-import { login } from './helpers';
+import { login, openTab } from './helpers';
 
 const CREW = process.env.CREW_PASSWORD ?? 'crew-test-password';
 
@@ -33,10 +33,12 @@ test('the open Crew Board follows new users, drinks, undo and acknowledgements',
     const row = page.getByTestId('crew-row').filter({ hasText: 'E2E Roster Late Arrival' });
     await expect(row).toBeVisible();
     await crew.goto('/live');
+    await openTab(crew);
     await crew.getByTestId('drink-beer').click();
     await expect(row.locator('.tab > span[title="Beer"]')).toContainText('1');
     await crew.getByTestId('tab-undo').click();
     await expect(row.locator('.tab > span[title="Beer"]')).toContainText('0');
+    await crew.getByTestId('tab-close').click();
     await page.getByTestId('menu').click();
     await page.getByTestId('menu-bulletin').click();
     await page.getByTestId('bulletin-body').fill('Crew Board acknowledgement test.');

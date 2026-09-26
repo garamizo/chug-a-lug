@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test';
-import { clearLockedCrawls, login, seedLockedCrawl } from './helpers';
+import { clearLockedCrawls, login, openTab, seedLockedCrawl } from './helpers';
 test('live actions open the Tab and camera choices and share activity with the crew', async ({ page, browser }) => {
   await login(page, 'Chat Conductor', process.env.ADMIN_PASSWORD ?? 'admin-test-password');
   await clearLockedCrawls();
@@ -15,11 +15,13 @@ test('live actions open the Tab and camera choices and share activity with the c
     await login(other, 'Chat Crew', process.env.CREW_PASSWORD ?? 'crew-test-password');
     await other.goto('/live');
     await expect(other.getByTestId('action-bulletin')).toBeDisabled();
+    await openTab(page);
     await page.getByTestId('drink-beer').click();
     await expect(other.getByTestId('crew-chat')).toContainText('Chat Conductor');
     await expect(other.getByTestId('crew-chat')).toContainText('Beer');
     await page.getByTestId('tab-undo').click();
     await expect(other.getByTestId('crew-chat')).not.toContainText('Beer');
+    await page.getByTestId('tab-close').click();
     const picker = page.waitForEvent('filechooser');
     await page.getByTestId('attach-media').click();
     expect((await picker).isMultiple()).toBe(true);

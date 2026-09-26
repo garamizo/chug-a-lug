@@ -1,6 +1,7 @@
 <script lang="ts">
-  // The Departure Board: a ticket for the run the crawl has to catch. The whole card changes colour
-  // at Last Call and All Aboard so it registers without being read.
+  // The Departure Board: a ticket for the run the crawl has to catch, cut like Home's gold ticket
+  // (notches at the tear line, a raised edge). The whole ticket changes colour at Last Call and All
+  // Aboard so it registers without being read.
   import { copy } from '$lib/labels';
   import { fmtTime } from '$lib/time';
   import { boardState } from '$lib/live/board';
@@ -73,11 +74,16 @@
 
 <style>
   .wrap { padding: 6px 0 8px; }
-  .card { border-radius: 12px; padding: 10px 14px; display: flex; flex-direction: column; gap: 7px; }
-  .calm { background: #f2efe6; color: #141413; --faint: #6b6862; --rule: #c9c4b5; --edge: #c0bbac; }
-  .last { background: #ffb400; color: #111; --faint: rgba(17,17,17,.72); --rule: rgba(0,0,0,.28); --edge: rgba(0,0,0,.3); }
-  .aboard { background: #c0261c; color: #fff; --faint: rgba(255,255,255,.82); --rule: rgba(0,0,0,.28); --edge: rgba(0,0,0,.3); }
-  .head { display: flex; align-items: baseline; justify-content: space-between; gap: 10px;
+  /* The Home ticket's cut: side notches in the page colour at the tear line and a raised edge. */
+  .card { position: relative; border-radius: 14px; padding: 12px 18px 14px; display: flex; flex-direction: column; gap: 7px;
+    box-shadow: 0 6px 0 var(--edge); margin-bottom: 6px; }
+  .calm { background: linear-gradient(135deg, #ffcf4a, var(--gold, #ffb400)); color: #1a1406;
+    --faint: rgba(26,20,6,.7); --rule: rgba(0,0,0,.35); --edge: var(--gold-deep, #6b4c10); }
+  .last { background: linear-gradient(135deg, #ff9a3c, #e8590c); color: #1a0d04;
+    --faint: rgba(26,13,4,.74); --rule: rgba(0,0,0,.35); --edge: #7a2e05; }
+  .aboard { background: linear-gradient(135deg, #e0382b, #b01f16); color: #fff;
+    --faint: rgba(255,255,255,.84); --rule: rgba(0,0,0,.35); --edge: #5c0f0a; }
+  .head { opacity: .85; display: flex; align-items: baseline; justify-content: space-between; gap: 10px;
     font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 11px; letter-spacing: .12em; text-transform: uppercase; }
   .head .agency { font-weight: 700; }
   .head .run { color: var(--faint); }
@@ -90,7 +96,10 @@
   .where { font-size: 12px; color: var(--faint); }
   .stale { margin: 0; padding: 3px 7px; border-radius: 8px; border: 1px solid var(--rule);
     background: rgba(20,20,19,.07); font-size: 12px; line-height: 1.35; color: inherit; }
-  .lead { border-top: 1px dashed var(--rule); padding-top: 7px; margin: 0; }
+  .lead { position: relative; border-top: 2px dashed var(--rule); padding-top: 8px; margin: 0; }
+  .lead::before, .lead::after { content: ''; position: absolute; top: -11px; width: 20px; height: 20px; border-radius: 50%;
+    background: var(--board-page, #111); }
+  .lead::before { left: -28px; } .lead::after { right: -28px; }
   .big { font-size: 20px; font-weight: 800; line-height: 1.1; }
   .aboard .big { font-size: 22px; }
   .sub { font-size: 13px; margin-top: 4px; color: var(--faint); }

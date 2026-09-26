@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test';
-import { clearLockedCrawls, login, seedLockedCrawl } from './helpers';
+import { clearLockedCrawls, login, openTab, seedLockedCrawl } from './helpers';
 import { copy } from '../../src/lib/labels';
 
 const ADMIN = process.env.ADMIN_PASSWORD ?? 'admin-test-password';
@@ -15,6 +15,7 @@ test('one tap logs a drink at the current stop, and Undo takes it back', async (
   });
   await page.clock.install({ time: new Date('2026-12-26T19:00:00.000Z') });
   await page.goto('/live');
+  await openTab(page);
 
   const beer = page.getByTestId('drink-beer');
   await expect(beer).toContainText('0');
@@ -33,6 +34,7 @@ test('Tab offers five illustrated personal counters and a camera picker', async 
   await seedLockedCrawl({ ownerName: 'E2E Personal Tab', eventDate: DATE, startTime: '12:00', departAt: '2026-12-26T20:34:00Z', arriveAt: '2026-12-26T20:49:00Z' });
   await page.clock.install({ time: new Date('2026-12-26T19:00:00Z') });
   await page.goto('/live');
+  await openTab(page);
   await expect(page.getByTestId('drink-wine')).toHaveCount(0);
   await expect(page.getByTestId('drink-water')).toContainText('NA');
   await expect(page.getByTestId('camera-button')).toBeVisible();
@@ -46,6 +48,7 @@ async function tabDay(page: import('@playwright/test').Page, name: string) {
   await seedLockedCrawl({ ownerName: name, eventDate: DATE, startTime: '12:00', departAt: '2026-12-26T20:34:00Z', arriveAt: '2026-12-26T20:49:00Z' });
   await page.clock.install({ time: new Date('2026-12-26T19:00:00Z') });
   await page.goto('/live');
+  await openTab(page);
 }
 
 test('a drink that cannot be saved takes its tap back and says so', async ({ page }) => {
@@ -185,4 +188,25 @@ test('a second tap before the first toast fades retargets Undo, not the earlier 
   await page.getByTestId('tab-undo').click();
   await expect(page.getByTestId('drink-water').locator('.count')).toHaveText('0');
   await expect(page.getByTestId('drink-beer').locator('.count')).toHaveText('1');
+});
+
+test('the tab bar opens the Tab over Live from any screen, and it closes without losing the count', async ({ page }) => {
+  await tabDay(page, 'E2E Tab Sheet');
+  await page.getByTestId('drink-beer').click();
+  await expect(page.getByTestId('tab-toast')).toBeVisible();
+  await page.keyboard.press('Escape');
+  await expect(page.getByTestId('tab-sheet')).toHaveCount(0);
+  // The toast outlives the sheet, and the bar carries the day's count.
+  await expect(page.getByTestId('tab-toast')).toBeVisible();
+  await expect(page.getByTestId('tab-bar-total')).toHaveText('1');
+  await expect(page.getByTestId('tab-menu')).toHaveCount(0);
+
+  await page.getByTestId('tab-crew').click();
+  await expect(page).toHaveURL(/\/crew$/);
+  await page.getByTestId('tab-drinks').click();
+  await expect(page).toHaveURL(/\/live$/);
+  await expect(page.getByTestId('tab-sheet')).toBeVisible();
+  await expect(page.getByTestId('drink-beer').locator('.count')).toHaveText('1');
+  await page.getByTestId('tab-scrim').click({ position: { x: 10, y: 10 } });
+  await expect(page.getByTestId('tab-sheet')).toHaveCount(0);
 });

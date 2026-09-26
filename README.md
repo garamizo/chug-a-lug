@@ -82,7 +82,7 @@ users see. Bars and restaurants keep their plain names.
 | Crew chat message | **Message** | Plain | Anyone can post; never pinned |
 | Computed chat milestone | **Milestone** | Plain | Worked out from the Tab and Freight, never stored |
 | Event log | **Train Sheet** | Rail, the dispatcher's log | |
-| Drink log | **Tab** | Bar | |
+| Drink log | **Tab** | Bar | Opens as a sheet over Live from the tab bar's 🍻 Tab button |
 | Scoreboard | **Hall of Fame** | Sports | |
 | Awards | **Golden Spikes** | Rail | |
 | Media uploads | **Freight** | Rail | |
@@ -149,7 +149,11 @@ Goal: nobody misses a train, nobody is lost, and the plan can change without cha
 
 - **Departure Board** is read-only: the full board on Live and a compact banner on every other
   signed-in screen on the event day. It shows the current stop, next train (scheduled and live ETA),
-  walk time to the platform and countdown, with Last Call and All Aboard warnings.
+  walk time to the platform and countdown, with Last Call and All Aboard warnings. On Live it is cut
+  like the Home Ticket (notches, tear line, raised edge): gold, deep orange at Last Call, red at All
+  Aboard. Before the crawl starts it counts down to the train the plan starts on, not merely the next
+  one, falling back to the next train once the planned one has left. Service alerts sit above it as
+  bubbles; each one closes with its X, remembered on that phone until Metra issues a new alert.
 - Next-train logic works from the static schedule when the live feed is missing or stale, and says so.
 - **Where the crawl is** comes from the clock over the locked itinerary. The Conductor corrects it in
   the route editor; the same save adjusts the remaining plan. The anchor is the newest admin
@@ -172,15 +176,17 @@ Goal: nobody misses a train, nobody is lost, and the plan can change without cha
   Bulletin. Ranking uses shot + cocktail + beer, then non-alcoholic drinks, then food. It does not track individual locations.
 - **Live** reads top to bottom: the route strip (punched stops, 🚂 where the crew is, tap any stop), the
   Departure Board, the current stop (tap for its sheet: hours, walking directions, call, photos), the
-  one-tap Tab with the day's personal total and an Undo toast, Bulletin, the leaderboard line
-  and the crew chat, whose chat box also sends photos and videos to the current stop's Freight. On the event day a tab bar (Live · The Route · Crew Board · Menu) replaces the
-  back links and opening the app lands on Live. Stop sheets and the photo viewer close with the back
+  Bulletin, the leaderboard line and the crew chat, whose chat box also sends photos and videos at any
+  time. On the event day a tab bar (Live · The Route · Crew Board · Tab) replaces the back links; the
+  menu stays in the header. Opening the app lands on Live, but the logo still reaches Home. On a
+  practice day Live shows the tab bar too, under the Practice strip. Stop sheets and the photo viewer close with the back
   gesture and never leave the screen underneath.
 - **Crew chat** merges Tab activity, Bulletins, Freight, computed milestones (firsts, crew totals, a
   new leader, the first photo at each stop) and messages anyone can post (280 characters, own delete).
   Everyone can Cheers any entry once. Only Conductor Bulletins are pinned.
-- **The Tab** is a one-tap row of shot / cocktail / beer / non-alcoholic / food buttons, always visible
-  above the live actions, with personal counters per drink and a running total for the day. A tap logs
+- **The Tab** is a one-tap row of shot / cocktail / beer / non-alcoholic / food buttons in a sheet
+  opened from the tab bar (from any screen it goes to Live first; X, a tap outside or Escape closes
+  it, and it stays open between taps), with personal counters per drink and a running total for the day. A tap logs
   a drink at the current stop instantly; a toast with Undo confirms it, and it stays up (with a retry
   if the delete fails) until it fades or another tap replaces it — after which "Undo my last one here"
   still undoes your newest entry at the stop. The Tab and Freight are available only while the position

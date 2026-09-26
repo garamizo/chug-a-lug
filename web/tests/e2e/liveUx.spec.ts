@@ -1,5 +1,5 @@
 import { expect, test, type Locator, type Page } from '@playwright/test';
-import { clearLockedCrawls, login, seedLockedCrawl } from './helpers';
+import { clearLockedCrawls, login, seedLockedCrawl, openTab } from './helpers';
 import { copy } from '../../src/lib/labels';
 
 const ADMIN = process.env.ADMIN_PASSWORD ?? 'admin-test-password';
@@ -159,6 +159,7 @@ test('a photo shared in chat gets an accessible open label', async ({ page }) =>
 
 test('the crew chat celebrates the first beer', async ({ page }) => {
   await liveDay(page, 'E2E Milestone');
+  await openTab(page);
   await page.getByTestId('drink-beer').click();
   await expect(page.getByTestId('crew-chat').locator('article.milestone')).toContainText('First of the day: Beer · E2E Milestone');
 });
@@ -191,7 +192,9 @@ test('the Conductor reaches the locked-route editor from Live, not a direct link
 
 test('the leaderboard line puts me on the podium and opens the Crew Board', async ({ page }) => {
   await liveDay(page, 'E2E Podium');
+  await openTab(page);
   await page.getByTestId('drink-beer').click();
+  await page.getByTestId('tab-close').click();
   await expect(page.getByTestId('leaderboard')).toContainText('you 1');
   await expect(page.getByRole('link', { name: /Leaderboard: .*you 1/ })).toBeVisible();
   await page.getByTestId('leaderboard').click();

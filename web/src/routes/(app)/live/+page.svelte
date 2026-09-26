@@ -23,10 +23,15 @@
   import DepartureBoard from '$lib/components/DepartureBoard.svelte';
   import AlertBubbles from '$lib/components/AlertBubbles.svelte';
   import TabRow from '$lib/components/TabRow.svelte';
+  import TabSheet from '$lib/components/TabSheet.svelte';
+  import { ui } from '$lib/ui.svelte';
+  import { onDestroy } from 'svelte';
   import FreightStrip from '$lib/components/FreightStrip.svelte';
   import Leaderboard from '$lib/components/Leaderboard.svelte';
 
   let error = $state('');
+  // The Tab sheet is Live's: leaving Live closes it.
+  onDestroy(() => { ui.tabOpen = false; });
   // Upload trouble shows in the chat box that sent the photos, not up by the Tab.
   let uploadError = $state('');
   let uploading = $state(false);
@@ -158,23 +163,33 @@
   <RouteStrip items={strip} onopen={openStop} />
 {/if}
 {#if liveDay.practice}<p class="practice-banner" data-testid="practice-badge" title={copy.practiceHint}>{copy.practiceBadge}</p>{/if}
-<!-- `!pending.length` keeps the fallback off a tap still in flight: while it's non-empty,
-     tabEntries carries drafts with no saved row yet, and deleting one 404s (or races a later
-     upsertDrink back in). Once pending is empty, tabEntries is exactly liveDay.feed.drinks, so
-     tally()'s lastMine can only be a saved entry. -->
-<TabRow entries={tabEntries} stopId={tabStop?.id ?? null} userId={me} total={dayTotal} {clinking}
-  showUndoLast={!toast && !pending.length}
-  onlog={(kind) => void logDrink(kind)} onundo={(entry) => void undoDrink(entry)} />
 <div class="actions">
   <button class="action speaker" data-testid="action-bulletin" disabled={!$auth.user?.is_admin || !liveDay.itinerary} title={!$auth.user?.is_admin ? copy.conductorBulletinOnly : copy.tellTheCrew} onclick={() => liveDay.composing = true}><span aria-hidden="true">📣</span>{copy.bulletinAction}</button>
 </div>
 {#if tabStop && liveDay.media.length}<FreightStrip media={liveDay.media} />{/if}
-{#if error}<p role="alert">{error}</p>{/if}
-{#if toast}
-  <div class="toast" role="status" data-testid="tab-toast">
-    <span>{copy.tabAdded} {drinkIcons[toast.kind]} {(copy as Record<string, string>)[`drink_${toast.kind}`]}</span>
-    <button type="button" onclick={() => void undoDrink(toast!)} data-testid="tab-undo">{copy.undoDrink}</button>
-  </div>
+{#if error && !ui.tabOpen}<p role="alert">{error}</p>{/if}
+{#snippet toastView()}
+  {#if toast}
+    <div class="toast" class:floating={!ui.tabOpen} role="status" data-testid="tab-toast">
+      <span>{copy.tabAdded} {drinkIcons[toast.kind]} {(copy as Record<string, string>)[`drink_${toast.kind}`]}</span>
+      <button type="button" onclick={() => void undoDrink(toast!)} data-testid="tab-undo">{copy.undoDrink}</button>
+    </div>
+  {/if}
+{/snippet}
+{#if ui.tabOpen && liveDay.hasRoute}
+  <TabSheet onclose={() => (ui.tabOpen = false)}>
+    <!-- `!pending.length` keeps the fallback off a tap still in flight: while it's non-empty,
+         tabEntries carries drafts with no saved row yet, and deleting one 404s (or races a later
+         upsertDrink back in). Once pending is empty, tabEntries is exactly liveDay.feed.drinks, so
+         tally()'s lastMine can only be a saved entry. -->
+    <TabRow entries={tabEntries} stopId={tabStop?.id ?? null} userId={me} total={dayTotal} {clinking}
+      showUndoLast={!toast && !pending.length}
+      onlog={(kind) => void logDrink(kind)} onundo={(entry) => void undoDrink(entry)} />
+    {#if error}<p role="alert">{error}</p>{/if}
+    {@render toastView()}
+  </TabSheet>
+{:else}
+  {@render toastView()}
 {/if}
 
 <Leaderboard {leaders} />
@@ -188,10 +203,13 @@
 {/if}
 
 <style>
-  /* A flat strip pinned to the foot of the screen. Practice days have no TabBar to share it with. */
+  /* A flat strip pinned to the foot of the screen, just above the TabBar. */
   .practice-banner { position: fixed; left: 0; right: 0; bottom: 0; z-index: 15; margin: 0; padding: 4px 0 calc(4px + env(safe-area-inset-bottom));
     background: #1d3440; color: #bfe3f2; text-align: center; font-size: 11px; font-weight: 700; letter-spacing: .14em; text-transform: uppercase; line-height: 1.4; }
   :global(body:has(.practice-banner)) { padding-bottom: calc(24px + env(safe-area-inset-bottom)); }
+  :global(body:has(.tabbar)) .practice-banner { bottom: calc(64px + env(safe-area-inset-bottom)); padding-bottom: 4px; }
+  :global(body:has(.tabbar):has(.practice-banner)) { padding-bottom: calc(88px + env(safe-area-inset-bottom)); }
+  :global(body:has(.tabbar):has(.practice-banner)) .toast.floating { bottom: calc(100px + env(safe-area-inset-bottom)); }
   .actions { display: grid; grid-template-columns: minmax(0, 1fr); gap: 10px; padding: 0 0 14px; align-items: start; }
   .action { display: flex; width: 100%; margin: 0; flex-direction: row; align-items: center; justify-content: center; gap: 8px; border-radius: 16px; padding: 8px 5px; border: 1px solid #b5873b; color: #ffe3a3; background: linear-gradient(145deg, #443319, #211b13); box-shadow: 0 3px 0 #695024; font-size: 13px; }
   .action span { font-size: 22px; line-height: 1.2; }
@@ -199,8 +217,9 @@
   .speaker { background: linear-gradient(145deg, #403050, #241d2d); border-color: #886a9b; box-shadow: 0 3px 0 #574363; color: #efdcff; }
   .action:disabled { opacity: .45; box-shadow: none; }
   .stale { margin: 12px 0; padding: 10px 12px; border: 1px solid #555; border-radius: 9px; font-size: 13px; color: #cfcfcf; }
-  .toast { position: fixed; left: 50%; bottom: calc(76px + env(safe-area-inset-bottom)); transform: translateX(-50%); z-index: 16;
-    display: flex; align-items: center; gap: 14px; padding: 8px 8px 8px 16px; border-radius: 999px; background: #f2efe6; color: #111;
-    font-weight: 700; box-shadow: 0 6px 20px #000a; }
+  .toast { display: flex; justify-content: space-between; align-items: center; gap: 14px; padding: 8px 8px 8px 16px; border-radius: 999px; background: #f2efe6; color: #111;
+    font-weight: 700; margin-top: 10px; }
+  .toast.floating { position: fixed; left: 50%; bottom: calc(76px + env(safe-area-inset-bottom)); transform: translateX(-50%); z-index: 16;
+    margin: 0; box-shadow: 0 6px 20px #000a; }
   .toast button { width: auto; min-height: 36px; margin: 0; padding: 6px 14px; border-radius: 999px; background: #111; color: #ffb400; }
 </style>
