@@ -55,7 +55,7 @@ export type Leg = RecordModel & {
 };
 
 export type Vote = RecordModel & { user: string; target_collection: string; target_id: string; value: 'up' | 'down' };
-export type Comment = RecordModel & { user: string; target_collection: string; target_id: string; body: string; expand?: { user?: UserRecord } };
+export type Comment = RecordModel & { user: string; target_collection: string; target_id: string; body: string; file?: string; expand?: { user?: UserRecord } };
 export type ApprovalVote = RecordModel & { itinerary: string; user: string; value: 'go' | 'nogo'; expand?: { user?: UserRecord } };
 
 /** `served` is set when the stations were asked for a date: false means no train stops there that day. */

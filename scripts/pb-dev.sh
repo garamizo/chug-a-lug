@@ -15,4 +15,6 @@ PB_HTTP="${PB_HTTP:-127.0.0.1:8090}"
 mkdir -p "$PB_DATA_DIR"
 ARGS=(--dir "$PB_DATA_DIR" --migrationsDir "$ROOT/pocketbase/pb_migrations" --hooksDir "$ROOT/pocketbase/pb_hooks")
 pocketbase/pocketbase superuser upsert "$PB_ADMIN_EMAIL" "$PB_ADMIN_PASSWORD" "${ARGS[@]}" >/dev/null
-exec pocketbase/pocketbase serve --dev --http "$PB_HTTP" "${ARGS[@]}"
+# Disposable test servers set PB_AUTOMIGRATE=false so a test that edits collections never writes
+# migration files into the repository.
+exec pocketbase/pocketbase serve --dev --http "$PB_HTTP" --automigrate="${PB_AUTOMIGRATE:-true}" "${ARGS[@]}"

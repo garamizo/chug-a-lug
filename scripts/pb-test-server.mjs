@@ -12,7 +12,7 @@ const directory = await mkdtemp(join(tmpdir(), 'chugalug-pb-test-'));
 const child = spawn('bash', ['scripts/pb-dev.sh', directory], {
   cwd: root, stdio: 'inherit',
   env: {
-    ...process.env, PB_SKIP_ENV: '1', PB_HTTP: `127.0.0.1:${port}`,
+    ...process.env, PB_SKIP_ENV: '1', PB_AUTOMIGRATE: 'false', PB_HTTP: `127.0.0.1:${port}`,
     PB_ADMIN_EMAIL: 'tests@chugalug.invalid', PB_ADMIN_PASSWORD: 'local-test-password-only',
     CREW_PASSWORD: 'crew-test-password', ADMIN_PASSWORD: 'admin-test-password'
   }
