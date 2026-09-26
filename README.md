@@ -94,6 +94,13 @@ users see. Bars and restaurants keep their plain names.
 | Left early | **Deadhead** | Rail | |
 | Home station | **Home Terminal** | Rail | |
 | Metra proxy service | **Dispatcher** | Rail | Internal name; never shown to users |
+| Home card for the current route | **Ticket** | Rail | Gold, with the route's title, date/start time and a day countdown; links to `/route`, or to `/plan` with no route yet |
+| Home and Route Planner list layout | **Departure board** | Rail | Split-flap rows: destination, subtitle, status chip |
+| The one message composer | **Chat box** | Plain | Emoji tray, photo/video and camera, send; shared by Live's crew chat and the planner's comments |
+| Midpoint of the unfolded line | **Turn around** | Rail | Divides the going stops (Aurora → Chicago) from the return stops (Chicago → Aurora) |
+
+Only the builder and the Conductor can change a route: reroute it, hold or annul a stop, add an extra
+one, lock it, or delete it.
 
 ---
 

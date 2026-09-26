@@ -30,7 +30,7 @@ test('crew login by name and shared password persists in a cookie, then logs out
   await expect(page).toHaveURL(/\/login$/);
 });
 
-test('admin password makes the name a Conductor', async ({ page }) => {
+test('the admin password logs in the same way as the crew password', async ({ page }) => {
   await page.goto('/login');
   await page.getByTestId('name-input').fill('e2e boss');
   await page.getByTestId('password').fill(ADMIN);

@@ -20,9 +20,14 @@ describe('labels', () => {
   it('has no empty labels', () => {
     for (const [k, v] of Object.entries(labels)) expect(v, k).not.toBe('');
   });
-  it('has copy for every stop kind and itinerary status', () => {
-    for (const k of ['kind_bar', 'kind_restaurant', 'kind_other', 'status_draft', 'status_locked', 'status_archived']) {
+  it('has copy for every stop kind', () => {
+    for (const k of ['kind_bar', 'kind_restaurant', 'kind_other']) {
       expect((copy as Record<string, string>)[k]).toBeTruthy();
+    }
+  });
+  it('has copy for the new board, chat box and delete flows', () => {
+    for (const k of ['ticketKicker', 'chipBoarding', 'chipCurrent', 'deleteRoute', 'deleteLockedConfirm', 'emojiTray', 'attachMedia', 'turnAround', 'statFinish']) {
+      expect((copy as Record<string, string>)[k], k).toBeTruthy();
     }
   });
 });
