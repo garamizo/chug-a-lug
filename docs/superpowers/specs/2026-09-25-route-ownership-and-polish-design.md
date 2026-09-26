@@ -219,8 +219,8 @@ edit any.
   - Planner (`nav-plan`): subtitle "N drafts · vote open" (the vote part only when some draft has
     `vote_open`); status chip `BOARDING`.
   - Live (`nav-live` when `liveDay.hasRoute`): subtitle `liveHint`; chip `PRACTICE` when a route
-    exists and today is not its event date, else the short event date; without a route, not a
-    link and chip `SOON`.
+    exists and today is not its event date, `TODAY` on the event date (home redirects to Live
+    then, so it shows only for an instant); without a route, not a link and chip `SOON`.
   - Wrap-up: not a link, chip `SOON`.
 - Draft count: one `getList(1, 1, { filter: "status = 'draft'" })` for `totalItems`, plus one
   for `vote_open = true`, loaded on mount and refreshed by the existing `itineraries`
