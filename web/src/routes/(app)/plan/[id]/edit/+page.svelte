@@ -1,17 +1,20 @@
 <script lang="ts">
   // Editing the stops. A draft is written as it is edited; The Route on the day is staged and saved
   // in one go, so the crew never sees a half-finished change.
+  import { untrack } from 'svelte';
   import { clientClock } from '$lib/sim/clock.svelte';
-  import { goto } from '$app/navigation';
+  import { goto, replaceState } from '$app/navigation';
+  import { page } from '$app/state';
   import { auth } from '$lib/pb';
   import { api } from '$lib/api';
   import { copy } from '$lib/labels';
   import { canDelete, canEditSettings, canEditStops } from '$lib/permissions';
   import { draftFrom, loadDraft, watchDraft, type Draft } from '$lib/draft';
   import { deleteRoute } from '$lib/planList';
+  import { cloneRoute } from '$lib/cloneRoute';
   import { liveDay } from '$lib/live/day.svelte';
   import { recordActions, type PlanActions } from '$lib/planActions';
-  import { addStop, commitPayload, moveStop, newRecordId, removeStop, setAnchor, setDwell, stagePlan, type StagedPlan, type StagedStop } from '$lib/live/staged';
+  import { addStop, commitPayload, moveStop, newRecordId, removeStop, setAnchor, setDwell, setTitle, stagePlan, type StagedPlan, type StagedStop } from '$lib/live/staged';
   import { insertionIndex, plannerStations } from '$lib/lineMap';
   import { bulletinKind, bulletinText, planDiff, type BulletinKind, type PlanSnapshot } from '$lib/live/diff';
   import { previewPlan } from '$lib/live/preview';
@@ -109,6 +112,18 @@
     try { sessionStorage.removeItem(PARK_KEY); } catch { /* private mode */ }
   }
 
+  // Arriving from Clone: the name box opens selected once; drop the flag so a reload does not. Read
+  // per route, not per component: cloning from this editor reuses it for the new route's editor.
+  let selectTitle = $state(false);
+  $effect(() => {
+    void data.id;
+    untrack(() => {
+      selectTitle = page.url.searchParams.get('named') === '1';
+      // Dev builds throw here on a cold load, before the router starts; the flag then just stays.
+      if (selectTitle) try { replaceState(page.url.pathname, {}); } catch { /* router not started */ }
+    });
+  });
+
   $effect(() => {
     draft = null; error = ''; saveError = ''; plan = null; before = null; previewLegs = [];
     void load(draftFrom(data.early, data.id));
@@ -165,7 +180,13 @@
       void goto(`/plan/${data.id}/add?station=${encodeURIComponent(stationId)}&side=${side}&staged=1`);
     },
     get anchorStopId() { return plan?.anchorStopId ?? null; },
-    setAnchor: (stopId) => { if (plan) plan = setAnchor(plan, stopId); }
+    setAnchor: (stopId) => { if (plan) plan = setAnchor(plan, stopId); },
+    // Staged like the rest, but checked now so "taken" shows on blur, not at Save.
+    rename: async (title) => {
+      try { await api(`/api/plan/title-check?title=${encodeURIComponent(title)}&route=${data.id}`); }
+      catch (err) { throw err instanceof TypeError ? new Error(copy.noSignal) : err; }
+      if (plan) plan = setTitle(plan, title);
+    }
   };
 
   // A venue picked on the add screen comes back through sessionStorage and slots into the staged
@@ -233,6 +254,15 @@
   // The Conductor's staged live editor never deletes mid-edit — that path is the view page's
   // `delete-route`, which always lands on `/plan` afterward, not this editor.
   const mayDelete = $derived(!!draft && canDelete(draft.itinerary, $auth.user) && !live);
+  let cloning = $state(false);
+  async function clone() {
+    if (!draft) return;
+    cloning = true; error = '';
+    try { const id = await cloneRoute(draft.itinerary); await goto(`/plan/${id}/edit?named=1`); }
+    catch (err) { error = (err as Error).message || copy.genericError; }
+    finally { cloning = false; }
+  }
+
   async function removeRoute() {
     if (!draft) return;
     error = '';
@@ -244,6 +274,7 @@
 <nav class="bar">
   {#if draft}<IconLink href="/plan/{draft.itinerary.id}" icon="back" label={copy.doneEditing} testid="done-editing" />{:else}<IconLink href="/plan" icon="back" label={copy.backToPlanner} />{/if}
   <span class="sp"></span>
+  {#if draft && !live && $auth.user}<IconButton icon="copy" label={copy.cloneRoute} onclick={() => void clone()} disabled={cloning} testid="clone-route" />{/if}
   {#if mayDelete}<IconButton icon="delete" tone="danger" label={copy.deleteRoute} onclick={() => void removeRoute()} testid="delete-route" />{/if}
 </nav>
 {#if error}<p class="error" role="alert">{error}</p>{/if}
@@ -260,11 +291,11 @@
     <p>{copy.working}</p>
   {:else}
     <ItineraryView
-      itinerary={draft.itinerary}
+      itinerary={live && plan?.title !== undefined ? { ...draft.itinerary, title: plan.title } : draft.itinerary}
       stops={live && plan ? plan.stops : draft.stops}
       photos={live && plan ? stopPhotos(draft.stops) : undefined}
       legs={live ? previewLegs : draft.legs}
-      {editable} {canManage}
+      {editable} {canManage} {selectTitle}
       actions={live ? stagedActions : recordActions(draft.itinerary.id, (m) => (error = m))}
       onerror={(m) => (error = m)} onopenstop={openStop} />
     <!-- Over the editor, not away from it: the staged plan lives in this component. Edit details

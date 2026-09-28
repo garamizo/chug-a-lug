@@ -6,6 +6,7 @@
   import { canDelete, canEditStops } from '$lib/permissions';
   import { draftFrom, loadDraft, watchDraft, type Draft } from '$lib/draft';
   import { deleteRoute } from '$lib/planList';
+  import { cloneRoute } from '$lib/cloneRoute';
   import { recordActions } from '$lib/planActions';
   import { liveDay } from '$lib/live/day.svelte';
   import { setCurrentRoute } from '$lib/live/route';
@@ -47,6 +48,15 @@
     finally { choosing = false; }
   }
 
+  let cloning = $state(false);
+  async function clone() {
+    if (!draft) return;
+    cloning = true; error = '';
+    try { const id = await cloneRoute(draft.itinerary); await goto(`/plan/${id}/edit?named=1`); }
+    catch (err) { error = (err as Error).message || copy.genericError; }
+    finally { cloning = false; }
+  }
+
   async function removeRoute() {
     if (!draft) return;
     error = '';
@@ -58,6 +68,7 @@
 <nav class="bar">
   <IconLink href="/plan" icon="back" label={copy.backToPlanner} />
   <span class="sp"></span>
+  {#if draft && $auth.user}<IconButton icon="copy" label={copy.cloneRoute} onclick={() => void clone()} disabled={cloning} testid="clone-route" />{/if}
   {#if draft && canEdit}<IconLink href="/plan/{draft.itinerary.id}/edit" icon="edit" label={copy.editDraft} testid="edit-draft" />{/if}
   {#if draft && mayDelete}<IconButton icon="delete" tone="danger" label={copy.deleteRoute} onclick={() => void removeRoute()} testid="delete-route" />{/if}
 </nav>

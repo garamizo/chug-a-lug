@@ -6,6 +6,7 @@
   import { liveDay } from '$lib/live/day.svelte';
   import { canDelete, canEditSettings } from '$lib/permissions';
   import { countBy, deleteRoute, routeChip, sortRoutes } from '$lib/planList';
+  import { titleError } from '$lib/routeTitle';
   import Board from '$lib/components/Board.svelte';
   import BoardRow from '$lib/components/BoardRow.svelte';
   import IconButton from '$lib/components/IconButton.svelte';
@@ -62,7 +63,7 @@
     try {
       const record = await pb.collection('itineraries').create<Itinerary>({ title: title.trim(), created_by: $auth.user?.id });
       await goto(`/plan/${record.id}/edit`);
-    } catch (err) { error = (err as Error).message || copy.genericError; }
+    } catch (err) { error = titleError(err) ?? ((err as Error).message || copy.genericError); }
     finally { busy = false; }
   }
 

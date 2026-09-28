@@ -12,7 +12,7 @@
   import StopRow from './StopRow.svelte';
   import LegRow from './LegRow.svelte';
 
-  let { itinerary, stops, legs, editable, canManage, actions, onerror, onopenstop, photos, builder, current, belowHeader }: {
+  let { itinerary, stops, legs, editable, canManage, actions, onerror, onopenstop, photos, builder, current, belowHeader, selectTitle }: {
     itinerary: Itinerary; stops: StopLike[]; legs: Leg[]; editable: boolean; canManage: boolean; actions: PlanActions; onerror?: (message: string) => void;
     /** Card photos by stop id, for staged stops that carry no place; otherwise read off each stop. */
     photos?: Record<string, string>;
@@ -24,6 +24,8 @@
     current?: boolean;
     /** Rendered right under the header, above the line — the view page's cheers pills. */
     belowHeader?: Snippet;
+    /** Focus the name with its text selected, for a route that was just cloned. */
+    selectTitle?: boolean;
   } = $props();
 
   const sorted = $derived([...stops].sort((a, b) => a.order - b.order || (a.created ?? '').localeCompare(b.created ?? '')));
@@ -100,6 +102,26 @@
 
   const finish = $derived(finishAt(sorted.map((_, i) => leaveAt(i))));
 
+  // The name is edited in place. Leaving the box renames; a refused name stays in the box with the
+  // reason under it, and the saved title only changes once the server accepts one.
+  let titleInput = $state<HTMLInputElement>();
+  let titleText = $state('');
+  let titleError = $state('');
+  let titleFocused = false;
+  $effect(() => { const saved = itinerary.title; if (!titleFocused && !titleError) titleText = saved; });
+  onMount(() => { if (selectTitle) void tick().then(() => { titleInput?.focus(); titleInput?.select(); }); });
+  async function commitTitle() {
+    titleFocused = false;
+    const next = titleText.trim();
+    if (!next || next === itinerary.title) { titleText = itinerary.title; titleError = ''; return; }
+    try { await actions.rename!(next); titleError = ''; }
+    catch (err) { titleError = (err as Error).message || copy.genericError; }
+  }
+  function titleKey(e: KeyboardEvent) {
+    if (e.key === 'Enter') { e.preventDefault(); titleInput?.blur(); }
+    else if (e.key === 'Escape') { titleText = itinerary.title; titleError = ''; titleInput?.blur(); }
+  }
+
 </script>
 
 {#snippet card(i: number)}
@@ -132,7 +154,16 @@
 
 <header class="it">
   <span class="k">{itinerary.status === 'draft' ? copy.kindDraftRoute : itinerary.status === 'locked' ? copy.kindTheRoute : copy.kindArchived}</span>
-  <h1>{itinerary.title}</h1>
+  {#if canManage && actions.rename}
+    <!-- The heading's text is the box's value: an embedded text box names its heading. -->
+    <!-- svelte-ignore a11y_missing_content -->
+    <h1><input bind:this={titleInput} bind:value={titleText} class="title" maxlength="80" aria-label={copy.routeName}
+      aria-invalid={!!titleError} data-testid="route-title" onfocus={() => (titleFocused = true)}
+      onblur={() => void commitTitle()} onkeydown={titleKey} /></h1>
+    {#if titleError}<p class="error" role="alert" data-testid="route-title-error">{titleError}</p>{/if}
+  {:else}
+    <h1>{itinerary.title}</h1>
+  {/if}
   <div class="chips">
     {#if builder}<span class="chip">{copy.byBuilder} {builder}</span>{/if}
     <span class="chip">{fmtDate(itinerary.event_date)}</span>
@@ -194,6 +225,8 @@
   .it { background: var(--board-bg); border: 2px solid #333; border-radius: 12px; padding: 12px 14px; margin: 4px 0 12px; }
   .it .k { font-size: 11px; letter-spacing: .14em; text-transform: uppercase; color: var(--gold); font-weight: 800; }
   .it h1 { font-family: var(--mono); color: var(--gold-soft); text-transform: uppercase; font-size: 24px; margin: 4px 0 8px; overflow-wrap: anywhere; }
+  .it h1 .title { font: inherit; color: inherit; text-transform: inherit; width: 100%; margin: 0; padding: 0 0 2px; min-height: 0; background: transparent; border: 0; border-bottom: 1px dashed #555; border-radius: 0; }
+  .it h1 .title:focus { outline: none; border-bottom-color: var(--gold-soft); }
   .chips { display: flex; flex-wrap: wrap; gap: 6px; }
   .chip { font-size: 12px; font-weight: 700; padding: 3px 9px; border-radius: 999px; background: #222; color: #ccc; }
   .chip.go { background: var(--metra); color: #031; }

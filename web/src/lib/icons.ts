@@ -1,6 +1,6 @@
 // One stroke-icon set for the whole app (24x24, round caps). Words stay in labels.ts and become
 // each control's accessible name.
-export type IconName = 'back' | 'edit' | 'delete' | 'add' | 'up' | 'down' | 'send' | 'attach' | 'camera' | 'emoji' | 'keyboard' | 'close';
+export type IconName = 'back' | 'edit' | 'delete' | 'add' | 'up' | 'down' | 'send' | 'attach' | 'camera' | 'emoji' | 'keyboard' | 'close' | 'copy';
 
 export const ICONS: Record<IconName, string[]> = {
   back: ['M15 5l-7 7 7 7'],
@@ -14,5 +14,6 @@ export const ICONS: Record<IconName, string[]> = {
   camera: ['M4 8h3l2-3h6l2 3h3v11H4z', 'M12 16a3 3 0 100-6 3 3 0 000 6z'],
   emoji: ['M12 21a9 9 0 100-18 9 9 0 000 18z', 'M8.5 14.5s1.3 2 3.5 2 3.5-2 3.5-2', 'M9 10h.01', 'M15 10h.01'],
   close: ['M6 6l12 12', 'M18 6L6 18'],
+  copy: ['M8 8h11v11H8z', 'M5 16V5h11'],
   keyboard: ['M3 7h18v10H3z', 'M7 11h.01', 'M11 11h.01', 'M15 11h.01', 'M8 14h8']
 };

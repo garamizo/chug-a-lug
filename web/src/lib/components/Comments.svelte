@@ -48,7 +48,8 @@
     menu.close();
     try { await pb.collection('comments').delete(c.id); await load(); } catch (err) { error = (err as Error).message || copy.genericError; }
   }
-  const canDelete = (c: Comment) => c.user === me || !!$auth.user?.is_admin;
+  // A note is the server's record of a clone or rename: only the admin may clear one away.
+  const canDelete = (c: Comment) => c.kind ? !!$auth.user?.is_admin : c.user === me || !!$auth.user?.is_admin;
   const isVideo = (c: Comment) => /\.(mp4|mov|webm)$/i.test(c.file ?? '');
   const withFiles = $derived(comments.filter((c) => c.file));
   const viewer = $derived<LightboxItem[]>(withFiles.map((c) => ({ url: pb.files.getURL(c, c.file!, { thumb: '1200x0' }), full: pb.files.getURL(c, c.file!), kind: isVideo(c) ? 'video' : 'image', caption: c.expand?.user?.name ?? '' })));
@@ -62,10 +63,17 @@
     {#each comments as c (c.id)}
       {@const mine = c.user === me}
       <!-- svelte-ignore a11y_no_noninteractive_tabindex, a11y_no_noninteractive_element_interactions -->
-      <article class:mine class:open={menu.openFor === c.id} tabindex={canDelete(c) ? 0 : undefined}
+      <article class:mine={mine && !c.kind} class:note={!!c.kind} class:open={menu.openFor === c.id} data-testid={c.kind ? `note-${c.kind}` : undefined} tabindex={canDelete(c) ? 0 : undefined}
         onpointerdown={(e) => { if (canDelete(c)) menu.start(e, c.id); }} onpointermove={(e) => menu.move(e)} onpointerup={() => menu.cancel()} onpointercancel={() => menu.cancel()} onpointerleave={() => menu.cancel()}
         oncontextmenu={(e) => { if (!canDelete(c)) return; e.preventDefault(); menu.open(c.id); }}
         onkeydown={(e) => { if (canDelete(c) && e.key === 'Enter' && e.target === e.currentTarget) { e.preventDefault(); menu.open(c.id); } }}>
+        {#if c.kind}
+          <p>
+            <strong>{c.expand?.user?.name ?? '…'}</strong>
+            {#if c.kind === 'renamed'}{copy.noteRenamedFrom} “{c.meta?.from}” {copy.noteRenamedTo} “{c.meta?.to}”
+            {:else}{c.kind === 'cloned_from' ? copy.noteClonedFrom : copy.noteClonedTo} <a href="/plan/{c.meta?.route}">{c.meta?.title}</a>{/if}
+          </p>
+        {:else}
         {#if !mine}<strong class="who" style:color={nameColour(c.user)}>{c.expand?.user?.name ?? '…'}</strong>{/if}
         {#if c.file}
           <button type="button" class="photo" aria-label={isVideo(c) ? copy.openFreightVideo : copy.openFreightPhoto} data-testid="comment-photo-{c.id}"
@@ -74,6 +82,7 @@
           </button>
         {/if}
         {#if c.body}<p>{c.body}<span class="pad"></span></p>{/if}
+        {/if}
         <time datetime={c.created}>{fmtDateTime(c.created)}</time>
         {#if menu.openFor === c.id}
           <div class="menu"><button type="button" class="del" onclick={() => void remove(c)} data-testid="comment-delete-{c.id}">{copy.deleteMessage}</button></div>
@@ -102,6 +111,10 @@
   .pad { display: inline-block; width: 124px; }
   time { position: absolute; right: 8px; bottom: 3px; font-size: 11px; color: #9a927f; font-variant-numeric: tabular-nums; pointer-events: none; }
   .empty { color: #aaa; }
+  article.note { align-self: center; max-width: 95%; background: transparent; border: 1px dashed #3a352b; border-radius: 10px; text-align: center; }
+  article.note p { color: #b8ad96; font-size: 13px; }
+  article.note a { color: #ffce5c; }
+  article.note time { position: static; display: block; }
   .menu { position: absolute; z-index: 5; top: calc(100% + 4px); left: 0; display: flex; gap: 6px; padding: 6px; border-radius: 12px;
     background: #2b2821; border: 1px solid #4a4030; box-shadow: 0 6px 18px #000a; }
   .mine .menu { left: auto; right: 0; }
