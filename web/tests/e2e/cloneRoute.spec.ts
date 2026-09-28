@@ -121,7 +121,10 @@ test('Save waits for a pending rename: a refusal keeps the Conductor on the edit
   await expect(page.getByTestId('bulletin-skip')).toHaveCount(0);
   await page.unroute('**/api/plan/title-check**');
 
-  // A slow but successful check: Save still waits for it, then the saved route is renamed.
+  // A slow but successful check: Save still waits for it, then the saved route is renamed. The
+  // earlier refusal left Save disabled until a correction lands (see the "rejected rename" test
+  // below), so — unlike the taken-name case above — the new attempt has to be started with an
+  // explicit blur (Tab) rather than by clicking the still-disabled Save button itself.
   let releaseOk: (() => void) | undefined;
   const okGate = new Promise<void>((resolve) => { releaseOk = resolve; });
   await page.route('**/api/plan/title-check**', async (route) => {
@@ -130,7 +133,7 @@ test('Save waits for a pending rename: a refusal keeps the Conductor on the edit
   });
   const okName = `Slow OK ${RUN}`;
   await page.getByTestId('route-title').fill(okName);
-  await page.getByTestId('save-plan').click();
+  await page.getByTestId('route-title').press('Tab');
   await expect(page.getByTestId('save-plan')).toBeDisabled();
   releaseOk?.();
   // The rename lands (the box already carries the new name): once the fresh route check the title
@@ -141,4 +144,69 @@ test('Save waits for a pending rename: a refusal keeps the Conductor on the edit
   await page.getByTestId('bulletin-skip').click();
   await expect(page).toHaveURL(new RegExp(`/plan/${itineraryId}$`));
   await expect(page.getByTestId('note-renamed')).toContainText(okName);
+});
+
+test('a rejected rename keeps Save blocked once the refusal has already landed, until it is corrected or cancelled', async ({ page }) => {
+  await clearLockedCrawls();
+  await login(page, 'E2E Stuck Rename Conductor', ADMIN);
+  const { itineraryId } = await seedLockedCrawl({ ownerName: 'E2E Stuck Rename Conductor', eventDate: '2026-12-26', startTime: '12:00',
+    departAt: '2026-12-26T20:34:00.000Z', arriveAt: '2026-12-26T20:49:00.000Z', extraVenueAtFirstStation: true });
+  await page.goto(`/plan/${itineraryId}/edit`);
+  await page.getByTestId('set-here-1').click();
+  await expect(page.getByTestId('save-plan')).toBeEnabled();
+
+  await page.route('**/api/plan/title-check**', (route) => route.fulfill({
+    status: 400, contentType: 'application/json', body: JSON.stringify({ message: copy.titleTaken })
+  }));
+  const takenName = `Stuck Taken ${RUN}`;
+  await page.getByTestId('route-title').fill(takenName);
+  // Blur and WAIT for the refusal to land — unlike the slow-rename test above, `renaming` has
+  // already resolved (and been cleared) by the time Save is considered below.
+  await page.getByTestId('route-title').press('Tab');
+  await expect(page.getByTestId('route-title-error')).toHaveText(copy.titleTaken);
+
+  // The tracker that gated the earlier test is gone now; Save must still refuse to publish the
+  // previously staged (taken) title and navigate away.
+  await expect(page.getByTestId('save-plan')).toBeDisabled();
+  await expect(page).toHaveURL(new RegExp(`/plan/${itineraryId}/edit$`));
+  await expect(page.getByTestId('bulletin-skip')).toHaveCount(0);
+
+  // Escape explicitly cancels the rejected rename and restores the saved title; Save works again.
+  await page.getByTestId('route-title').click();
+  await page.getByTestId('route-title').press('Escape');
+  await expect(page.getByTestId('route-title-error')).toBeHidden();
+  await expect(page.getByTestId('save-plan')).toBeEnabled();
+  await page.getByTestId('save-plan').click();
+  await page.getByTestId('bulletin-skip').click();
+  await expect(page).toHaveURL(new RegExp(`/plan/${itineraryId}$`));
+});
+
+test('a rename still checking when Add is clicked is awaited before the staged plan is parked', async ({ page }) => {
+  page.on('dialog', (d) => d.accept());
+  await clearLockedCrawls();
+  await login(page, 'E2E Delayed Rename Conductor', ADMIN);
+  const { itineraryId } = await seedLockedCrawl({ ownerName: 'E2E Delayed Rename Conductor', eventDate: '2026-12-26', startTime: '12:00',
+    departAt: '2026-12-26T20:34:00.000Z', arriveAt: '2026-12-26T20:49:00.000Z', extraVenueAtFirstStation: true });
+  await page.goto(`/plan/${itineraryId}/edit`);
+
+  let releaseOk: (() => void) | undefined;
+  const okGate = new Promise<void>((resolve) => { releaseOk = resolve; });
+  await page.route('**/api/plan/title-check**', async (route) => {
+    await okGate;
+    await route.fulfill({ contentType: 'application/json', body: JSON.stringify({ ok: true }) });
+  });
+  const renamed = `Delayed Add Rename ${RUN}`;
+  await page.getByTestId('route-title').fill(renamed);
+  // Clicking a station dot blurs the box (starting the still-pending check) and, on the buggy
+  // path, parks and navigates immediately without waiting for it.
+  await page.getByTestId('station-dot-CUS').click();
+  releaseOk?.();
+  await expect(page).toHaveURL(new RegExp(`/plan/${itineraryId}/add\\?station=CUS&side=left&staged=1$`));
+  await page.getByTestId('manual-name').fill('Prairie Path Tap');
+  await page.getByTestId('manual-add').click();
+
+  // Back from the picker: the staged title must be the new name, not the one parked before the
+  // check landed.
+  await expect(page).toHaveURL(new RegExp(`/plan/${itineraryId}/edit$`));
+  await expect(page.getByTestId('route-title')).toHaveValue(renamed);
 });

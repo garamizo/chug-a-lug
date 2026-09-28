@@ -21,6 +21,11 @@ export type PlanActions = {
   setAnchor?: (stopId: string) => void;
   /** Present where the name may change. Rejects with copy the name box shows under itself. */
   rename?: (title: string) => Promise<void>;
+  /** Present alongside `rename`: called when the box reverts an in-progress rename without
+   *  committing it — Escape, or a blur back to an empty/unchanged value — so a caller tracking a
+   *  refusal separately from `rename`'s own promise (see the live editor's `renameRefused`) knows
+   *  to clear it. `ItineraryView` still writes nothing itself; this is just a notification. */
+  renameCancelled?: () => void;
 };
 
 /** The draft behaviour: every change is a write, and the recompute hook follows it. */

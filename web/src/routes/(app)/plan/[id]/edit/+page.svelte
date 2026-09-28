@@ -54,6 +54,14 @@
   // Clone need not wait on `draft`'s realtime reload to see it.
   let renaming = $state<Promise<void> | null>(null);
   let renamedTitle = $state<string | null>(null);
+  // `renaming` only covers the check while it is in flight — `trackRename`'s `finally` clears it
+  // the moment the promise settles, success or refusal. A refused rename's error stays under the
+  // box (`ItineraryView`'s `titleError`) long after that, so Save has to track the refusal
+  // separately or a click landing after the error has already shown (not racing it) would find
+  // `renaming` already null and sail through, publishing the stale staged title. Cleared on a
+  // successful rename, or when the box tells us (via `renameCancelled`) that the Conductor backed
+  // out of it — Escape, or a blur back to an empty/unchanged value.
+  let renameRefused = $state(false);
   function trackRename(rename: (title: string) => Promise<void>): (title: string) => Promise<void> {
     return (title) => {
       const p = rename(title).then(() => { renamedTitle = title; });
@@ -150,7 +158,7 @@
 
   $effect(() => {
     draft = null; error = ''; saveError = ''; plan = null; before = null; previewLegs = [];
-    renaming = null; renamedTitle = null;
+    renaming = null; renamedTitle = null; renameRefused = false;
     void load(draftFrom(data.early, data.id));
     // A staged edit must not be clobbered by the realtime reload, so on The Route only the first
     // load builds the plan (see `load`); the watcher keeps the draft path live as before.
@@ -201,18 +209,38 @@
     move: (stopId, dir) => { if (plan) plan = moveStop(plan, stopId, dir); },
     remove: (stopId) => { if (plan) plan = removeStop(plan, stopId); },
     add: (stationId, side) => {
-      park();
-      void goto(`/plan/${data.id}/add?station=${encodeURIComponent(stationId)}&side=${side}&staged=1`);
+      // A rename in flight from the name box (its blur can land right before this click) has to
+      // land before the plan is parked, or a slow "ok" answer only updates the departed editor's
+      // state — see `renaming`'s comment. A refused rename leaves its error under the box and the
+      // Conductor on this screen instead of the venue picker.
+      void (async () => {
+        if (renaming) { try { await renaming; } catch { return; } }
+        park();
+        await goto(`/plan/${data.id}/add?station=${encodeURIComponent(stationId)}&side=${side}&staged=1`);
+      })();
     },
     get anchorStopId() { return plan?.anchorStopId ?? null; },
     setAnchor: (stopId) => { if (plan) plan = setAnchor(plan, stopId); },
     // Staged like the rest, but checked now so "taken" shows on blur, not at Save. Tracked so Save
-    // can wait for it: see `renaming` above.
+    // can wait for it: see `renaming` above. `renameRefused` outlives `renaming` itself, so Save
+    // stays blocked even once the tracker has cleared.
     rename: trackRename(async (title) => {
-      try { await api(`/api/plan/title-check?title=${encodeURIComponent(title)}&route=${data.id}`); }
-      catch (err) { throw err instanceof TypeError ? new Error(copy.noSignal) : err; }
-      if (plan) plan = setTitle(plan, title);
-    })
+      // A fresh attempt supersedes whatever an earlier one left behind — cleared up front, not
+      // just on success, so a retry starting is enough to let Save consider trying again once
+      // this one settles (`renaming` alone keeps it disabled meanwhile).
+      renameRefused = false;
+      try {
+        try { await api(`/api/plan/title-check?title=${encodeURIComponent(title)}&route=${data.id}`); }
+        catch (err) { throw err instanceof TypeError ? new Error(copy.noSignal) : err; }
+        if (plan) plan = setTitle(plan, title);
+      } catch (err) {
+        renameRefused = true;
+        throw err;
+      }
+    }),
+    // The box reverted the in-progress rename (Escape, or a blur back to the unchanged/empty
+    // value) without committing it: any refusal it was showing no longer applies.
+    renameCancelled: () => { renameRefused = false; }
   };
 
   // A venue picked on the add screen comes back through sessionStorage and slots into the staged
@@ -244,6 +272,9 @@
     // if the disabled attribute hasn't painted yet. A refused rename leaves its error under the
     // box; Save must not paper over it by committing and navigating away.
     if (renaming) { try { await renaming; } catch { return; } }
+    // A rename refused earlier, whose error is still showing under the box, is not covered by
+    // `renaming` any more (it cleared once the check settled) — see `renameRefused`'s comment.
+    if (renameRefused) return;
     if (!plan || !before || blockers.length || simBlocked || previewPending || saving || pending) return;
     const departAt = (stopId: string) => previewLegs.find((l) => l.from_stop === stopId)?.depart_at ?? null;
     const changes = planDiff(before, snapshot(plan), departAt);
@@ -356,7 +387,7 @@
             {#each blockers as blocker (blocker.message)}<li>{blocker.message}</li>{/each}
           </ul>
         {/if}
-        <button type="button" onclick={() => void askToTell()} disabled={!!blockers.length || simBlocked || previewPending || saving || !!pending || !!renaming} data-testid="save-plan">
+        <button type="button" onclick={() => void askToTell()} disabled={!!blockers.length || simBlocked || previewPending || saving || !!pending || !!renaming || renameRefused} data-testid="save-plan">
           {saving ? copy.saving : copy.savePlan}
         </button>
       </div>

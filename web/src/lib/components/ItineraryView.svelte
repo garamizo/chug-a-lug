@@ -113,7 +113,7 @@
   async function commitTitle() {
     titleFocused = false;
     const next = titleText.trim();
-    if (!next || next === itinerary.title) { titleText = itinerary.title; titleError = ''; return; }
+    if (!next || next === itinerary.title) { titleText = itinerary.title; titleError = ''; actions.renameCancelled?.(); return; }
     try { await actions.rename!(next); titleError = ''; }
     catch (err) { titleError = (err as Error).message || copy.genericError; }
   }
