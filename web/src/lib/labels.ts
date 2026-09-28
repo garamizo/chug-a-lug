@@ -137,6 +137,8 @@ export const copy = {
   cloneTitlePrefix: 'Copy of',
   titleTaken: 'Another route already has that name.',
   titleInvalid: 'Give the route a name of 1 to 80 characters.',
+  cloneRoute: 'Clone route',
+  routeGone: 'That route no longer exists.',
   chipDraft: 'Draft',
   chipVoteOpen: 'Vote open',
   chipLocked: 'Locked',
