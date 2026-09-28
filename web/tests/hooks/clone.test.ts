@@ -58,6 +58,15 @@ describe('POST /api/crawl/clone', () => {
     expect(await list('itineraries', `title_key~"copy of"`, cloner.token)).toHaveLength(1);
   });
 
+  it('a different user replaying the same clone gets a conflict, not the clone', async () => {
+    const id = newId();
+    const body = { source: source.id, id, title: 'Copy of Loop Crawl' };
+    expect((await clone(cloner.token, body)).status).toBe(200);
+    expect((await clone(owner.token, body)).status).toBe(409);
+    expect(await list('stops', `itinerary="${id}"`, cloner.token)).toHaveLength(2);
+    expect(await list('comments', `target_id="${source.id}"`, cloner.token)).toHaveLength(1);
+  });
+
   it('never touches an existing route that is not this clone', async () => {
     const mine = await (await post('/api/collections/itineraries/records', { title: 'Mine locked' }, cloner.token)).json();
     await patch(`/api/collections/itineraries/records/${mine.id}`, { status: 'locked' }, admin.token);

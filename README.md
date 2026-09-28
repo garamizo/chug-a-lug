@@ -100,11 +100,12 @@ users see. Bars and restaurants keep their plain names.
 | Home and Route Planner list layout | **Station board** | Rail | Split-flap rows: destination, subtitle, status chip |
 | The one message composer | **Chat box** | Plain | Emoji tray, photo/video and camera, send; shared by Live's crew chat and the planner's comments |
 | Midpoint of the unfolded line | **Turn around** | Rail | Divides the going stops (Aurora → Chicago) from the return stops (Chicago → Aurora) |
-| Clone-route action | **Clone route** | Plain | Copies any route (yours or not, any status) into a new draft of your own — stops included, a note left on both routes — in one transaction |
-| Clone with a source that's gone | **That route no longer exists.** | Plain | The route being cloned was deleted before the clone finished |
 
 A draft can be changed or deleted only by its builder or the Conductor; once locked, only the Conductor
 can change or delete it.
+
+Cloning copies any route, yours or not and in any status, into a new draft of your own — stops
+included, a note left on both routes — in one transaction; nothing about the source is touched.
 
 A route name is 1–80 characters after trimming, stored trimmed, and must be unique across every route
 regardless of status, compared case-insensitively with runs of spaces collapsed; keeping a route's own
