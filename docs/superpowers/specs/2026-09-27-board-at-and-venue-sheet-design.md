@@ -24,8 +24,10 @@ issue seen on 2026-09-27.
 
 ### Data
 
-- Migration: `itineraries.start_station` (text, optional, max 32). Empty means today's behaviour:
-  Start is the arrival at stop 1.
+- Migration: `itineraries.start_station` (text, optional, max 32) and `start_station_name` (text,
+  optional, max 80), written together, as stops carry `station_id` and `station_name`, so Live can
+  name the station without loading the schedule. Empty means today's behaviour: Start is the arrival
+  at stop 1.
 - Migration: `legs.from_stop` becomes optional (still a relation, still cascade-delete). A leg with an
   empty `from_stop` is the route's **opening leg**: from `start_station` to stop 1.
 - `pb_hooks/planning.pb.js`: `start_station` joins `title/event_date/start_time` in the non-admin
@@ -60,10 +62,21 @@ Every reader that keys by `from_stop` must tolerate the opening leg:
   arrives 11:31 Naperville"), under a "Board at {station} · {Start}" line.
 - `$lib/live/current.ts` `timings`: stop 1 arrives at the opening leg's `arrive_at` when present.
   `outgoing` must ignore the empty key.
-- `$lib/live/board.ts` `plannedTrain`: the opening leg sorts first (order −1), so before the crawl the
-  ticket counts down to the train at the start station. `day.svelte.ts`'s `plannedTrip` asks for the
-  start station (when set) instead of stop 1's station while `here.source === 'before'`, and the
-  board shows the start station as "here".
+- `$lib/live/board.ts` `plannedTrain`: the opening leg sorts first (order −1).
+- Live before the crawl gets a **boarding journey**. New `LiveDay.boarding` getter: when
+  `here.source === 'before'`, the route has a `start_station` different from stop 1's station, and the
+  opening leg is a train, it is `{ from: start_station, fromName: start_station_name,
+  to: stop1.station_id, toName: stop1.station_name, walkMin: 0, planned: first train segment of the
+  opening leg }`; otherwise null. Everything that today reads `here.stop` / `here.onwardStop` /
+  `here.stop.walk_min` for the countdown reads `boarding` first when it is set:
+  - `loadTrains()` fetches `boarding.from → boarding.to` (after max(now, planned dep − 60 s)) instead of
+    returning early for a single-stop route or asking for the onward journey;
+  - `plannedTrip` is `boarding.planned`;
+  - the Live page's and the Home banner's `DepartureBoard` show `fromName` as the station, `toName` as
+    the next station, the stop's name as the destination venue, and `walkMin = 0` (the crew meets at
+    the platform).
+  Once `here.source` leaves `before` (Start passes, or an anchor exists), Live behaves exactly as
+  today.
 - `$lib/live/cohesion.ts` (`impossibleFromAnchor`, `cohesionBlockers`), the edit page's `departAt`
   and `planDiff`: the opening leg is included. An impossible opening leg blocks Save like any other
   impossible leg ahead of the anchor, and counts as history once an anchor exists.
@@ -102,10 +115,13 @@ Every reader that keys by `from_stop` must tolerate the opening leg:
   editor (`openStop`), without an Add button. Close returns to the editor via `closeStop` (history
   back for a pushed sheet), leaving staged edits untouched.
 - `StopSheet` accepts the stops the editor has (staged stops may lack `expand.place`): it takes an
-  optional `photos` map (stop id → URLs) from the editor, as `ItineraryView` already receives, and a
-  staged stop without a database id hides the "Edit details" link.
+  optional `photos` map (stop id → URLs) from the editor, as `ItineraryView` already receives.
+- **Edit details** (the link to the stop detail page) appears in the editor's sheet only on the draft
+  path, whose edits are already written as they are made. On the staged Route editor it is hidden:
+  `plan` and `before` are component state, so leaving the page would discard staged changes.
 - The stop detail page's back button goes to `history.back()` when the app navigated there, else to
-  the draft page, so reaching it from the sheet and backing out lands in the editor.
+  the draft page, so a draft reaching it from the editor's sheet and backing out lands in the editor
+  (which reloads from the database, where those edits already are).
 
 ## Error handling
 
@@ -122,5 +138,10 @@ Every reader that keys by `from_stop` must tolerate the opening leg:
 - Hooks: a leg with empty `from_stop` saves; changing `start_station` on a draft recomputes and
   writes the opening leg; a non-admin cannot change it on a locked route.
 - Unit: `/api/places/photos` fetches once and a second call makes no Google request.
-- e2e: Board at Aurora moves stop 1's arrival past the first train; Add Stop tap opens the venue
+- Unit (`day` / board helpers): `boarding` is set only before the crawl with a train opening leg; a
+  single-stop route fetches `start_station → stop 1` trains; a route whose onward journey differs
+  still counts down to the opening train; walk allowance 0.
+- e2e: Board at Aurora moves stop 1's arrival past the first train; before the crawl the Live ticket
+  names Aurora and the opening train; the Route editor's sheet has no Edit details, and a staged
+  change survives opening and closing the sheet; Add Stop tap opens the venue
   sheet, Add adds it; edit screen stop tap opens the sheet and Close leaves the URL on `/edit`.
