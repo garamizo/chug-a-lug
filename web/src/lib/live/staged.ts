@@ -32,7 +32,7 @@ export type StagedStop = {
   place?: string; place_id?: string; osm_id?: string; address?: string; lat?: number; lon?: number;
   phone?: string; website?: string;
 };
-export type StagedPlan = { stops: StagedStop[]; anchorStopId: string | null; removed: string[] };
+export type StagedPlan = { stops: StagedStop[]; anchorStopId: string | null; removed: string[]; title?: string };
 
 const renumber = (stops: StagedStop[]): StagedStop[] => stops.map((s, i) => ({ ...s, order: i + 1 }));
 const sorted = (stops: StagedStop[]) => [...stops].sort((a, b) => a.order - b.order);
@@ -86,5 +86,13 @@ export function setAnchor(plan: StagedPlan, stopId: string): StagedPlan {
 }
 
 export function commitPayload(plan: StagedPlan, itineraryId: string) {
-  return { itinerary: itineraryId, anchorStopId: plan.anchorStopId ?? '', stops: plan.stops, removed: plan.removed };
+  return {
+    itinerary: itineraryId, anchorStopId: plan.anchorStopId ?? '', stops: plan.stops, removed: plan.removed,
+    ...(plan.title !== undefined ? { title: plan.title } : {})
+  };
+}
+
+/** A rename waits for Save like every other edit to The Route. */
+export function setTitle(plan: StagedPlan, title: string): StagedPlan {
+  return { ...plan, title };
 }

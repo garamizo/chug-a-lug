@@ -4,6 +4,7 @@
 import { goto } from '$app/navigation';
 import { pb } from '$lib/pb';
 import { copy } from '$lib/labels';
+import { titleError } from '$lib/routeTitle';
 import type { Stop } from '$lib/types';
 
 export type PlanActions = {
@@ -18,6 +19,8 @@ export type PlanActions = {
   /** Set only by the live editor: which stop the crew is standing in, and how to change it. */
   anchorStopId?: string | null;
   setAnchor?: (stopId: string) => void;
+  /** Present where the name may change. Rejects with copy the name box shows under itself. */
+  rename?: (title: string) => Promise<void>;
 };
 
 /** The draft behaviour: every change is a write, and the recompute hook follows it. */
@@ -53,6 +56,10 @@ export function recordActions(itineraryId: string, onerror: (message: string) =>
     },
     add(stationId, side) {
       void goto(`/plan/${itineraryId}/add?station=${encodeURIComponent(stationId)}&side=${side}`);
+    },
+    async rename(title) {
+      try { await pb.collection('itineraries').update(itineraryId, { title }); }
+      catch (err) { throw new Error(titleError(err) ?? ((err as Error).message || copy.genericError)); }
     }
   };
 }

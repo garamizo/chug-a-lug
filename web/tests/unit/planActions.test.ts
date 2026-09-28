@@ -75,3 +75,19 @@ describe('recordActions', () => {
     vi.restoreAllMocks();
   });
 });
+
+describe('rename', () => {
+  it('writes the title', async () => {
+    await recordActions('itinerary000001', () => {}).rename!('New name');
+    expect(calls.update.at(-1)).toEqual(['itinerary000001', { title: 'New name' }]);
+  });
+  it('rejects with copy when the name is taken', async () => {
+    const pb = await import('$lib/pb');
+    vi.spyOn(pb.pb, 'collection').mockReturnValue({
+      update: async () => { throw Object.assign(new Error('Title_taken.'), { response: { message: 'Title_taken.' } }); }
+    } as never);
+    const { copy } = await import('$lib/labels');
+    await expect(recordActions('itinerary000001', () => {}).rename!('Taken')).rejects.toThrow(copy.titleTaken);
+    vi.restoreAllMocks();
+  });
+});

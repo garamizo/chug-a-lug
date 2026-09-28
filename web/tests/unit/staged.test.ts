@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { addStop, commitPayload, moveStop, newRecordId, removeStop, setAnchor, setDwell, stagePlan } from '../../src/lib/live/staged';
+import { addStop, commitPayload, moveStop, newRecordId, removeStop, setAnchor, setDwell, setTitle, stagePlan } from '../../src/lib/live/staged';
 import type { Stop } from '../../src/lib/types';
 
 const record = (id: string, order: number, name: string, station = 'LAGRANGE'): Stop => ({
@@ -106,5 +106,12 @@ describe('commitPayload', () => {
     expect(commitPayload(plan, 'itinerary000001')).toEqual({
       itinerary: 'itinerary000001', anchorStopId: 'b', removed: ['c'], stops: plan.stops
     });
+  });
+});
+
+describe('setTitle', () => {
+  it('stages a title that Save sends; no title staged sends none', () => {
+    expect(commitPayload(base(), 'itinerary000001')).not.toHaveProperty('title');
+    expect(commitPayload(setTitle(base(), 'New name'), 'itinerary000001')).toMatchObject({ title: 'New name' });
   });
 });

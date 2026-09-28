@@ -18,14 +18,18 @@ export function cloneTitle(source: string, n: number): string {
 }
 
 /**
- * The hooks answer a bad name with the code as the message (`BadRequestError('title_taken')`),
- * but PocketBase's ApiError sentenizes every message for display — capitalizes it and appends a
- * period if missing — turning `title_taken` into `Title_taken.` on the wire. Undo that before
- * matching so the hook's code and this check stay in step regardless of PocketBase's formatting.
+ * The hooks answer with the code as the message (`BadRequestError('title_taken')`), but
+ * PocketBase's ApiError sentenizes every message for display — capitalizes it and appends a
+ * period if missing — turning `title_taken` into `Title_taken.` on the wire. Undo that so a
+ * hook's code and a client-side check of it stay in step regardless of PocketBase's formatting.
  */
-export function titleError(err: unknown): string | null {
+export function hookCode(err: unknown): string | null {
   const e = err as { response?: { message?: string }; message?: string } | null;
   const raw = e?.response?.message ?? e?.message;
-  const code = raw?.toLowerCase().replace(/\.$/, '');
+  return raw?.toLowerCase().replace(/\.$/, '') ?? null;
+}
+
+export function titleError(err: unknown): string | null {
+  const code = hookCode(err);
   return code === 'title_taken' ? copy.titleTaken : code === 'title_invalid' ? copy.titleInvalid : null;
 }

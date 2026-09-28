@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { cloneTitle, normalizeTitle, titleError, TITLE_MAX } from '../../src/lib/routeTitle';
+import { cloneTitle, hookCode, normalizeTitle, titleError, TITLE_MAX } from '../../src/lib/routeTitle';
 import { copy } from '../../src/lib/labels';
 
 describe('normalizeTitle', () => {
@@ -28,10 +28,18 @@ describe('cloneTitle', () => {
   });
 });
 
+describe('hookCode', () => {
+  it('undoes PocketBase sentence-casing of the hook message, from a response or a plain Error', () => {
+    expect(hookCode({ response: { message: 'Title_taken.' } })).toBe('title_taken');
+    expect(hookCode(new Error('Route_gone.'))).toBe('route_gone');
+    expect(hookCode(null)).toBeNull();
+  });
+});
+
 describe('titleError', () => {
-  it('maps the hook codes to copy, from a PocketBase error or a plain Error', () => {
-    expect(titleError({ response: { message: 'title_taken' } })).toBe(copy.titleTaken);
-    expect(titleError(new Error('title_invalid'))).toBe(copy.titleInvalid);
+  it('maps the hook codes to copy, from a PocketBase error (sentence-cased on the wire) or a plain Error', () => {
+    expect(titleError({ response: { message: 'Title_taken.' } })).toBe(copy.titleTaken);
+    expect(titleError(new Error('Title_invalid.'))).toBe(copy.titleInvalid);
     expect(titleError(new Error('boom'))).toBeNull();
   });
 });
