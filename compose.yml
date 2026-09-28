@@ -8,6 +8,14 @@ services:
     environment:
       SIM: "0"
       WEB_INTERNAL_URL: http://web:3000
+    # The web server signs in as this superuser for every venue lookup and recompute. Upsert it from
+    # .env on every start, so a fresh or restored database (or a rotated password) cannot lock it out.
+    command:
+      - /bin/sh
+      - -ec
+      - |
+        /pb/pocketbase superuser upsert "$$PB_ADMIN_EMAIL" "$$PB_ADMIN_PASSWORD" --dir=/pb/pb_data --migrationsDir=/pb/pb_migrations >/dev/null
+        exec /pb/pocketbase serve --http=0.0.0.0:8090 --dir=/pb/pb_data --hooksDir=/pb/pb_hooks --migrationsDir=/pb/pb_migrations
     volumes:
       # Runtime state lives outside the checkout (see scripts/up.sh), so git can never delete it.
       - ${CHUG_DATA:-${HOME}/.chug-a-lug}/pb_data:/pb/pb_data

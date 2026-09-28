@@ -18,6 +18,9 @@
   `~/.chug-a-lug/places/budget.json` (monthly Google call counters). Venues, their details and photos live in
   PocketBase (`places`, `place_lookups`), so they are covered by the database backup.
 - Secrets: `.env` (never committed). Metra token file in `.secrets/`.
+- The PocketBase superuser (`PB_ADMIN_EMAIL` / `PB_ADMIN_PASSWORD`) is upserted from `.env` every time the
+  pocketbase container starts, so a fresh or restored database needs no manual setup; change the password
+  in `.env` and restart pocketbase to rotate it. The web server signs in with it for venue lookups and recomputes.
 - Dashboards: Cloudflare Zero Trust → Networks → Tunnels → `chugalug`; PocketBase admin at http://127.0.0.1:8090/_/ from the box.
 
 ## Local development
