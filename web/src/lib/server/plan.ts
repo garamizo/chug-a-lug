@@ -82,7 +82,8 @@ export function activeAnchor(
 
 /** Leg times for a set of stops, in UTC. Pure apart from reading the cached GTFS schedule. */
 export async function computeLegs(opts: {
-  context?: ClockContext; date: string; startMin: number; anchor?: { stopId: string; at: string } | null; stops: PlanStop[];
+  context?: ClockContext; date: string; startMin: number; anchor?: { stopId: string; at: string } | null;
+  startStation?: string | null; stops: PlanStop[];
 }): Promise<PlannedLeg[]> {
   const schedule = await metra.getSchedule(opts.context);
   return computeWithSchedule(schedule, opts);

@@ -109,18 +109,26 @@ export function planLeg(s: Schedule, from: string, to: string, atStationMin: num
 
 /**
  * Walk the itinerary: at stop 1 at startMin, dwell, walk to the station, ride, walk to the next
- * venue. With an `anchor`, the anchored stop's arrival is the anchor minute instead of whatever the
- * incoming leg produced, so a crawl that is running late re-plans from where it is. Legs before the
- * anchor keep the times they always had: they are history, not a forecast.
+ * venue — or, with a start station, after the ride from there to stop 1. With an `anchor`, the
+ * anchored stop's arrival is the anchor minute instead of whatever the incoming leg produced, so a
+ * crawl that is running late re-plans from where it is. Legs before the anchor keep the times they
+ * always had: they are history, not a forecast.
  */
 export function recomputeLegs(
   s: Schedule,
-  opts: { date: string; startMin: number; anchor?: Anchor | null },
+  opts: { date: string; startMin: number; anchor?: Anchor | null; startStation?: string | null },
   stops: StopInput[]
 ): ComputedLeg[] {
   const sorted = [...stops].sort((a, b) => a.order - b.order);
   const legs: ComputedLeg[] = [];
   let arrival = opts.startMin;
+  const first = sorted[0];
+  if (opts.startStation && first) {
+    const plan = planLeg(s, opts.startStation, first.station_id, opts.startMin, opts.date);
+    const arriveMin = (plan.kind === 'impossible' ? opts.startMin : plan.arriveMin) + first.walk_min;
+    legs.push({ fromStopId: '', toStopId: first.id, kind: plan.kind, readyMin: opts.startMin, departMin: plan.departMin, arriveMin, segments: plan.segments });
+    arrival = arriveMin;
+  }
   for (let i = 0; i + 1 < sorted.length; i++) {
     const a = sorted[i], b = sorted[i + 1];
     if (opts.anchor && a.id === opts.anchor.stopId) arrival = opts.anchor.atMin;

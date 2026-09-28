@@ -152,3 +152,46 @@ describe('recomputeLegs with an anchor', () => {
     expect(ghost).toEqual(plain);
   });
 });
+
+describe('recomputeLegs with a start station', () => {
+  const stops = [
+    { id: 's1', order: 1, station_id: 'LAGRANGE', dwell_min: 60, walk_min: 5 },
+    { id: 's2', order: 2, station_id: 'CUS', dwell_min: 60, walk_min: 4 }
+  ];
+
+  it('rides from the start station to stop 1 before anything else', () => {
+    const legs = recomputeLegs(s, { date: D, startMin: 660, startStation: 'NAPERVILLE' }, stops);
+    // BN2 leaves Naperville 12:05, La Grange 12:30, plus the 5 min walk.
+    expect(legs[0]).toMatchObject({ fromStopId: '', toStopId: 's1', kind: 'train', readyMin: 660, departMin: 725, arriveMin: 755 });
+    expect(legs[0].segments[0]).toMatchObject({ kind: 'train', tripId: 'BN2', from: 'NAPERVILLE' });
+    // Stop 1 then dwells 60 and walks 5: at the platform 13:40, BN4 at 14:30 reaches CUS 14:55 (+4).
+    expect(legs[1]).toMatchObject({ fromStopId: 's1', toStopId: 's2', readyMin: 815, departMin: 870, arriveMin: 899 });
+  });
+
+  it('is a walk when stop 1 is at the start station', () => {
+    const legs = recomputeLegs(s, { date: D, startMin: 660, startStation: 'LAGRANGE' }, stops);
+    expect(legs[0]).toMatchObject({ fromStopId: '', toStopId: 's1', kind: 'walk', readyMin: 660, arriveMin: 665 });
+  });
+
+  it('is impossible with no train, and stop 1 is then reached at Start plus its walk', () => {
+    const legs = recomputeLegs(s, { date: D, startMin: 1380, startStation: 'NAPERVILLE' }, stops);
+    expect(legs[0]).toMatchObject({ fromStopId: '', kind: 'impossible', arriveMin: 1385 });
+  });
+
+  it('plans an opening leg even for a single stop', () => {
+    const legs = recomputeLegs(s, { date: D, startMin: 660, startStation: 'NAPERVILLE' }, [stops[0]]);
+    expect(legs).toHaveLength(1);
+    expect(legs[0]).toMatchObject({ fromStopId: '', toStopId: 's1', arriveMin: 755 });
+  });
+
+  it('adds nothing without a start station', () => {
+    const legs = recomputeLegs(s, { date: D, startMin: 660 }, stops);
+    expect(legs.map((l) => l.fromStopId)).toEqual(['s1']);
+  });
+
+  it('lets an anchor on stop 1 override the opening arrival', () => {
+    const legs = recomputeLegs(s, { date: D, startMin: 660, startStation: 'NAPERVILLE', anchor: { stopId: 's1', atMin: 700 } }, stops);
+    // Anchored at 11:40: ready 12:40, platform 12:45, BN4 at 14:30.
+    expect(legs[1]).toMatchObject({ fromStopId: 's1', readyMin: 760, departMin: 870 });
+  });
+});
