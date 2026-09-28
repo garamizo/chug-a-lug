@@ -7,6 +7,7 @@
   import Comments from '$lib/components/Comments.svelte';
   import type { AttachResult, Itinerary, Place, Stop, StopPhoto } from '$lib/types';
   import IconLink from '$lib/components/IconLink.svelte';
+  import { page } from '$app/state';
 
   let { data } = $props();
   let itinerary = $state<Itinerary | null>(null);
@@ -94,7 +95,8 @@
   }
 </script>
 
-<nav><IconLink href="/plan/{data.id}" icon="back" label={copy.backToDraft} /></nav>
+<!-- Only the literal `edit` is honoured, so `from` cannot send the back button anywhere else. -->
+<nav><IconLink href={page.url.searchParams.get('from') === 'edit' ? `/plan/${data.id}/edit` : `/plan/${data.id}`} icon="back" label={copy.backToDraft} testid="stop-back" /></nav>
 {#if error}<p class="error" role="alert">{error}</p>{/if}
 {#if stop}
   <h1 data-testid="stop-name">{stop.name}</h1>

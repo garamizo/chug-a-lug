@@ -97,7 +97,15 @@ test('draft with real train times, layover change, card edits, votes, comments, 
   await expect(page.getByTestId('leg-0')).toContainText('2:05 PM');
   await expect(page.getByTestId('stop-row-0')).toContainText('Leave 2:03 PM');
 
+  // In the editor a stop opens in the sheet; closing it leaves you in the editor.
   await page.getByTestId('stop-link-1').click();
+  await expect(page.getByTestId('stop-sheet')).toBeVisible();
+  await expect(page.getByTestId('sheet-add')).toHaveCount(0);
+  await page.getByTestId('sheet-close').click();
+  await expect(page).toHaveURL(editUrl);
+  await expect(page.getByTestId('dwell-0')).toBeVisible();
+  await page.getByTestId('stop-link-1').click();
+  await page.getByTestId('sheet-edit').click();
   await expect(page.getByTestId('stop-name')).toHaveText('Test Tavern');
   await expect(page.getByTestId('photos-status')).toContainText('No photos yet');
   await page.getByTestId('retry-photos').click();
@@ -110,6 +118,15 @@ test('draft with real train times, layover change, card edits, votes, comments, 
   await page.reload();
   await expect(page.getByTestId('notes')).toHaveValue('Ask for Gus');
   await expect(page.getByTestId('confirmed-open')).toBeChecked();
+  // The detail page opened from the editor goes back to the editor, even after a reload.
+  await page.getByTestId('stop-back').click();
+  await expect(page).toHaveURL(editUrl);
+  // Reached any other way, it goes back to the draft.
+  const tavernUrl = await page.getByTestId('stop-link-1').getAttribute('href');
+  await page.goto(tavernUrl!);
+  await expect(page.getByTestId('stop-name')).toHaveText('Test Tavern');
+  await page.getByTestId('stop-back').click();
+  await expect(page).toHaveURL(draftUrl);
 
   // The view screen: read-only route, cheers, comments and the Highball; no edit controls.
   await page.goto(editUrl);

@@ -156,3 +156,24 @@ test('edits made before adding a stop survive the trip to the venue picker', asy
   await expect(page.getByText('Prairie Path Tap')).toBeVisible();
   await expect(page.getByText('The Second Round')).toBeHidden();
 });
+
+test('a stop opens in the sheet over the editor, and closing it keeps the staged change', async ({ page }) => {
+  await openEditor(page, 'E2E Sheet Conductor', ADMIN);
+  await page.getByTestId('set-here-0').click();
+  const dwell = page.getByTestId('dwell-0');
+  // A shorter layover than the seeded 1 h 30 min: a longer one misses the last train on.
+  await expect(dwell).toHaveValue('90');
+  const other = '60';
+  await dwell.selectOption(other);
+  await expect(page.getByTestId('save-plan')).toBeEnabled();
+
+  await page.getByTestId('stop-link-0').click();
+  await expect(page.getByTestId('stop-sheet')).toBeVisible();
+  // Edit details would leave the editor and drop the staged change, so The Route's sheet has none.
+  await expect(page.getByTestId('sheet-edit')).toHaveCount(0);
+  await page.getByTestId('sheet-close').click();
+  await expect(page.getByTestId('stop-sheet')).toBeHidden();
+  await expect(page).toHaveURL(/\/edit$/);
+  await expect(page.getByTestId('dwell-0')).toHaveValue(other);
+  await expect(page.getByTestId('save-plan')).toBeEnabled();
+});

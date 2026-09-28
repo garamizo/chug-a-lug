@@ -19,7 +19,9 @@
   import { stopPhotos } from '$lib/photo';
   import ItineraryView from '$lib/components/ItineraryView.svelte';
   import BulletinSheet from '$lib/components/BulletinSheet.svelte';
-  import type { Leg, Line } from '$lib/types';
+  import StopSheet from '$lib/components/StopSheet.svelte';
+  import { openStop } from '$lib/nav';
+  import type { Leg, Line, Stop } from '$lib/types';
   import IconLink from '$lib/components/IconLink.svelte';
   import IconButton from '$lib/components/IconButton.svelte';
 
@@ -47,6 +49,10 @@
   });
 
   const live = $derived(!!draft && draft.itinerary.status === 'locked');
+  // The sheet reads Stop records; a staged stop that is not saved yet borrows what it has.
+  const sheetStops = $derived(!draft ? [] : live && plan
+    ? plan.stops.map((s) => ({ ...(draft!.stops.find((d) => d.id === s.id) ?? {}), ...s }) as unknown as Stop)
+    : draft.stops);
   const editable = $derived(!!draft && canEditStops(draft.itinerary, $auth.user));
   const canManage = $derived(!!draft && canEditSettings(draft.itinerary, $auth.user));
 
@@ -260,7 +266,11 @@
       legs={live ? previewLegs : draft.legs}
       {editable} {canManage}
       actions={live ? stagedActions : recordActions(draft.itinerary.id, (m) => (error = m))}
-      onerror={(m) => (error = m)} />
+      onerror={(m) => (error = m)} onopenstop={openStop} />
+    <!-- Over the editor, not away from it: the staged plan lives in this component. Edit details
+         leaves the page, so only a draft (written as it goes) offers it. -->
+    <StopSheet stops={sheetStops} media={[]} eventDate={draft.itinerary.event_date} itineraryId={draft.itinerary.id}
+      isAdmin={editable} detailsLink={!live} detailsFrom="edit" photos={stopPhotos(draft.stops)} />
 
     {#if live}
       <div class="savebar">
