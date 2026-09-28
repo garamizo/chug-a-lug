@@ -212,11 +212,11 @@ test('Back from the editor after an add does not reopen the venue sheet', async 
 });
 
 test('a stored venue shows its photos in the sheet on Add Stop', async ({ page }) => {
-  const stored = { ...(venuesFor.LAGRANGE[0] as object), placeRef: 'place000000001' };
+  const stored = { ...(venuesFor.LAGRANGE[0] as object), placeRef: 'place0000000001' };
   await page.route('**/api/places/nearby**', (route) => route.fulfill({ json: { station: { id: 'LAGRANGE', name: 'LAGRANGE', lat: 0, lon: 0 }, venues: [stored], fetchedAt: '2026-09-19T00:00:00.000Z' } }));
   await page.route('**/api/places/photos', (route) => {
-    expect(route.request().postDataJSON()).toEqual({ placeRef: 'place000000001' });
-    return route.fulfill({ json: { status: 'done', place: { id: 'place000000001', collectionId: 'places', collectionName: 'places', photos: ['1.jpg'] } } });
+    expect(route.request().postDataJSON()).toEqual({ placeRef: 'place0000000001' });
+    return route.fulfill({ json: { status: 'done', place: { id: 'place0000000001', collectionId: 'places', collectionName: 'places', photos: ['1.jpg'] } } });
   });
   await login(page, 'E2E Skipper', ADMIN);
   await page.getByTestId('nav-plan').click();
