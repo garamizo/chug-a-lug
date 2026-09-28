@@ -1,5 +1,5 @@
 // Which stop the crawl is at. Derived from the clock over the locked itinerary's legs, with the
-// Conductor's correction winning while it is newer than the arrival the clock would pick. No GPS:
+// Conductor's check-in as the floor the clock moves on from. No GPS:
 // browsers cannot track location with the screen off, and a clock is something everyone can check.
 import type { Leg, Stop } from '$lib/types';
 
@@ -58,6 +58,32 @@ export function currentStop(
 
   const at = now.getTime();
   const last = ts[ts.length - 1];
+  // The crawl is over once it is past the final departure, or — since the last stop has no onward
+  // leg — once it has arrived there at all. Either way there is no train left to catch.
+  const finished = (t: Timing) => t === last && (t.departAt === null ? at >= t.arriveAt : at >= t.departAt);
+
+  const override = opts.override;
+  const hit = override ? ts.findIndex((t) => t.stop.id === override.stopId) : -1;
+  if (override && hit >= 0) {
+    // The Conductor's check-in is where the crew is. Recompute replans every leg after it from that
+    // moment and keeps the ones before it as history, so the clock only moves the crawl on from the
+    // checked-in stop: a history arrival that is still ahead cannot drag it back. A later stop whose
+    // arrival is no later than the check-in comes from legs not yet replanned from it, so it is
+    // skipped rather than counted as reached. A check-in from an earlier day never gets here: callers
+    // gate it with `anchorOnEventDay`.
+    const checkedIn = new Date(override.at).getTime();
+    let i = hit;
+    for (let j = hit + 1; j < ts.length; j++) {
+      if (ts[j].arriveAt <= checkedIn) continue;
+      if (at < ts[j].arriveAt) break;
+      i = j;
+    }
+    if (i > hit) return result(ts[i], finished(ts[i]) ? 'after' : 'clock');
+    // Still at the checked-in stop. At the last stop, a check-in no newer than its planned arrival
+    // is one the schedule has caught up with, so the crawl ends there as it would by the clock.
+    const t = ts[hit];
+    return result(t, finished(t) && checkedIn <= t.arriveAt ? 'after' : 'override');
+  }
 
   // Walk forward to the last stop the crawl has already arrived at.
   let picked = ts[0];
@@ -67,18 +93,6 @@ export function currentStop(
     picked = t;
     source = 'clock';
   }
-  // The crawl is over once it is past the final departure, or — since the last stop has no onward
-  // leg — once it has arrived there at all. Either way there is no train left to catch.
-  if (picked === last && (last.departAt === null ? at >= last.arriveAt : at >= last.departAt)) source = 'after';
-
-  const override = opts.override;
-  if (override) {
-    const hit = ts.find((t) => t.stop.id === override.stopId);
-    // A correction holds until the schedule catches up with it; an older one is a leftover. While
-    // the crawl is still before its first stop, though, a check-in always wins: it is the Conductor
-    // saying the crew is already there, so there is nothing yet for it to be stale against. A
-    // check-in from an earlier day never gets here: callers gate it with `anchorOnEventDay`.
-    if (hit && (source === 'before' || new Date(override.at).getTime() > picked.arriveAt)) return result(hit, 'override');
-  }
+  if (finished(picked)) source = 'after';
   return result(picked, source);
 }

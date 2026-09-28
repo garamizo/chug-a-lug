@@ -143,4 +143,39 @@ describe('currentStop', () => {
     expect(r.source).toBe('override');
     expect(r.stop?.id).toBe('A');
   });
+  it('keeps an early check-in once the original arrival at stop 1 has passed', () => {
+    // Opening leg planned into A at 17:00; the crew checked in at B at 16:20 instead.
+    const opening = leg('', 'A', '2026-12-26T16:30:00.000Z', '2026-12-26T17:00:00.000Z');
+    const ls = [opening, ...legs];
+    const override = { stopId: 'B', at: '2026-12-26T16:20:00.000Z' };
+    for (const now of ['2026-12-26T16:40:00.000Z', '2026-12-26T17:10:00.000Z']) {
+      const r = currentStop(stops, ls, new Date(now), { startAt, override });
+      expect(r.stop?.id).toBe('B');
+      expect(r.source).toBe('override');
+      expect(r.onwardStop?.id).toBe('C');
+    }
+  });
+
+  it('advances past a check-in by the replanned legs, not the history before it', () => {
+    // Checked in at B at 16:20; recompute replanned B -> C to arrive 16:50. A's history says 17:00.
+    const ls = [
+      leg('', 'A', '2026-12-26T16:30:00.000Z', '2026-12-26T17:00:00.000Z'),
+      leg('A', 'B', '2026-12-26T19:00:00.000Z', '2026-12-26T19:20:00.000Z'),
+      leg('B', 'C', '2026-12-26T16:30:00.000Z', '2026-12-26T16:50:00.000Z')
+    ];
+    const r = currentStop(stops, ls, new Date('2026-12-26T16:55:00.000Z'), {
+      startAt, override: { stopId: 'B', at: '2026-12-26T16:20:00.000Z' }
+    });
+    expect(r.stop?.id).toBe('C');
+    expect(r.source).toBe('after');
+  });
+
+  it('does not advance past a check-in on legs that predate it', () => {
+    // Running late: still at A at 19:30 though B was due 19:20, before recompute has replanned A -> B.
+    const r = currentStop(stops, legs, new Date('2026-12-26T19:35:00.000Z'), {
+      startAt, override: { stopId: 'A', at: '2026-12-26T19:30:00.000Z' }
+    });
+    expect(r.stop?.id).toBe('A');
+    expect(r.source).toBe('override');
+  });
 });
