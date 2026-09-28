@@ -48,3 +48,35 @@ it('backfills historical timestamps and tied action order before accepting new w
     expect(output).toContain('1758830000_verify_upgrade');
   } finally { await rm(dir, { recursive: true, force: true }); }
 });
+
+it('the route-titles backfill trims a legacy title, so it does not look renamed on the next unrelated update', async () => {
+  // Every create/update since planning.pb.js's title hook shipped trims on the way in, so an
+  // untrimmed title can only exist in data written before that hook — i.e. before the
+  // 1758890000_route_titles.js migration ran. Reproduce that by inserting one directly, ahead of
+  // it, the same way the migration test above reproduces pre-upgrade rows.
+  const dir = await mkdtemp(join(tmpdir(), 'chugalug-titles-'));
+  try {
+    const migrations = join(dir, 'migrations'), hooks = join(dir, 'hooks');
+    await mkdir(migrations); await mkdir(hooks);
+    for (const name of await readdir('../pocketbase/pb_migrations')) {
+      await copyFile(`../pocketbase/pb_migrations/${name}`, join(migrations, name));
+    }
+    await writeFile(join(migrations, '1758885000_legacy_title_fixture.js'), `migrate(app => {
+      const u = new Record(app.findCollectionByNameOrId('users'));
+      u.set('name', 'Legacy Titler'); u.set('name_key', 'legacy titler'); u.setPassword('legacy-password-only'); app.save(u);
+      const it = new Record(app.findCollectionByNameOrId('itineraries'));
+      it.set('title', '  Loop  '); it.set('status', 'draft'); it.set('event_date', '2026-12-26');
+      it.set('start_time', '11:00'); it.set('created_by', u.id); app.save(it);
+    }, app => {})`);
+    await writeFile(join(migrations, '1758890500_verify_title_trim.js'), `migrate(app => {
+      const rows = app.findRecordsByFilter('itineraries', "title_key = 'loop'", '', 1, 0);
+      if (rows.length !== 1) throw new Error('legacy row not found by its recomputed key');
+      const it = rows[0];
+      if (it.getString('title') !== 'Loop') throw new Error('legacy title not trimmed: ' + JSON.stringify(it.getString('title')));
+      if (it.getString('title_key') !== 'loop') throw new Error('title_key not recomputed from the trimmed title');
+    }, app => {})`);
+    const output = execFileSync(resolve('../pocketbase/pocketbase'), ['migrate', 'up', '--dir', join(dir, 'data'),
+      '--migrationsDir', migrations, '--hooksDir', hooks], { encoding: 'utf8', timeout: 15000 });
+    expect(output).toContain('1758890500_verify_title_trim');
+  } finally { await rm(dir, { recursive: true, force: true }); }
+});
