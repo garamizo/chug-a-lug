@@ -6,10 +6,13 @@
 
 **Architecture:**
 - Route names get a normalised `title_key`, which the itineraries hooks enforce as unique.
-- Notes are `comments` rows with a `kind` and a `meta`. Only the server writes them: the rename hook
-  inside the same transaction as the rename, and the clone endpoint.
-- The clone endpoint writes as the user (through their token) so the existing ownership hooks apply,
-  and it uses a client-minted id so a retry cannot make two clones.
+- Notes are `comments` rows with a `kind` and a `meta`. Only hooks write them: the rename hook
+  inside the same transaction as the rename, and the clone route inside the clone's own transaction.
+- The name check and the write share one transaction, and PocketBase serialises write transactions,
+  so concurrent requests cannot take the same name.
+- Clone is a PocketBase hook route (`POST /api/crawl/clone`) that writes the route, its stops and
+  both notes in one transaction and never deletes anything. It uses a client-minted id, so a retry
+  (even an overlapping one) returns the same clone.
 - The editor's title is an inline text box that renames on blur, through `PlanActions.rename`.
 
 **Tech Stack:** SvelteKit (Svelte 5 runes) in `web/`, PocketBase JSVM hooks and migrations in
@@ -44,17 +47,20 @@
 
 ## Review Focus
 
-1. **Double-tap or retry of Clone after a lost response.** The user expects one clone and one note
-   per side. The retry map is keyed by source route (Task 5 `cloneRoute.test.ts`), and the server's
-   completion check covers it (Task 4).
+1. **Double-tap or retry of Clone after a lost response, including overlapping requests.** The user
+   expects one clone and one note per side. The retry map is keyed by source route (Task 5
+   `cloneRoute.test.ts`), and the overlapping-request hook test covers the server (Task 4).
 2. **Cloning a route whose "Copy of …" name is taken, or whose title is already 80 characters.** The
    user expects a free "(n)" name that still fits in 80 characters (Task 1 `cloneTitle` tests,
-   Task 4 suffix test).
+   Task 5 `cloneRoute` suffix test).
 3. **Renaming to an existing name that differs only by case or spacing.** The user expects "taken",
    with their text left in the box (Task 1 hook test, Task 6 e2e).
 4. **A rename whose note cannot be saved.** The user expects the title to be unchanged (Task 2
    atomicity hook test).
-5. **A plain comment PATCHed into a note.** It must be refused (Task 2 hook test, every kind).
+5. **A plain comment PATCHed into a note, or a clone id that names someone's existing route.** The
+   first must be refused (Task 2 hook test, every kind). The second must return 409 and leave that
+   route untouched (Task 4 hook test). Two people racing for one name must not both get it
+   (Task 1 hook test).
 
 ---
 
@@ -73,8 +79,8 @@
 | `web/src/lib/server/routeTitle.ts` (new) | `checkTitle(pb, title, routeId)` against `title_key` |
 | `web/src/routes/api/plan/title-check/+server.ts` (new) | Early "taken" check for the locked editor |
 | `web/src/routes/api/plan/commit/+server.ts` | Optional `title` in the Save payload |
-| `web/src/routes/api/plan/clone/+server.ts` (new) | Clone endpoint |
-| `web/src/lib/cloneRoute.ts` (new) | Client call with a retry id kept per source route |
+| `pocketbase/pb_hooks/clone.pb.js` (new) | `POST /api/crawl/clone`: transactional clone |
+| `web/src/lib/cloneRoute.ts` (new) | Client call: retry id kept per source route, "Copy of … (n)" names |
 | `web/src/lib/planActions.ts`, `web/src/lib/live/staged.ts` | `rename` action; staged `title` |
 | `web/src/lib/components/ItineraryView.svelte` | Title text box |
 | `web/src/lib/components/Comments.svelte` | Render notes |
@@ -221,6 +227,14 @@ const createItinerary = (token: string, body: Record<string, unknown> = {}) =>
     const forged = await (await patch(`/api/collections/itineraries/records/${b.id}`, { title_key: 'zzz' }, crew.token)).json();
     expect(forged.title_key).toBe('unique other');
   });
+
+  it('racing requests cannot both take a free name', async () => {
+    const creates = await Promise.all(Array.from({ length: 5 }, () => createItinerary(crew.token, { title: 'Race name' })));
+    expect(creates.filter((r) => r.status === 200)).toHaveLength(1);
+    const [x, y] = await Promise.all([createItinerary(crew.token), createItinerary(crew.token)].map(async (p) => (await p).json()));
+    const renames = await Promise.all([x, y].map((r) => patch(`/api/collections/itineraries/records/${r.id}`, { title: 'Race rename' }, crew.token)));
+    expect(renames.filter((r) => r.status === 200)).toHaveLength(1);
+  });
 ```
 
 - [ ] **Step 6: Run the hook tests and watch them fail**
@@ -271,15 +285,24 @@ migrate((app) => {
 })
 ```
 
-In `planning.pb.js`, the itineraries create hook, before `e.next()`:
+In `planning.pb.js`, the itineraries create hook: replace its final bare `e.next()` with the code
+below. The check and the save share one transaction. PocketBase runs write transactions one at a
+time, so two requests cannot both see a name as free and both take it.
 
 ```js
   const titles = require(`${__hooks}/routeTitle.js`)
   const name = titles.normalize(r.getString('title'))
   if (!name) throw new BadRequestError('title_invalid')
-  if (titles.taken(e.app, name.key, '')) throw new BadRequestError('title_taken')
   r.set('title', name.display)
   r.set('title_key', name.key)
+  const app = e.app
+  try {
+    app.runInTransaction((tx) => {
+      e.app = tx
+      if (titles.taken(tx, name.key, '')) throw new BadRequestError('title_taken')
+      e.next()
+    })
+  } finally { e.app = app }
 ```
 
 In the update hook, after the existing non-admin checks and before `locking` is computed:
@@ -288,11 +311,24 @@ In the update hook, after the existing non-admin checks and before `locking` is 
   const titles = require(`${__hooks}/routeTitle.js`)
   const name = titles.normalize(e.record.getString('title'))
   if (!name) throw new BadRequestError('title_invalid')
-  if (name.key !== original.getString('title_key') && titles.taken(e.app, name.key, e.record.id)) {
-    throw new BadRequestError('title_taken')
-  }
+  const nameChanged = name.key !== original.getString('title_key')
   e.record.set('title', name.display)
   e.record.set('title_key', name.key)
+```
+
+Then replace the update hook's bare `e.next()` with the block below. Task 2 adds the rename note
+inside this same transaction. Everything after it (locking, archive, event_log, recompute) stays as
+it is, outside the transaction.
+
+```js
+  const app = e.app
+  try {
+    app.runInTransaction((tx) => {
+      e.app = tx
+      if (nameChanged && titles.taken(tx, name.key, e.record.id)) throw new BadRequestError('title_taken')
+      e.next()
+    })
+  } finally { e.app = app }
 ```
 
 If the create hook's `e.next()` path does not find `title_key` on older records, that is expected:
@@ -475,17 +511,10 @@ migrate((app) => {
   hook:
   - Compute `const renamed = e.record.getString('title') !== original.getString('title')` after
     Task 1's normalisation.
-  - Replace the bare `e.next()` with the block below.
-  - Everything after it (locking, archive, event_log, recompute) stays as it is, outside the
-    transaction.
+  - Inside the transaction Task 1 added, right after `e.next()`, add the block below.
 
 ```js
-  // The rename and its note land together: a title never changes without its history.
-  const app = e.app
-  try {
-    app.runInTransaction((tx) => {
-      e.app = tx
-      e.next()
+      // The rename and its note land together: a title never changes without its history.
       if (renamed && isCrew) {
         const note = new Record(tx.findCollectionByNameOrId('comments'))
         note.set('user', e.auth.id)
@@ -495,8 +524,6 @@ migrate((app) => {
         note.set('meta', { from: original.getString('title'), to: e.record.getString('title') })
         tx.save(note)
       }
-    })
-  } finally { e.app = app }
 ```
 
 Add to `Comment` in `types.ts`:
@@ -571,7 +598,7 @@ describe('GET /api/plan/title-check', () => {
 ```
 
 In `web/tests/unit/planCommit.test.ts`:
-- Add `titleTaken: false` to `state` (reset it in `beforeEach`).
+- Add `titleTaken: false` and `userFail: false` to `state` (reset both in `beforeEach`).
 - Add a `getList` to the `adminPb` mock's collection:
   `getList: async () => ({ totalItems: state.titleTaken ? 1 : 0, items: [] })`.
 - Give `adminPb`'s mock a `filter: (raw: string) => raw`, which it already has.
@@ -580,7 +607,10 @@ In `web/tests/unit/planCommit.test.ts`:
 ```ts
   userPb: vi.fn(() => ({
     collection: (collection: string) => ({
-      update: async (id: string, body: Record<string, unknown>) => { state.writes.push({ op: 'userUpdate', collection, id, body }); return { id }; }
+      update: async (id: string, body: Record<string, unknown>) => {
+        if (state.userFail) throw Object.assign(new Error('title_taken'), { status: 400, response: { message: 'title_taken' } });
+        state.writes.push({ op: 'userUpdate', collection, id, body }); return { id };
+      }
     })
   })),
 ```
@@ -589,12 +619,17 @@ Then set `state.itinerary` to include `title: 'Old name'` in `beforeEach` and ad
 
 ```ts
 describe('title', () => {
-  it('writes a changed title as the Conductor, after the stops', async () => {
-    const res = await call({ ...rideable, title: '  New name ' });
+  it('writes a changed title as the Conductor, before any stop write', async () => {
+    const res = await call({ ...rideable, stops: [...rideable.stops, newStop], title: '  New name ' });
     expect(res.status).toBe(200);
     const i = state.writes.findIndex((w) => w.op === 'userUpdate');
     expect(state.writes[i]).toEqual({ op: 'userUpdate', collection: 'itineraries', id: 'itinerary000001', body: { title: 'New name' } });
-    expect(state.writes.slice(i + 1).some((w) => w.collection === 'stops')).toBe(false);
+    expect(state.writes.slice(0, i).some((w) => w.collection === 'stops')).toBe(false);
+  });
+  it('a name taken after the preflight stops the save before any stop write', async () => {
+    state.userFail = true;
+    await expect(call({ ...rideable, stops: [...rideable.stops, newStop], title: 'Raced' })).rejects.toMatchObject({ status: 400, body: { message: copy.titleTaken } });
+    expect(state.writes.some((w) => w.collection === 'stops')).toBe(false);
   });
   it('skips an unchanged title', async () => {
     await call({ ...rideable, title: 'Old name' });
@@ -678,8 +713,11 @@ In the commit endpoint:
     }
 ```
 
-After the stop writes and before the anchor/recompute step (read the file to find the exact spot:
-the last `stops` create/update/delete loop), add:
+After validation passes (the `blockers` check) and **before the first stop write**, add the block
+below. Renaming first keeps the endpoint's retry story intact:
+- If the name was taken after the preflight, or the note fails, the rename is refused (and rolled
+  back by the hook's transaction) before anything else changes.
+- If a later stop write fails, the retry sends the same title, which is now a no-op, and converges.
 
 ```ts
     // Written as the Conductor, not the superuser, so the rename note names who did it.
@@ -705,244 +743,237 @@ git commit -m "feat(plan): Save carries a checked rename, written as the Conduct
 
 ---
 
-### Task 4: Clone endpoint
+### Task 4: Clone, as one PocketBase transaction
 
 **Files:**
-- Create: `web/src/routes/api/plan/clone/+server.ts`, `web/tests/unit/cloneEndpoint.test.ts`
+- Create: `pocketbase/pb_hooks/clone.pb.js`, `web/tests/hooks/clone.test.ts`
 - Modify: `web/src/lib/labels.ts`, `README.md`
 
 **Interfaces:**
-- Consumes: `userPb`, `checkTitle` (Task 3); `cloneTitle`, `titleError` (Task 1); note fields
-  (Task 2).
-- Produces: `POST /api/plan/clone` with body `{ itinerary: string; id: string }`, answering
-  `{ id: string; title?: string }`. A missing source returns 404 with `copy.routeGone`, and an `id`
-  that belongs to someone else returns 409.
+- Consumes: `routeTitle.js` (Task 1); note fields (Task 2).
+- Produces: `POST /api/crawl/clone`, for signed-in users only. The body is
+  `{ source: string; id: string; title: string }`.
+  - Success answers `200 { id, title }`.
+  - `400 title_taken` / `400 title_invalid` for a bad name.
+  - `400 bad_clone_request` for bad ids, or when `id === source`.
+  - `404 route_gone` when the source is missing.
+  - `409 clone_conflict` when `id` exists and is not this caller's clone of `source`.
 
-- [ ] **Step 1: Write the failing test** `web/tests/unit/cloneEndpoint.test.ts`
+Why a hook route and not a SvelteKit endpoint: the route, its stops and both notes land in **one
+transaction**, so there is no half-made clone to clean up, and the route never deletes anything. A
+retry after a lost response finds the finished clone by its own `cloned_from` note, which cannot
+exist without the rest. PocketBase serialises write transactions, so two overlapping retries with
+the same id run one after the other: the second sees the first's clone and returns it. The
+"Copy of …" names are made by the client from `labels.ts` (Task 5). A taken one answers
+`title_taken`, and the client tries the next.
+
+- [ ] **Step 1: Write the failing hook tests** `web/tests/hooks/clone.test.ts`
 
 ```ts
-import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { copy } from '../../src/lib/labels';
+import { beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { ADMIN_LOGIN_PASSWORD, get, loginToken, patch, post, superuserToken, truncate } from './setup';
 
-type Row = Record<string, unknown>;
-const state = vi.hoisted(() => ({
-  itineraries: {} as Record<string, Row>, stops: [] as Row[], comments: [] as Row[],
-  userWrites: [] as { collection: string; body: Row }[], adminDeletes: [] as string[],
-  failStopAt: -1, takenKeys: new Set<string>()
-}));
-const SRC = 'sourceroute0001', NEW = 'newclonedrt0001';
+let owner: { token: string; id: string };
+let cloner: { token: string; id: string };
+let admin: { token: string; id: string };
+let source: { id: string; title: string };
+let n = 0;
+const newId = () => `clonetest${String(++n).padStart(6, '0')}`;
+const clone = (token: string, body: Record<string, unknown>) => post('/api/crawl/clone', body, token);
+const list = async (collection: string, filter: string, token: string) =>
+  (await (await get(`/api/collections/${collection}/records?perPage=200&filter=${encodeURIComponent(filter)}`, token)).json()).items;
 
-vi.mock('$lib/server/pb', () => ({
-  requireUser: vi.fn(async () => ({ id: 'cloner', is_admin: false })),
-  adminPb: vi.fn(async () => ({
-    filter: (raw: string, p: Record<string, string>) => `${raw}|${JSON.stringify(p)}`,
-    collection: (c: string) => ({
-      getOne: async (id: string) => { const r = state.itineraries[id]; if (!r) throw Object.assign(new Error('nf'), { status: 404 }); return r; },
-      getFullList: async () => state.stops,
-      getList: async (_p: number, _n: number, o: { filter: string }) => {
-        if (c === 'itineraries') { const k = JSON.parse(o.filter.split('|')[1]).k; return { totalItems: state.takenKeys.has(k) ? 1 : 0, items: [] }; }
-        const done = state.comments.some((n) => n.kind === 'cloned_to' && (n.meta as Row).route === NEW);
-        return { totalItems: done ? 1 : 0, items: [] };
-      },
-      create: async (body: Row) => { state.comments.push(body); return body; },
-      delete: async (id: string) => { state.adminDeletes.push(id); delete state.itineraries[id]; }
-    })
-  })),
-  userPb: vi.fn(() => ({
-    collection: (c: string) => ({
-      create: async (body: Row) => {
-        if (c === 'stops' && state.userWrites.filter((w) => w.collection === 'stops').length === state.failStopAt) throw Object.assign(new Error('boom'), { status: 500 });
-        state.userWrites.push({ collection: c, body });
-        if (c === 'itineraries') state.itineraries[body.id as string] = { ...body, created_by: 'cloner' };
-        return body;
-      }
-    })
-  }))
-}));
-const { POST } = await import('../../src/routes/api/plan/clone/+server');
-const call = (body: unknown) => POST({ request: new Request('http://x/api/plan/clone', { method: 'POST', body: JSON.stringify(body) }) } as never);
-
-beforeEach(() => {
-  state.itineraries = { [SRC]: { id: SRC, title: 'Loop Crawl', event_date: '2026-12-26', start_time: '11:00', start_station: 'CUS', start_station_name: 'Union Station', status: 'locked', created_by: 'owner' } };
-  state.stops = [
-    { id: 's1', order: 1, name: 'The Hop Haus', kind: 'bar', direction: 'out', station_id: 'LAGRANGE', station_name: 'La Grange Road', place: 'place0000000001', place_id: 'g1', osm_id: '', address: '1 Main', lat: 41.8, lon: -87.8, hours: '', phone: '', website: '', confirmed_open: true, dwell_min: 75, walk_min: 4, notes: 'upstairs', meet_point: 'bar', photos_status: 'done' },
-    { id: 's2', order: 2, name: 'Berwyn Beer Hall', kind: 'restaurant', direction: 'back', station_id: 'CUS', station_name: 'Union Station', place: '', place_id: '', osm_id: 'node/2', address: '', lat: 0, lon: 0, hours: '', phone: '', website: '', confirmed_open: false, dwell_min: 60, walk_min: 5, notes: '', meet_point: '', photos_status: 'failed' }
-  ];
-  state.comments = []; state.userWrites = []; state.adminDeletes = []; state.failStopAt = -1; state.takenKeys = new Set();
+beforeAll(async () => {
+  owner = await loginToken('Clone Owner');
+  cloner = await loginToken('Clone Taker');
+  admin = await loginToken('Clone Boss', ADMIN_LOGIN_PASSWORD);
 });
 
-describe('POST /api/plan/clone', () => {
-  it('creates the clone as the user, copies stop fields, and notes both routes (source last)', async () => {
-    const res = await call({ itinerary: SRC, id: NEW });
-    expect(await res.json()).toMatchObject({ id: NEW, title: `${copy.cloneTitlePrefix} Loop Crawl` });
-    const it = state.userWrites.find((w) => w.collection === 'itineraries')!.body;
-    expect(it).toEqual({ id: NEW, title: `${copy.cloneTitlePrefix} Loop Crawl`, event_date: '2026-12-26', start_time: '11:00', start_station: 'CUS', start_station_name: 'Union Station' });
-    const stops = state.userWrites.filter((w) => w.collection === 'stops').map((w) => w.body);
-    expect(stops[0]).toMatchObject({ itinerary: NEW, order: 1, name: 'The Hop Haus', place: 'place0000000001', dwell_min: 75, notes: 'upstairs', meet_point: 'bar', direction: 'out', photos_status: 'done' });
-    expect(stops[0]).not.toHaveProperty('id');
-    expect(stops[1]).toMatchObject({ kind: 'restaurant', photos_status: 'none', osm_id: 'node/2' });
-    expect(state.comments.map((c) => [c.target_id, c.kind, c.user])).toEqual([[NEW, 'cloned_from', 'cloner'], [SRC, 'cloned_to', 'cloner']]);
-    expect(state.comments[0].meta).toEqual({ route: SRC, title: 'Loop Crawl' });
-    expect(state.comments[1].meta).toEqual({ route: NEW, title: `${copy.cloneTitlePrefix} Loop Crawl` });
-  });
-
-  it('numbers the name when "Copy of" is taken', async () => {
-    state.takenKeys.add(`${copy.cloneTitlePrefix} loop crawl`.toLowerCase());
-    expect((await (await call({ itinerary: SRC, id: NEW })).json()).title).toBe(`${copy.cloneTitlePrefix} Loop Crawl (2)`);
-  });
-
-  it('deletes the half-made clone when a stop fails', async () => {
-    state.failStopAt = 1;
-    await expect(call({ itinerary: SRC, id: NEW })).rejects.toBeTruthy();
-    expect(state.adminDeletes).toEqual([NEW]);
-    expect(state.comments.some((c) => c.target_id === SRC)).toBe(false);
-  });
-
-  it('a retry after completion returns the same clone and writes nothing', async () => {
-    await call({ itinerary: SRC, id: NEW });
-    const writes = state.userWrites.length, notes = state.comments.length;
-    expect((await (await call({ itinerary: SRC, id: NEW })).json()).id).toBe(NEW);
-    expect(state.userWrites.length).toBe(writes);
-    expect(state.comments.length).toBe(notes);
-  });
-
-  it('a retry after a half-made clone rebuilds it', async () => {
-    state.itineraries[NEW] = { id: NEW, created_by: 'cloner', title: 'x' };
-    await call({ itinerary: SRC, id: NEW });
-    expect(state.adminDeletes).toEqual([NEW]);
-    expect(state.comments.filter((c) => c.kind === 'cloned_to')).toHaveLength(1);
-  });
-
-  it('refuses a missing source, a bad id and someone else\'s id', async () => {
-    await expect(call({ itinerary: 'missingroute001', id: NEW })).rejects.toMatchObject({ status: 404 });
-    await expect(call({ itinerary: SRC, id: 'short' })).rejects.toMatchObject({ status: 400 });
-    state.itineraries[NEW] = { id: NEW, created_by: 'someone', title: 'x' };
-    await expect(call({ itinerary: SRC, id: NEW })).rejects.toMatchObject({ status: 409 });
-  });
+beforeEach(async () => {
+  for (const c of ['comments', 'legs', 'stops', 'itineraries']) await truncate(c);
+  const it = await (await post('/api/collections/itineraries/records', { title: 'Loop Crawl', event_date: '2026-12-26', start_time: '11:30', start_station: 'CUS', start_station_name: 'Union Station' }, owner.token)).json();
+  await post('/api/collections/stops/records', { itinerary: it.id, order: 1, name: 'The Hop Haus', kind: 'bar', direction: 'out', station_id: 'LAGRANGE', station_name: 'La Grange Road', dwell_min: 75, walk_min: 4, notes: 'upstairs', meet_point: 'bar', osm_id: 'node/1' }, owner.token);
+  await post('/api/collections/stops/records', { itinerary: it.id, order: 2, name: 'Berwyn Diner', kind: 'restaurant', direction: 'back', station_id: 'CUS', station_name: 'Union Station', dwell_min: 60, walk_min: 5 }, owner.token);
+  await patch(`/api/collections/itineraries/records/${it.id}`, { status: 'locked' }, admin.token);
+  source = { id: it.id, title: 'Loop Crawl' };
 });
-```
 
-- [ ] **Step 2: Run and watch it fail.** `cd web && npx vitest run tests/unit/cloneEndpoint.test.ts`.
-
-- [ ] **Step 3: Implement** `web/src/routes/api/plan/clone/+server.ts`
-
-```ts
-import { error, json } from '@sveltejs/kit';
-import type { RequestHandler } from './$types';
-import { adminPb, requireUser, userPb } from '$lib/server/pb';
-import { checkTitle } from '$lib/server/routeTitle';
-import { cloneTitle, titleError } from '$lib/routeTitle';
-import { copy } from '$lib/labels';
-import type { Itinerary, Stop } from '$lib/types';
-
-const ID = /^[a-z0-9]{15}$/;
-const MAX_TRIES = 50;
-// What a stop means for planning. Legs are recomputed by the stop hook; votes, comments, crew photos
-// and anything from the day itself stay with the original.
-const STOP_FIELDS = ['order', 'name', 'kind', 'direction', 'station_id', 'station_name', 'place', 'place_id', 'osm_id',
-  'address', 'lat', 'lon', 'hours', 'phone', 'website', 'confirmed_open', 'dwell_min', 'walk_min', 'notes', 'meet_point'] as const;
-const status = (err: unknown) => (err as { status?: number }).status;
-
-// Any crew member may copy any route into a draft of their own. The client mints the new route's id
-// and keeps it across retries, so a response lost after success cannot produce a second clone. The
-// source's `cloned_to` note is written last and is the proof a clone finished.
-export const POST: RequestHandler = async ({ request }) => {
-  const user = await requireUser(request);
-  const body = (await request.json().catch(() => ({}))) as { itinerary?: unknown; id?: unknown };
-  const sourceId = String(body.itinerary ?? '');
-  const id = String(body.id ?? '');
-  if (!ID.test(sourceId) || !ID.test(id)) throw error(400, 'itinerary and id required');
-
-  const admin = await adminPb();
-  const find = (rid: string) => admin.collection('itineraries').getOne<Itinerary>(rid).catch((err) => {
-    if (status(err) === 404) return null;
-    throw err;
-  });
-  const source = await find(sourceId);
-  if (!source) throw error(404, copy.routeGone);
-
-  const existing = await find(id);
-  if (existing) {
-    if (existing.created_by !== user.id) throw error(409, copy.genericError);
-    const done = await admin.collection('comments').getList(1, 1, {
-      filter: admin.filter("target_collection = 'itineraries' && target_id = {:src} && kind = 'cloned_to' && meta.route = {:id}", { src: sourceId, id }),
-      fields: 'id'
-    });
-    if (done.totalItems) return json({ id });
-    await admin.collection('itineraries').delete(id);
-  }
-
-  const stops = await admin.collection('stops').getFullList<Stop>({
-    filter: admin.filter('itinerary = {:id}', { id: sourceId }), sort: 'order,created'
-  });
-  const mine = userPb(request);
-
-  let title = '';
-  for (let n = 1; !title; n++) {
-    if (n > MAX_TRIES) throw error(409, copy.titleTaken);
-    const candidate = cloneTitle(source.title, n);
-    if (!(await checkTitle(admin, candidate)).ok) continue;
-    try {
-      await mine.collection('itineraries').create({
-        id, title: candidate, event_date: source.event_date, start_time: source.start_time,
-        start_station: source.start_station, start_station_name: source.start_station_name
-      });
-      title = candidate;
-    } catch (err) {
-      if (titleError(err) === copy.titleTaken) continue; // lost a race for the name: try the next
-      throw err;
-    }
-  }
-
-  try {
-    for (const s of stops) {
-      const fields = Object.fromEntries(STOP_FIELDS.map((f) => [f, (s as Record<string, unknown>)[f]]));
-      await mine.collection('stops').create({ ...fields, itinerary: id, photos_status: s.photos_status === 'done' ? 'done' : 'none' });
-    }
-    const note = { user: user.id, target_collection: 'itineraries', body: '' };
-    await admin.collection('comments').create({ ...note, target_id: id, kind: 'cloned_from', meta: { route: sourceId, title: source.title } });
-    await admin.collection('comments').create({ ...note, target_id: sourceId, kind: 'cloned_to', meta: { route: id, title } });
-  } catch (err) {
-    await admin.collection('itineraries').delete(id).catch(() => { /* best effort; a retry rebuilds */ });
-    throw err;
-  }
-  return json({ id, title });
-};
-```
-
-Add `routeGone: 'That route no longer exists.'` and `cloneRoute: 'Clone route'` to `copy`, plus
-README rows. If `labels.test.ts` checks every copy key against the README, it will tell you which
-rows are missing.
-
-- [ ] **Step 4: Run.** `cd web && npm test && npm run check`. Expected: green.
-
-- [ ] **Step 5: Hook-level check of the real rules.** Add to `web/tests/hooks/notes.test.ts`: a
-  superuser can create a `cloned_to` note with an empty body on a route (this is the endpoint's path,
-  and it proves `targets.pb.js` and the create rule let the server through).
-
-```ts
-  it('the server (superuser) can write a note with no body', async () => {
-    const r = await route(crew.token);
-    const su = await superuserToken();
-    const res = await post('/api/collections/comments/records', { user: crew.id, target_collection: 'itineraries', target_id: r.id, kind: 'cloned_to', meta: { route: r.id, title: 'x' } }, su);
+describe('POST /api/crawl/clone', () => {
+  it('makes a draft of the caller\'s own with the stops and a note on both routes', async () => {
+    const id = newId();
+    const res = await clone(cloner.token, { source: source.id, id, title: 'Copy of Loop Crawl' });
     expect(res.status).toBe(200);
-    // The endpoint's completion check filters on a JSON path; prove PocketBase answers it.
-    const q = encodeURIComponent(`target_id="${r.id}" && kind="cloned_to" && meta.route="${r.id}"`);
-    expect((await (await get(`/api/collections/comments/records?filter=${q}`, su)).json()).totalItems).toBe(1);
+    expect(await res.json()).toEqual({ id, title: 'Copy of Loop Crawl' });
+    const it = await (await get(`/api/collections/itineraries/records/${id}`, cloner.token)).json();
+    expect(it).toMatchObject({ status: 'draft', created_by: cloner.id, vote_open: false, title_key: 'copy of loop crawl', event_date: '2026-12-26', start_time: '11:30', start_station: 'CUS', start_station_name: 'Union Station' });
+    const stops = await list('stops', `itinerary="${id}"`, cloner.token);
+    expect(stops.map((s: { name: string }) => s.name).sort()).toEqual(['Berwyn Diner', 'The Hop Haus']);
+    expect(stops.find((s: { name: string }) => s.name === 'The Hop Haus')).toMatchObject({ order: 1, kind: 'bar', direction: 'out', dwell_min: 75, notes: 'upstairs', meet_point: 'bar', osm_id: 'node/1', photos_status: 'none' });
+    const from = await list('comments', `target_id="${id}"`, cloner.token);
+    expect(from).toHaveLength(1);
+    expect(from[0]).toMatchObject({ kind: 'cloned_from', user: cloner.id, meta: { route: source.id, title: 'Loop Crawl' } });
+    const to = await list('comments', `target_id="${source.id}"`, cloner.token);
+    expect(to).toHaveLength(1);
+    expect(to[0]).toMatchObject({ kind: 'cloned_to', user: cloner.id, meta: { route: id, title: 'Copy of Loop Crawl' } });
+    // The source is untouched apart from its note.
+    expect((await (await get(`/api/collections/itineraries/records/${source.id}`, cloner.token)).json()).status).toBe('locked');
   });
+
+  it('a retry, even overlapping, returns the one clone and writes nothing more', async () => {
+    const id = newId();
+    const body = { source: source.id, id, title: 'Copy of Loop Crawl' };
+    const [a, b] = await Promise.all([clone(cloner.token, body), clone(cloner.token, body)]);
+    expect([a.status, b.status]).toEqual([200, 200]);
+    expect((await clone(cloner.token, { ...body, title: 'Copy of Loop Crawl (2)' })).status).toBe(200);
+    expect(await list('stops', `itinerary="${id}"`, cloner.token)).toHaveLength(2);
+    expect(await list('comments', `target_id="${source.id}"`, cloner.token)).toHaveLength(1);
+    expect(await list('itineraries', `title_key~"copy of"`, cloner.token)).toHaveLength(1);
+  });
+
+  it('never touches an existing route that is not this clone', async () => {
+    const mine = await (await post('/api/collections/itineraries/records', { title: 'Mine locked' }, cloner.token)).json();
+    await patch(`/api/collections/itineraries/records/${mine.id}`, { status: 'locked' }, admin.token);
+    expect((await clone(cloner.token, { source: source.id, id: mine.id, title: 'Copy of Loop Crawl' })).status).toBe(409);
+    expect((await (await get(`/api/collections/itineraries/records/${mine.id}`, cloner.token)).json()).status).toBe('locked');
+    expect((await clone(cloner.token, { source: source.id, id: source.id, title: 'Copy of Loop Crawl' })).status).toBe(400);
+    expect(await list('stops', `itinerary="${source.id}"`, cloner.token)).toHaveLength(2);
+  });
+
+  it('refuses a taken or invalid name, a missing source and no login, creating nothing', async () => {
+    const id = newId();
+    const taken = await clone(cloner.token, { source: source.id, id, title: 'LOOP  crawl' });
+    expect(taken.status).toBe(400);
+    expect((await taken.json()).message).toBe('title_taken');
+    expect((await (await clone(cloner.token, { source: source.id, id, title: ' ' })).json()).message).toBe('title_invalid');
+    expect((await clone(cloner.token, { source: 'missingroute001', id, title: 'Copy of X' })).status).toBe(404);
+    expect((await clone('', { source: source.id, id, title: 'Copy of X' })).status).toBe(401);
+    expect((await get(`/api/collections/itineraries/records/${id}`, cloner.token)).status).toBe(404);
+  });
+
+  it('is all or nothing: a failing note leaves no clone behind', async () => {
+    const su = await superuserToken();
+    const col = await (await get('/api/collections/comments', su)).json();
+    const id = newId();
+    await patch('/api/collections/comments', { fields: [...col.fields, { name: 'zz_required', type: 'text', required: true }] }, su);
+    try {
+      expect((await clone(cloner.token, { source: source.id, id, title: 'Copy of Loop Crawl' })).status).toBeGreaterThanOrEqual(400);
+    } finally {
+      await patch('/api/collections/comments', { fields: col.fields }, su);
+    }
+    expect((await get(`/api/collections/itineraries/records/${id}`, cloner.token)).status).toBe(404);
+    expect(await list('stops', `itinerary="${id}"`, su)).toHaveLength(0);
+  });
+});
 ```
 
-If the JSON-path filter returns 0, switch the endpoint's completion check to fetching the source's
-`cloned_to` notes and matching `meta.route` in code, and update the unit mock to match.
+If `get` of a missing record answers something other than 404 (a view rule filters it), assert on
+an empty list instead (CLAUDE.md: rules filter, they do not reject). If `setup.ts` has no `truncate`
+for `legs` under that name, mirror what `planning.test.ts` truncates.
 
-Run `bash scripts/test-hooks.sh`. Expected: green.
+- [ ] **Step 2: Run and watch them fail.** Run `bash scripts/test-hooks.sh`. Expected: the clone
+  tests FAIL with 404 on `/api/crawl/clone`.
+
+- [ ] **Step 3: Implement** `pocketbase/pb_hooks/clone.pb.js`
+
+```js
+// Clone: copy any route into a draft of the caller's own, with a note on both routes, in one
+// transaction, so all of it lands or none of it does. The client names the new record's id and keeps
+// it across retries; a retry finds the finished clone by its own `cloned_from` note (which cannot
+// exist without the rest) and answers with it. Nothing here ever deletes. The name comes from the
+// client ("Copy of …" lives in labels.ts); a taken one answers title_taken and the client tries the
+// next. Helpers live inside the callback: top-level consts are not visible in hook callbacks.
+
+routerAdd('POST', '/api/crawl/clone', (e) => {
+  const ID = /^[a-z0-9]{15}$/
+  // What a stop means for planning. Legs are recomputed by the stop hook after commit; votes,
+  // comments, crew photos and anything from the day itself stay with the original.
+  const STOP_FIELDS = ['order', 'name', 'kind', 'direction', 'station_id', 'station_name', 'place', 'place_id', 'osm_id',
+    'address', 'lat', 'lon', 'hours', 'phone', 'website', 'confirmed_open', 'dwell_min', 'walk_min', 'notes', 'meet_point']
+  const body = e.requestInfo().body
+  const source = String(body.source || '')
+  const id = String(body.id || '')
+  if (!ID.test(source) || !ID.test(id) || source === id) throw new BadRequestError('bad_clone_request')
+  const titles = require(`${__hooks}/routeTitle.js`)
+  const name = titles.normalize(body.title)
+  if (!name) throw new BadRequestError('title_invalid')
+  const who = e.auth.id
+  let answer = null
+
+  $app.runInTransaction((tx) => {
+    let existing = null
+    try { existing = tx.findRecordById('itineraries', id) } catch (_) {}
+    if (existing) {
+      const proofs = tx.findRecordsByFilter('comments',
+        "target_collection = 'itineraries' && target_id = {:id} && kind = 'cloned_from' && user = {:u}", '', 0, 0, { id, u: who })
+      const ours = proofs.some((p) => { try { return JSON.parse(p.getString('meta')).route === source } catch (_) { return false } })
+      if (!ours) throw new ApiError(409, 'clone_conflict')
+      answer = { id, title: existing.getString('title') }
+      return
+    }
+    let src
+    try { src = tx.findRecordById('itineraries', source) } catch (_) { throw new NotFoundError('route_gone') }
+    if (titles.taken(tx, name.key, '')) throw new BadRequestError('title_taken')
+
+    const it = new Record(tx.findCollectionByNameOrId('itineraries'))
+    it.set('id', id)
+    it.set('title', name.display)
+    it.set('title_key', name.key)
+    it.set('status', 'draft')
+    it.set('vote_open', false)
+    it.set('created_by', who)
+    for (const f of ['event_date', 'start_time', 'start_station', 'start_station_name']) it.set(f, src.get(f))
+    tx.save(it)
+
+    const stopsCol = tx.findCollectionByNameOrId('stops')
+    for (const s of tx.findRecordsByFilter('stops', 'itinerary = {:id}', 'order,created', 0, 0, { id: source })) {
+      const copy = new Record(stopsCol)
+      for (const f of STOP_FIELDS) copy.set(f, s.get(f))
+      copy.set('itinerary', id)
+      copy.set('photos_status', s.getString('photos_status') === 'done' ? 'done' : 'none')
+      tx.save(copy)
+    }
+
+    const commentsCol = tx.findCollectionByNameOrId('comments')
+    const note = (target, kind, meta) => {
+      const n = new Record(commentsCol)
+      n.set('user', who)
+      n.set('target_collection', 'itineraries')
+      n.set('target_id', target)
+      n.set('kind', kind)
+      n.set('meta', meta)
+      tx.save(n)
+    }
+    note(id, 'cloned_from', { route: source, title: src.getString('title') })
+    note(source, 'cloned_to', { route: id, title: name.display })
+    answer = { id, title: name.display }
+  })
+  return e.json(200, answer)
+}, $apis.requireAuth('users'))
+```
+
+Notes for the implementer:
+- `ApiError`, `NotFoundError` and `BadRequestError` are JSVM globals. If `new ApiError(409, …)` is
+  not available in this PocketBase version, check `pb-dev.sh` for the binary version and use the
+  equivalent (e.g. `new BadRequestError('clone_conflict')` with the test expecting 400).
+- `tx.save` runs model hooks, not request hooks. So the itineraries create *request* hook (draft,
+  defaults, name check) does not run here, and this route sets those fields itself. `targets.pb.js`
+  `onRecordCreate` (a model hook) does run for the notes and checks their targets inside the same
+  transaction.
+- The stops' `onRecordAfterCreateSuccess` recompute hooks fire after commit, once per stop. That is
+  acceptable at crawl sizes.
+
+- [ ] **Step 4: Labels.** Add `routeGone: 'That route no longer exists.'` and
+  `cloneRoute: 'Clone route'` to `copy`, with README rows.
+
+- [ ] **Step 5: Run.** `bash scripts/test-hooks.sh` and `cd web && npm test && npm run check`.
+  Expected: green.
 
 - [ ] **Step 6: Commit**
 
 ```bash
-git add web/src/routes/api/plan/clone/+server.ts web/tests/unit/cloneEndpoint.test.ts web/tests/hooks/notes.test.ts web/src/lib/labels.ts README.md
+git add pocketbase/pb_hooks/clone.pb.js web/tests/hooks/clone.test.ts web/src/lib/labels.ts README.md
 git status --short
-git commit -m "feat(plan): clone any route into your own draft, noted on both routes"
+git commit -m "feat(plan): clone any route into your own draft, in one transaction, noted on both routes"
 ```
 
 ---
@@ -955,14 +986,16 @@ git commit -m "feat(plan): clone any route into your own draft, noted on both ro
   `web/tests/unit/planActions.test.ts`, `web/tests/unit/staged.test.ts`
 
 **Interfaces:**
-- Consumes: `titleError` (Task 1); `/api/plan/clone` (Task 4).
+- Consumes: `titleError`, `cloneTitle` (Task 1); `POST /api/crawl/clone` (Task 4); labels
+  `routeGone`, `genericError`.
 - Produces:
   - `PlanActions.rename?: (title: string) => Promise<void>`, which rejects with an `Error` whose
     message is copy
   - `StagedPlan.title?: string`
   - `setTitle(plan: StagedPlan, title: string): StagedPlan`
   - `commitPayload` includes `title` only when staged
-  - `cloneRoute(sourceId: string): Promise<string>`
+  - `cloneRoute(source: { id: string; title: string }): Promise<string>`, which rejects with an
+    `Error` whose message is copy
 
 - [ ] **Step 1: Write the failing tests.**
 
@@ -1000,34 +1033,51 @@ describe('rename', () => {
 
 ```ts
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { copy } from '../../src/lib/labels';
 
-const sent = vi.hoisted(() => ({ bodies: [] as { itinerary: string; id: string }[], fail: 0 }));
-vi.mock('$lib/api', () => ({
-  api: vi.fn(async (_path: string, init: { json: { itinerary: string; id: string } }) => {
-    sent.bodies.push(init.json);
-    if (sent.fail > 0) { sent.fail--; throw new Error('No signal'); }
-    return { id: init.json.id };
-  })
+const sent = vi.hoisted(() => ({ bodies: [] as { source: string; id: string; title: string }[], replies: [] as (string | null)[] }));
+vi.mock('$lib/pb', () => ({
+  pb: {
+    send: vi.fn(async (_path: string, init: { body: { source: string; id: string; title: string } }) => {
+      sent.bodies.push(init.body);
+      const code = sent.replies.shift() ?? null;
+      if (code) throw Object.assign(new Error(code), { status: 400, response: { message: code } });
+      return { id: init.body.id, title: init.body.title };
+    })
+  }
 }));
 const { cloneRoute } = await import('$lib/cloneRoute');
+const src = { id: 'sourceroute0001', title: 'Loop Crawl' };
 
-beforeEach(() => { sent.bodies = []; sent.fail = 0; });
+beforeEach(() => { sent.bodies = []; sent.replies = []; });
 
 describe('cloneRoute', () => {
-  it('retries a failed clone under the same id, then mints a fresh one', async () => {
-    sent.fail = 1;
-    await expect(cloneRoute('sourceroute0001')).rejects.toThrow();
-    const first = await cloneRoute('sourceroute0001');
+  it('tries "Copy of X", then "(2)", when a name is taken', async () => {
+    sent.replies = ['title_taken'];
+    await cloneRoute(src);
+    expect(sent.bodies.map((b) => b.title)).toEqual([`${copy.cloneTitlePrefix} Loop Crawl`, `${copy.cloneTitlePrefix} Loop Crawl (2)`]);
     expect(sent.bodies[0].id).toBe(sent.bodies[1].id);
+  });
+  it('retries a failed clone under the same id, then mints a fresh one', async () => {
+    sent.replies = ['boom'];
+    await expect(cloneRoute(src)).rejects.toThrow();
+    const first = await cloneRoute(src);
+    expect(sent.bodies[1].id).toBe(sent.bodies[0].id);
     expect(first).toBe(sent.bodies[0].id);
-    await cloneRoute('sourceroute0001');
+    await cloneRoute(src);
     expect(sent.bodies[2].id).not.toBe(first);
   });
   it('keeps retry ids per source route', async () => {
-    sent.fail = 1;
-    await expect(cloneRoute('sourceroute000a')).rejects.toThrow();
-    await cloneRoute('sourceroute000b');
+    sent.replies = ['boom'];
+    await expect(cloneRoute({ id: 'sourceroute000a', title: 'A' })).rejects.toThrow();
+    await cloneRoute({ id: 'sourceroute000b', title: 'B' });
     expect(sent.bodies[1].id).not.toBe(sent.bodies[0].id);
+  });
+  it('turns the server codes into copy', async () => {
+    sent.replies = ['route_gone'];
+    await expect(cloneRoute({ id: 'sourceroute000c', title: 'C' })).rejects.toThrow(copy.routeGone);
+    sent.replies = ['clone_conflict'];
+    await expect(cloneRoute({ id: 'sourceroute000d', title: 'D' })).rejects.toThrow(copy.genericError);
   });
 });
 ```
@@ -1078,18 +1128,32 @@ In `recordActions` (import `titleError` from `$lib/routeTitle`):
 
 ```ts
 // Cloning names the new route's id up front and keeps it until a clone of that route succeeds, so a
-// retry after a lost response finds the clone the server already made instead of making another.
-import { api } from '$lib/api';
+// retry after a lost response gets back the clone the server already made instead of another. The
+// server clones in one transaction (pocketbase/pb_hooks/clone.pb.js); the "Copy of …" name is ours
+// to choose, so a taken one moves on to "(2)", "(3)"….
+import { pb } from '$lib/pb';
+import { copy } from '$lib/labels';
 import { newRecordId } from '$lib/live/staged';
+import { cloneTitle, titleError } from '$lib/routeTitle';
 
+const MAX_TRIES = 50;
 const pending = new Map<string, string>();
 
-export async function cloneRoute(sourceId: string): Promise<string> {
-  const id = pending.get(sourceId) ?? newRecordId();
-  pending.set(sourceId, id);
-  const res = await api<{ id: string }>('/api/plan/clone', { method: 'POST', json: { itinerary: sourceId, id } });
-  pending.delete(sourceId);
-  return res.id;
+export async function cloneRoute(source: { id: string; title: string }): Promise<string> {
+  const id = pending.get(source.id) ?? newRecordId();
+  pending.set(source.id, id);
+  for (let n = 1; n <= MAX_TRIES; n++) {
+    try {
+      const res = await pb.send<{ id: string }>('/api/crawl/clone', { method: 'POST', body: { source: source.id, id, title: cloneTitle(source.title, n) } });
+      pending.delete(source.id);
+      return res.id;
+    } catch (err) {
+      if (titleError(err) === copy.titleTaken) continue;
+      const code = (err as { response?: { message?: string } }).response?.message;
+      throw new Error(code === 'route_gone' ? copy.routeGone : code === 'clone_conflict' ? copy.genericError : (err as Error).message || copy.genericError);
+    }
+  }
+  throw new Error(copy.titleTaken);
 }
 ```
 
@@ -1303,7 +1367,7 @@ than inventing one.
   async function clone() {
     if (!draft) return;
     cloning = true; error = '';
-    try { const id = await cloneRoute(draft.itinerary.id); await goto(`/plan/${id}/edit?named=1`); }
+    try { const id = await cloneRoute(draft.itinerary); await goto(`/plan/${id}/edit?named=1`); }
     catch (err) { error = (err as Error).message || copy.genericError; }
     finally { cloning = false; }
   }

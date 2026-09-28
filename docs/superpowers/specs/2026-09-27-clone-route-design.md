@@ -142,7 +142,9 @@ Where the rules are enforced:
   `labels.ts`.
 - The existing `/plan` create form gets the same errors.
 - No database unique index: existing data may already hold duplicates, and the migration must not
-  fail on them. The hook is the gate.
+  fail on them. The hook is the gate. It checks the name and saves in **one transaction**, and
+  PocketBase runs write transactions one at a time, so two concurrent requests cannot both take a
+  free name. The clone route does the same inside its own transaction.
 - `GET /api/plan/title-check?title=&route=` (any signed-in user) answers `{ ok, code? }` using the
   same rule. It is used only for the locked editor's early warning.
 
@@ -151,12 +153,13 @@ Where the rules are enforced:
 - Validate it **before any stop write**: a string, 1–80 characters after trimming, and unique (the
   same rule as the hook). A bad or taken title returns 400 with the same code, and nothing is
   written.
-- If it differs from the stored title, write it after the stop writes, through a PocketBase client
+- If it differs from the stored title, write it **before any stop write** (after validation), through a PocketBase client
   authenticated **with the Conductor's own token** from the request's `Authorization` header. Add a
   helper `userPb(request)` in `web/src/lib/server/pb.ts`. That way the hook records who renamed the
   route, and the existing admin rule is the gate.
 - A retry that sends the same title is a no-op: the hook sees no change, so no second note is
-  written.
+  written. Renaming first means a name taken after the preflight stops the Save before anything
+  else changes, and a later stop failure retries into a no-op rename.
 - The Save gate treats a title change as a change.
   - `planDiff`/`bulletinText` ignore the title: a rename is not news for the crew on the platform,
     so the Bulletin sheet drafts nothing for a title-only change.
@@ -164,55 +167,55 @@ Where the rules are enforced:
 
 ## 4. Clone
 
-**Endpoint `POST /api/plan/clone`** (`web/src/routes/api/plan/clone/+server.ts`), body
-`{ itinerary, id }`. `id` is the clone's record id, minted by the client with `newRecordId()` when
-the page loads. The client keeps it across retries and mints a fresh one only after a success. This
-follows the commit endpoint's stable-id idempotency.
+Clone is a PocketBase hook route, **`POST /api/crawl/clone`** in `pocketbase/pb_hooks/clone.pb.js`,
+for signed-in users only. The body is `{ source, id, title }`.
 
-0. **Retry check.**
-   - If an itinerary with `id` already exists, and it is `created_by` this user, and the source has
-     a `cloned_to` note whose `meta.route = id`, the clone finished earlier. Return `{ id }` and
-     write nothing.
-   - If it exists without that note, it is a half-made clone from a failed attempt. Delete it with
-     `adminPb()` and continue.
-   - If it exists but belongs to someone else, return 409.
+**One transaction.** The new route, its stops and both notes are written in a single
+`runInTransaction`: all of them land or none do. There is no cleanup step, and the route never
+deletes anything. This was changed after the Codex review of the plan: an endpoint that cleans up
+after partial failure can be steered into deleting routes, and overlapping retries can delete each
+other's work.
 
-1. `requireUser(request)`: any signed-in user. Validate that the id is 15 characters `[a-z0-9]`.
-2. Read the source route and its stops (sorted by `order,created`) with `adminPb()`. A missing
-   route returns 404.
-3. Create the new itinerary, with the record id `id`, using `userPb(request)`, so the create hook forces `status: draft` and
-   sets `created_by` to the cloner. The new itinerary has:
-   - `title`: `copy.cloneTitle(source.title)` ("Copy of …"), cut to 80 characters. If that is
-     taken, the endpoint tries "Copy of … (2)", "(3)" and so on until one is free, cutting the base
-     so the suffix still fits.
-   - `event_date`, `start_time`, `start_station`, `start_station_name` copied from the source
-4. Create each stop with `userPb`. The new route is the user's own draft, so the stop rules allow
-   it. Copied fields:
-   - `order`, `name`, `kind`, `direction`, `station_id`, `station_name`
-   - `place`, `place_id`, `osm_id`, `address`, `lat`, `lon`, `hours`, `phone`, `website`
-   - `confirmed_open`, `dwell_min`, `walk_min`, `notes`, `meet_point`
-   - `photos_status`: copied only when it is `done`, otherwise `none`
+**Idempotent by id.** The client mints `id` with `newRecordId()`, one per source route, keeps it
+across retries, and forgets it after a success (`web/src/lib/cloneRoute.ts`).
 
-   Photos live with the `place` in `attach.ts`. The plan must confirm that the stop page's gallery
-   reads from the place and not from per-stop `stop_photos`. If it reads per-stop photos, copy
-   those rows too.
+- If `id` already exists and carries a `cloned_from` note by this caller whose `meta.route` is
+  `source`, the clone finished earlier. The route answers `{ id, title }` and writes nothing. The
+  note can only exist together with the rest, because of the single transaction.
+- If `id` exists and is anything else, including the source itself or another of the caller's own
+  routes, the answer is `409 clone_conflict` and nothing changes.
+- `id === source` answers `400 bad_clone_request`.
+- PocketBase runs write transactions one at a time, so an overlapping retry waits and then takes the
+  first case.
 
-   Not copied: legs (the stop-create hook's recompute regenerates them), comments, votes,
-   approvals, check-ins, drinks, media, and chat or Bulletins.
-5. Write the two notes with `adminPb()`, `user` = the cloner, in this order:
-   - on the new route: `cloned_from { route: source.id, title: source.title }`
-   - on the source, **last**: `cloned_to { route: new.id, title: new.title }`
+**Names.** The client chooses the name:
+- It sends `copy.cloneTitle` ("Copy of …") first, and on `title_taken` tries "(2)", "(3)" and so on.
+  The base is cut so the whole name fits in 80 characters.
+- The route checks the name inside its transaction with the same rule as the hooks.
 
-   Because the source note is written last, it is the completion marker that step 0 looks for.
-6. Return `{ id: new.id }`.
+**Copied**, with the new route as a draft owned by the caller (`created_by`, `status: draft`,
+`vote_open: false`):
+- `event_date`, `start_time`, `start_station`, `start_station_name`
+- each stop's `order`, `name`, `kind`, `direction`, `station_id`, `station_name`, `place`,
+  `place_id`, `osm_id`, `address`, `lat`, `lon`, `hours`, `phone`, `website`, `confirmed_open`,
+  `dwell_min`, `walk_min`, `notes` and `meet_point`
+- `photos_status`, but only when it is `done` (otherwise `none`). Google photos live on the shared
+  `place`; crew uploads (`stop_photos`) are not copied.
 
-**Failure:** if anything after step 3 fails, delete the new itinerary with `adminPb()`, best effort.
-Stops, comments and notes cascade through the existing hooks and relations. Then return the error.
-The source is never modified, apart from its note, which is written last.
+Not copied: legs (the stop hook's recompute rebuilds them after commit), comments, votes, approvals,
+check-ins, drinks, media, chat and Bulletins.
 
-**Recompute:** every stop create queues a recompute (`recompute.js`), which the internal endpoint
-answers with 202 and queues. N queued recomputes for one clone are acceptable at crawl sizes
-(about 10 stops). The last one sees every stop.
+**Notes**, both with `user` = the caller:
+- on the clone: `cloned_from { route: source, title: source title }`
+- on the source: `cloned_to { route: id, title }`
+
+**Errors:**
+- `400 title_taken | title_invalid | bad_clone_request`
+- `404 route_gone`
+- `409 clone_conflict`
+- `401` without login
+
+The client maps these codes to copy.
 
 **UI:** an icon-only button (`IconButton`, like edit and delete), `clone-route`, with a new `copy`
 icon in `icons.ts`. `copy.cloneRoute` "Clone route" is used only as its accessible name and tooltip.
@@ -244,13 +247,12 @@ picker). The Conductor clones a locked route from its route page instead.
 
 - **Unit:**
   - `groupByKind`: order, empty groups left out, ranking kept.
-  - Clone endpoint with PocketBase mocked, like `planCommit`/`planEndpoints`: copied fields,
-    owner via the user token, 404, cleanup on a failed stop create, and both notes.
-  - Clone retries: a retry after full completion returns the same id and writes no second note. A
-    retry after a half-made clone deletes it and rebuilds. Someone else's `id` gets 409.
-  - `planCommit`: a title written through the user client, bad titles refused with 400, and an
+  - `cloneRoute`: the "(n)" retry on `title_taken`, the retry id kept per source, and error codes
+    mapped to copy.
+  - `planCommit`: a title written through the user client before any stop write, bad titles
+    refused with 400, a name taken after the preflight stopping the Save before stop writes, and an
     unchanged title not written.
-  - `staged`: the title is seeded and carried in `commitPayload`.
+  - `staged`: a staged title is carried in `commitPayload`, and none is sent when none is staged.
   - `planActions.rename`, including a `title_taken` rejection surfacing as `copy.titleTaken`.
   - Name rule helper: trim, length, case-insensitive clash, and the same route not clashing with
     itself.
@@ -258,6 +260,14 @@ picker). The Conductor clones a locked route from its route page instead.
     in 80 characters.
   - `labels`.
 - **Hooks** (`scripts/test-hooks.sh`):
+  - Clone (real PocketBase):
+    - The copied fields, owner and draft status, and both notes.
+    - Overlapping and later retries return the one clone.
+    - An `id` naming the caller's own locked route, or the source itself, is refused and that route
+      is untouched.
+    - A taken or invalid name, or a missing source, creates nothing.
+    - A failing note leaves no clone behind.
+  - Racing creates, and racing renames, to one free name: exactly one succeeds.
   - A draft rename writes one `renamed` note with the right user and meta, and a no-op update writes
     none.
   - A non-admin rename of a locked route gets 403 and writes no note.
