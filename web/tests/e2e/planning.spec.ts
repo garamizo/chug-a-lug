@@ -25,6 +25,7 @@ test.beforeEach(async ({ page }) => {
   });
   await page.route('**/api/places/attach', (route) => route.fulfill({ status: 503, json: { message: 'Google Places is not configured on the server.' } }));
   await page.route('**/api/places/search**', (route) => route.fulfill({ json: { venues: [] } }));
+  await page.route('**/api/places/photos', (route) => route.fulfill({ json: { status: 'none', place: null } }));
 });
 
 test('draft with real train times, layover change, card edits, votes, comments, approval and lock', async ({ page }) => {
@@ -41,7 +42,15 @@ test('draft with real train times, layover change, card edits, votes, comments, 
   await page.getByTestId('station-dot-NAPERVILLE').click();
   await expect(page).toHaveURL(/\/add\?station=NAPERVILLE&side=left$/);
   await expect(page.getByTestId('dir-out')).toHaveAttribute('aria-checked', 'true');
+  // Tapping a venue opens its sheet; closing it stays on the picker, and Add stop adds it.
   await page.getByTestId('venue-node-2').click();
+  await expect(page.getByTestId('venue-sheet')).toBeVisible();
+  await expect(page.getByTestId('venue-sheet')).toContainText('Naperville Wine Bar');
+  await page.getByTestId('venue-sheet-close').click();
+  await expect(page.getByTestId('venue-sheet')).toBeHidden();
+  await expect(page).toHaveURL(/\/add\?station=NAPERVILLE&side=left$/);
+  await page.getByTestId('venue-node-2').click();
+  await page.getByTestId('sheet-add').click();
   await expect(page).toHaveURL(editUrl);
   await expect(page.getByTestId('stop-row-0')).toContainText('Naperville Wine Bar');
   await expect(page.getByTestId('stop-row-0')).toContainText('11:00 AM');
@@ -53,6 +62,7 @@ test('draft with real train times, layover change, card edits, votes, comments, 
   await page.getByTestId('station-select').selectOption('LAGRANGE');
   await expect(page.getByTestId('venue-p1')).toContainText('★ 4.6 (312)');
   await page.getByTestId('venue-p1').click();
+  await page.getByTestId('sheet-add').click();
   await expect(page.getByTestId('stop-row-1')).toContainText('Test Tavern');
   await expect(page.getByTestId('leg-0')).toContainText('BNSF');
   await expect(page.getByTestId('leg-0')).toContainText('12:05 PM');
@@ -67,12 +77,14 @@ test('draft with real train times, layover change, card edits, votes, comments, 
   await expect(page).toHaveURL(/side=right$/);
   await expect(page.getByTestId('dir-back')).toHaveAttribute('aria-checked', 'true');
   await page.getByTestId('venue-node-2').click();
+  await page.getByTestId('sheet-add').click();
   await expect(page.getByTestId('map-row-back-NAPERVILLE').getByTestId('stop-row-2')).toHaveAttribute('data-side', 'right');
   await expect(page.getByTestId('map-row-NAPERVILLE').getByTestId('stop-row-2')).toHaveCount(0);
   await expect(page.getByTestId('stop-row-1')).toContainText('Test Tavern');
   // And a going stop added afterwards still lands among the going stops, before the return ones.
   await page.goto(`${draftUrl}/add?station=LAGRANGE&side=left`);
   await page.getByTestId('venue-p1').click();
+  await page.getByTestId('sheet-add').click();
   await expect(page.getByTestId('map-row-LAGRANGE').getByTestId('stop-row-2')).toHaveAttribute('data-side', 'left');
   await expect(page.getByTestId('map-row-back-NAPERVILLE').getByTestId('stop-row-3')).toHaveAttribute('data-side', 'right');
   page.once('dialog', (d) => d.accept());
@@ -144,6 +156,25 @@ test('draft with real train times, layover change, card edits, votes, comments, 
   await expect(page.getByTestId('dwell-0')).toHaveCount(0);
 });
 
+test('a stored venue shows its photos in the sheet on Add Stop', async ({ page }) => {
+  const stored = { ...(venuesFor.LAGRANGE[0] as object), placeRef: 'place000000001' };
+  await page.route('**/api/places/nearby**', (route) => route.fulfill({ json: { station: { id: 'LAGRANGE', name: 'LAGRANGE', lat: 0, lon: 0 }, venues: [stored], fetchedAt: '2026-09-19T00:00:00.000Z' } }));
+  await page.route('**/api/places/photos', (route) => {
+    expect(route.request().postDataJSON()).toEqual({ placeRef: 'place000000001' });
+    return route.fulfill({ json: { status: 'done', place: { id: 'place000000001', collectionId: 'places', collectionName: 'places', photos: ['1.jpg'] } } });
+  });
+  await login(page, 'E2E Skipper', ADMIN);
+  await page.getByTestId('nav-plan').click();
+  await page.getByTestId('draft-title').fill('Photo Peek');
+  await page.getByTestId('create-draft').click();
+  await expect(page).toHaveURL(/\/plan\/[a-z0-9]{15}\/edit$/);
+  await page.goto(page.url().replace(/\/edit$/, '/add?station=LAGRANGE&side=left'));
+  await page.getByTestId('venue-p1').click();
+  await expect(page.getByTestId('venue-sheet')).toContainText('Test Tavern');
+  await expect(page.getByTestId('venue-photo-0')).toBeVisible();
+  await expect(page.getByTestId('sheet-add')).toBeEnabled();
+});
+
 test('another crew member can read and cheer a draft but not change it, even by deep link', async ({ page, browser }) => {
   await login(page, 'E2E Builder', process.env.CREW_PASSWORD ?? 'crew-test-password');
   await page.getByTestId('nav-plan').click();
@@ -153,6 +184,7 @@ test('another crew member can read and cheer a draft but not change it, even by 
   const draftUrl = page.url().replace(/\/edit$/, '');
   await page.goto(`${draftUrl}/add?station=NAPERVILLE&side=left`);
   await page.getByTestId('venue-node-2').click();
+  await page.getByTestId('sheet-add').click();
   await expect(page.getByTestId('stop-row-0')).toContainText('Naperville Wine Bar');
   const stopUrl = await page.getByTestId('stop-link-0').getAttribute('href');
   expect(stopUrl).toMatch(/\/stops\/[a-z0-9]{15}$/);

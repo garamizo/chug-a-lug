@@ -10,6 +10,8 @@ declare global {
        * which falls back to the `?stop=` URL param instead — see `sheetStopId` in `$lib/nav`.
        */
       stop?: string | null;
+      /** The open venue sheet on Add Stop, with the same absent/`null` rules as `stop`. */
+      venue?: string | null;
       lightbox?: { items: LightboxItem[]; index: number };
     }
   }

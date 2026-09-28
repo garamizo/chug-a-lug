@@ -333,6 +333,8 @@ export const copy = {
   nextStop: 'Next stop',
   closeSheet: 'Close',
   googlePhoto: 'Photo via Google',
+  addThisStop: 'Add stop',
+  venueDetails: 'Venue details',
   leaderboard: 'Leaderboard',
   you: 'you',
   // Home: the current route as a ticket, other phases as a station board.

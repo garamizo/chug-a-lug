@@ -4,11 +4,12 @@ import { pushState, replaceState } from '$app/navigation';
 import { page } from '$app/state';
 import type { LightboxItem } from '$lib/types';
 
-function withStop(id: string | null): string {
+function withParam(key: string, id: string | null): string {
   const url = new URL(page.url);
-  if (id) url.searchParams.set('stop', id); else url.searchParams.delete('stop');
+  if (id) url.searchParams.set(key, id); else url.searchParams.delete(key);
   return url.pathname + url.search;
 }
+const withStop = (id: string | null) => withParam('stop', id);
 
 /**
  * `pushState`/`replaceState` update `page.state` but not `page.url` (SvelteKit's shallow routing
@@ -41,6 +42,15 @@ function guardedBack() {
 export function closeStop() {
   if (page.state.sheet) guardedBack();
   else replaceState(withStop(null), { ...page.state, stop: null, sheet: undefined });
+}
+
+/** The venue sheet on Add Stop, keyed by the venue row's test id; same rules as the stop sheet. */
+export const sheetVenueId = (): string | null =>
+  'venue' in page.state ? (page.state.venue ?? null) : page.url.searchParams.get('venue');
+export function openVenue(id: string) { pushState(withParam('venue', id), { ...page.state, venue: id, sheet: true }); }
+export function closeVenue() {
+  if (page.state.sheet) guardedBack();
+  else replaceState(withParam('venue', null), { ...page.state, venue: null, sheet: undefined });
 }
 export function openLightbox(items: LightboxItem[], index: number) { pushState('', { ...page.state, lightbox: { items, index } }); }
 export function closeLightbox() { if (page.state.lightbox) guardedBack(); }

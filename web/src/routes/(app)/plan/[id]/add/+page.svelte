@@ -11,6 +11,9 @@
   import Schematic from '$lib/components/Schematic.svelte';
   import type { Itinerary, Line, Station, Stop, Venue } from '$lib/types';
   import IconLink from '$lib/components/IconLink.svelte';
+  import VenueSheet from '$lib/components/VenueSheet.svelte';
+  import { closeVenue, openVenue, sheetVenueId } from '$lib/nav';
+  import { fmtWeekday } from '$lib/time';
 
   const itineraryId = $derived(page.params.id!);
   let itinerary = $state<Pick<Itinerary, 'id' | 'status' | 'created_by' | 'event_date'> | null>(null);
@@ -105,6 +108,8 @@
   }
 
   const tid = (v: Venue) => `venue-${v.id.replace(/\//g, '-') || 'manual'}`;
+  // A tapped venue opens its sheet first; Add stop there is what adds it.
+  const openVenueObj = $derived([...(nearby ?? []), ...(results ?? [])].find((v) => tid(v) === sheetVenueId()) ?? null);
   const rated = (v: Venue) => v.rating !== undefined ? ` · ★ ${v.rating.toFixed(1)}${v.ratingCount ? ` (${v.ratingCount})` : ''}` : '';
 </script>
 
@@ -130,7 +135,7 @@
   {:else}
     <ul class="venues">
       {#each nearby as v (v.id)}
-        <li><button type="button" onclick={() => add(v)} disabled={!!busy} data-testid={tid(v)}>
+        <li><button type="button" onclick={() => openVenue(tid(v))} disabled={!!busy} data-testid={tid(v)}>
           <strong>{v.name}</strong><span>{copy[`kind_${v.kind}`]}{rated(v)} · {v.distanceM ?? 0} m{v.address ? ` · ${v.address}` : ''}</span>
         </button></li>
       {/each}
@@ -147,7 +152,7 @@
     {#if results.length === 0}<p>{copy.noSearchResults}</p>{/if}
     <ul class="venues">
       {#each results as v (v.id)}
-        <li><button type="button" onclick={() => add(v)} disabled={!!busy} data-testid={tid(v)}>
+        <li><button type="button" onclick={() => openVenue(tid(v))} disabled={!!busy} data-testid={tid(v)}>
           <strong>{v.name}</strong><span>{copy[`kind_${v.kind}`]}{v.address ? ` · ${v.address}` : ''}</span>
         </button></li>
       {/each}
@@ -163,6 +168,10 @@
   </form>
 {/if}
 {#if error}<p class="error" role="alert">{error}</p>{/if}
+
+<VenueSheet venue={openVenueObj} weekday={itinerary ? fmtWeekday(itinerary.event_date) : ''}
+  walkMin={openVenueObj && station ? walkMinutes(haversineM(station.lat, station.lon, openVenueObj.lat, openVenueObj.lon)) : 0}
+  busy={!!busy} onadd={() => openVenueObj && void add(openVenueObj)} onclose={closeVenue} />
 
 <style>
   h2 { font-size: 18px; margin-top: 28px; }
