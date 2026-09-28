@@ -96,7 +96,13 @@
 </script>
 
 <!-- Only the literal `edit` is honoured, so `from` cannot send the back button anywhere else. -->
-<nav><IconLink href={page.url.searchParams.get('from') === 'edit' ? `/plan/${data.id}/edit` : `/plan/${data.id}`} icon="back" label={copy.backToDraft} testid="stop-back" /></nav>
+<nav>
+  {#if page.url.searchParams.get('from') === 'edit'}
+    <IconLink href={`/plan/${data.id}/edit`} icon="back" label={copy.backToEditing} testid="stop-back" />
+  {:else}
+    <IconLink href={`/plan/${data.id}`} icon="back" label={copy.backToDraft} testid="stop-back" />
+  {/if}
+</nav>
 {#if error}<p class="error" role="alert">{error}</p>{/if}
 {#if stop}
   <h1 data-testid="stop-name">{stop.name}</h1>

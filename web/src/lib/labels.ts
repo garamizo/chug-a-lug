@@ -193,6 +193,7 @@ export const copy = {
   lockedOn: 'Locked on',
   backToPlanner: 'Back to the Route Planner',
   backToDraft: 'Back to the draft',
+  backToEditing: 'Back to editing',
   editDraft: 'Edit the stops',
   doneEditing: 'Done editing',
   loadError: 'Could not load this. Check your connection and try again.',

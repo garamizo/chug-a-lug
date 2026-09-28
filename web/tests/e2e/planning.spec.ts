@@ -119,12 +119,14 @@ test('draft with real train times, layover change, card edits, votes, comments, 
   await expect(page.getByTestId('notes')).toHaveValue('Ask for Gus');
   await expect(page.getByTestId('confirmed-open')).toBeChecked();
   // The detail page opened from the editor goes back to the editor, even after a reload.
+  await expect(page.getByTestId('stop-back')).toHaveAttribute('aria-label', copy.backToEditing);
   await page.getByTestId('stop-back').click();
   await expect(page).toHaveURL(editUrl);
   // Reached any other way, it goes back to the draft.
   const tavernUrl = await page.getByTestId('stop-link-1').getAttribute('href');
   await page.goto(tavernUrl!);
   await expect(page.getByTestId('stop-name')).toHaveText('Test Tavern');
+  await expect(page.getByTestId('stop-back')).toHaveAttribute('aria-label', copy.backToDraft);
   await page.getByTestId('stop-back').click();
   await expect(page).toHaveURL(draftUrl);
 
