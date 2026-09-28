@@ -21,6 +21,10 @@ export async function cloneRoute(source: { id: string; title: string }): Promise
     } catch (err) {
       if (titleError(err) === copy.titleTaken) continue;
       const code = hookCode(err);
+      // A conflict means the id this tab picked for the retry belongs to someone else's record, not
+      // ours to keep retrying against: forget it so the next clone of this source mints a fresh one,
+      // rather than colliding with the same id forever.
+      if (code === 'clone_conflict') pending.delete(source.id);
       throw new Error(code === 'route_gone' ? copy.routeGone : code === 'clone_conflict' ? copy.genericError : (err as Error).message || copy.genericError);
     }
   }

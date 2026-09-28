@@ -45,4 +45,11 @@ describe('cloneRoute', () => {
     sent.replies = ['Clone_conflict.'];
     await expect(cloneRoute({ id: 'sourceroute000d', title: 'D' })).rejects.toThrow(copy.genericError);
   });
+  it('forgets the retry id after a clone_conflict, so a later clone of the same source mints a fresh one', async () => {
+    const conflicted = { id: 'sourceroute000e', title: 'E' };
+    sent.replies = ['Clone_conflict.'];
+    await expect(cloneRoute(conflicted)).rejects.toThrow(copy.genericError);
+    await cloneRoute(conflicted);
+    expect(sent.bodies[1].id).not.toBe(sent.bodies[0].id);
+  });
 });
