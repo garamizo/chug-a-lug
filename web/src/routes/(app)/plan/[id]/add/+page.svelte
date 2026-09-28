@@ -80,7 +80,7 @@
           lat: venue.lat, lon: venue.lon, phone: venue.phone ?? '', website: venue.website ?? ''
         };
         try { sessionStorage.setItem(`chugalug.stagedAdd:${itineraryId}`, JSON.stringify(payload)); } catch { /* private mode */ }
-        await goto(`/plan/${itineraryId}/edit`);
+        await goto(`/plan/${itineraryId}/edit`, { replaceState: true });
         return;
       }
       // Slot the stop into the crawl: going stops top to bottom, then return stops bottom to top.
@@ -97,7 +97,8 @@
         walk_min: walkMinutes(haversineM(station.lat, station.lon, venue.lat, venue.lon)), dwell_min: 60
       });
       void api('/api/places/attach', { method: 'POST', json: { stopId: stop.id } }).catch(() => undefined);
-      await goto(`/plan/${itineraryId}/edit`);
+      // Replace the open sheet's entry: Back from the editor must not reopen it and invite a second add.
+      await goto(`/plan/${itineraryId}/edit`, { replaceState: true });
     } catch (err) { error = (err as Error).message || copy.genericError; busy = ''; }
   }
 

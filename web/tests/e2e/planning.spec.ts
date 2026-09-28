@@ -195,6 +195,22 @@ test('Board at counts the ride in to the first stop', async ({ page }) => {
   await expect(page.getByLabel(copy.startTime)).toHaveValue('11:00');
 });
 
+test('Back from the editor after an add does not reopen the venue sheet', async ({ page }) => {
+  await login(page, 'E2E Skipper', ADMIN);
+  await page.getByTestId('nav-plan').click();
+  await page.getByTestId('draft-title').fill('No Double Add');
+  await page.getByTestId('create-draft').click();
+  await expect(page).toHaveURL(/\/edit$/);
+  await page.getByTestId('station-dot-LAGRANGE').click();
+  await page.getByTestId('venue-p1').click();
+  await expect(page).toHaveURL(/venue=/);
+  await page.getByTestId('sheet-add').click();
+  await expect(page.getByTestId('stop-row-0')).toContainText('Test Tavern');
+  await page.goBack();
+  await expect(page).toHaveURL(/\/add\?station=LAGRANGE&side=left$/);
+  await expect(page.getByTestId('venue-sheet')).toBeHidden();
+});
+
 test('a stored venue shows its photos in the sheet on Add Stop', async ({ page }) => {
   const stored = { ...(venuesFor.LAGRANGE[0] as object), placeRef: 'place000000001' };
   await page.route('**/api/places/nearby**', (route) => route.fulfill({ json: { station: { id: 'LAGRANGE', name: 'LAGRANGE', lat: 0, lon: 0 }, venues: [stored], fetchedAt: '2026-09-19T00:00:00.000Z' } }));
