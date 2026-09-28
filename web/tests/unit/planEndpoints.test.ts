@@ -79,6 +79,13 @@ describe('POST /api/plan/preview', () => {
   it('refuses a malformed itinerary id before any planning happens', async () => {
     await expect(call({ itinerary: 'it1', stops })).rejects.toMatchObject({ status: 400 });
   });
+
+  it('includes the opening leg when the route boards elsewhere', async () => {
+    state.itinerary = { ...state.itinerary, status: 'draft', start_station: 'NAPERVILLE' };
+    const res = await call({ itinerary: 'itinerary000001', stops });
+    const body = await res.json();
+    expect(body.legs[0]).toMatchObject({ fromStopId: '', toStopId: 's2', kind: 'train' });
+  });
 });
 
 

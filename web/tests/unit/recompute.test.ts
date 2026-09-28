@@ -22,6 +22,7 @@ function enableSim(at = '2026-12-26T18:00:00.000Z') {
 
 const state = vi.hoisted(() => ({
   itineraryError: null as { status: number; message: string } | null,
+  startStation: '' as string,
   stops: [] as unknown[],
   checkins: [] as unknown[],
   created: [] as { collection: string; body: Record<string, unknown> }[]
@@ -33,7 +34,7 @@ vi.mock('$lib/server/pb', () => ({
     collection: (name: string) => ({
       getOne: async () => {
         if (state.itineraryError) throw Object.assign(new Error(state.itineraryError.message), { status: state.itineraryError.status });
-        return { id: 'x', event_date: '2026-12-26', start_time: '11:00', status: 'locked' };
+        return { id: 'x', event_date: '2026-12-26', start_time: '11:00', status: 'locked', start_station: state.startStation };
       },
       getFullList: async () => (name === 'stops' ? state.stops : []),
       getList: async () => ({ items: name === 'checkins' ? state.checkins : [] }),
@@ -53,6 +54,7 @@ beforeEach(() => {
   clockSlot.current = createClockService({ enabled: () => false, runId: () => '',
     read: async () => { throw new Error('normal mode read clock'); }, write: async () => {} });
   state.itineraryError = null;
+  state.startStation = '';
   state.stops = [];
   state.checkins = [];
   state.created = [];
@@ -160,6 +162,16 @@ it('rejects an obsolete supplied recompute context without publishing', async ()
   await clockSlot.current!.change(1, { action: 'pause' });
   await expect(recomputeItinerary('obsolete', context)).rejects.toMatchObject({ status: 409 });
   expect(state.created).toEqual([]);
+});
+
+it('writes the opening leg with an empty from_stop when the route has a start station', async () => {
+  vi.mocked(metra.getSchedule).mockResolvedValueOnce(fixtureSchedule());
+  state.startStation = 'NAPERVILLE';
+  state.stops = [{ id: 's1', order: 1, station_id: 'LAGRANGE', dwell_min: 60, walk_min: 5 }];
+  await recomputeItinerary('aaaaaaaaaaaaaaa');
+  const legs = state.created.filter((c) => c.collection === 'legs').map((c) => c.body);
+  expect(legs).toHaveLength(1);
+  expect(legs[0]).toMatchObject({ from_stop: '', to_stop: 's1', kind: 'train' });
 });
 
 afterEach(() => { vi.useRealTimers(); });

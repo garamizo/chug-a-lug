@@ -45,7 +45,7 @@ async function doRecompute(itineraryId: string, context: ClockContext) {
   // like a draft, unless the anchor's check-in was actually made on the event's own day.
   const anchor = it.status === 'locked' ? activeAnchor(it.event_date, await findAnchor(pb, itineraryId), new Date(context.eventNow)) : null;
   const computed = await computeLegs({
-    context, date: it.event_date, startMin: parseHm(it.start_time), anchor,
+    context, date: it.event_date, startMin: parseHm(it.start_time), anchor, startStation: it.start_station || null,
     stops: stops.map((s) => ({ id: s.id, order: s.order, station_id: s.station_id, dwell_min: s.dwell_min ?? 60, walk_min: s.walk_min ?? 5 }))
   });
   const now = new Date().toISOString();

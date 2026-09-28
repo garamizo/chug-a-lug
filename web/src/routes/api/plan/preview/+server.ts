@@ -28,7 +28,7 @@ export const POST: RequestHandler = async ({ request }) => {
     const legs = await computeLegs({
       date: itinerary.event_date,
       startMin: parseHm(itinerary.start_time),
-      anchor,
+      anchor, startStation: itinerary.start_station || null,
       stops, context
     });
     return json({ legs, anchorAt: anchor?.at ?? null, clockRevision: context.enabled ? context.revision : null });
