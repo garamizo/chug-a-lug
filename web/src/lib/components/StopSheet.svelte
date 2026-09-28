@@ -8,12 +8,11 @@
   import { hoursFor, safeWebsite, telHref, walkUrl } from '$lib/live/venue';
   import type { LightboxItem, Media, Stop } from '$lib/types';
 
-  // `photos` is the thumbnail per stop id for a stop with no venue record behind it (a staged one);
   // `detailsLink: false` hides Edit details where leaving would lose work, and `detailsFrom` tells the
   // detail page where its back button goes.
-  let { stops, media, eventDate, itineraryId, isAdmin, photos = undefined, detailsLink = true, detailsFrom = undefined }: {
+  let { stops, media, eventDate, itineraryId, isAdmin, detailsLink = true, detailsFrom = undefined }: {
     stops: Stop[]; media: Media[]; eventDate: string; itineraryId: string; isAdmin: boolean;
-    photos?: Record<string, string>; detailsLink?: boolean; detailsFrom?: 'edit';
+    detailsLink?: boolean; detailsFrom?: 'edit';
   } = $props();
 
   const ordered = $derived([...stops].sort((a, b) => a.order - b.order));
@@ -23,9 +22,7 @@
   const hours = $derived(hoursFor(stop?.hours ?? null, fmtWeekday(eventDate)));
   const tel = $derived(telHref(stop?.phone));
   const website = $derived(safeWebsite(stop?.website));
-  const fallback = $derived(!place && stop ? photos?.[stop.id] : undefined);
   const gallery = $derived<LightboxItem[]>(!stop ? [] : [
-    ...(fallback ? [{ url: fallback, full: fallback, kind: 'image' as const }] : []),
     ...(place?.photos ?? []).map((f: string) => ({ url: pb.files.getURL(place!, f, { thumb: '800x0' }), full: pb.files.getURL(place!, f), kind: 'image' as const, caption: copy.googlePhoto })),
     ...media.filter((m) => m.stop === stop.id).map((m) => ({ url: pb.files.getURL(m, m.file, { thumb: '1200x0' }), full: pb.files.getURL(m, m.file), kind: m.kind, caption: m.expand?.user?.name }))
   ]);

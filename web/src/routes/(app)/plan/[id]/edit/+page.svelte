@@ -270,7 +270,7 @@
     <!-- Over the editor, not away from it: the staged plan lives in this component. Edit details
          leaves the page, so only a draft (written as it goes) offers it. -->
     <StopSheet stops={sheetStops} media={[]} eventDate={draft.itinerary.event_date} itineraryId={draft.itinerary.id}
-      isAdmin={editable} detailsLink={!live} detailsFrom="edit" photos={stopPhotos(draft.stops)} />
+      isAdmin={editable} detailsLink={!live} detailsFrom="edit" />
 
     {#if live}
       <div class="savebar">

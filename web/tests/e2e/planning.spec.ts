@@ -100,7 +100,7 @@ test('draft with real train times, layover change, card edits, votes, comments, 
   // In the editor a stop opens in the sheet; closing it leaves you in the editor.
   await page.getByTestId('stop-link-1').click();
   await expect(page.getByTestId('stop-sheet')).toBeVisible();
-  await expect(page.getByTestId('sheet-add')).toHaveCount(0);
+  await expect(page.getByTestId('sheet-name')).toHaveText('Test Tavern');
   await page.getByTestId('sheet-close').click();
   await expect(page).toHaveURL(editUrl);
   await expect(page.getByTestId('dwell-0')).toBeVisible();
