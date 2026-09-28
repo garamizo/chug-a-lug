@@ -94,6 +94,8 @@ export const copy = {
   draftTitle: 'Draft title',
   noDrafts: 'No drafts yet. Start the first one.',
   startTime: 'At the first stop by',
+  boardAt: 'Board at',
+  boardAtPick: 'Pick where the crew boards',
   stops: 'Stops',
   addStop: 'Add a stop',
   noStops: 'No stops yet. Add the first bar.',

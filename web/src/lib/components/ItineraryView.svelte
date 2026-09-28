@@ -10,6 +10,7 @@
   import type { PlanActions } from '$lib/planActions';
   import LineMap from './LineMap.svelte';
   import StopRow from './StopRow.svelte';
+  import LegRow from './LegRow.svelte';
 
   let { itinerary, stops, legs, editable, canManage, actions, onerror, onopenstop, photos, builder, current, belowHeader }: {
     itinerary: Itinerary; stops: StopLike[]; legs: Leg[]; editable: boolean; canManage: boolean; actions: PlanActions; onerror?: (message: string) => void;
@@ -29,11 +30,14 @@
   const names = $derived(Object.assign(
     {},
     ...sorted.map((s) => ({ [s.station_id]: s.station_name || s.station_id })),
+    ...(itinerary.start_station ? [{ [itinerary.start_station]: itinerary.start_station_name || itinerary.start_station }] : []),
     { OTC: copy.stationOTC, CUS: copy.stationCUS }
   ));
-  const legAfter = (i: number) => legs.find((l) => l.from_stop === sorted[i].id && l.to_stop === sorted[i + 1]?.id);
+  // The ride in from Board at to stop 1: the one leg with no from_stop. legAfter never matches it.
+  const opening = $derived(legs.find((l) => !l.from_stop && l.to_stop === sorted[0]?.id));
+  const legAfter = (i: number) => legs.find((l) => !!l.from_stop && l.from_stop === sorted[i].id && l.to_stop === sorted[i + 1]?.id);
   const arriveAt = (i: number): Date | null => {
-    if (i === 0) return localToUtc(itinerary.event_date, parseHm(itinerary.start_time));
+    if (i === 0) return opening ? new Date(opening.arrive_at) : localToUtc(itinerary.event_date, parseHm(itinerary.start_time));
     const leg = legAfter(i - 1);
     return leg ? new Date(leg.arrive_at) : null;
   };
@@ -100,6 +104,12 @@
 
 {#snippet card(i: number)}
   {@const stop = sorted[i]}
+  {#if i === 0 && opening}
+    <div class="opening" data-testid="opening-leg">
+      <p class="meta">{copy.boardAt} {itinerary.start_station_name || itinerary.start_station} · {itinerary.start_time}</p>
+      <LegRow leg={opening} index={-1} {names} />
+    </div>
+  {/if}
   <StopRow {stop} photo={photos ? photos[stop.id] ?? null : stopPhoto(stop as Stop)} index={i} arriveAt={arriveAt(i)} leaveAt={leaveAt(i)} {editable} last={i === sorted.length - 1}
     side={placement.side[i]} leg={legAfter(i)} legReason={legReason(i)} {names} nextStationId={sorted[i + 1]?.station_id} date={itinerary.event_date}
     canUp={sameStation(i, i - 1)} canDown={sameStation(i, i + 1)}
@@ -139,6 +149,17 @@
     </div>
     <div><strong>{finish ? fmtTime(finish) : '—'}</strong><small>{copy.statFinish}</small></div>
   </div>
+  {#if canManage && actions.setStartStation}
+    <label class="board">{copy.boardAt}
+      <select value={itinerary.start_station ?? ''} data-testid="board-at"
+        onchange={(e) => { const id = (e.target as HTMLSelectElement).value; const st = (stations ?? []).find((s) => s.id === id); void actions.setStartStation?.(st ? { id: st.id, name: st.name } : null); }}>
+        <option value="">{copy.boardAtPick}</option>
+        {#each stations ?? [] as st (st.id)}<option value={st.id} disabled={st.served === false}>{stationLabel(st)}</option>{/each}
+      </select>
+    </label>
+  {:else if itinerary.start_station}
+    <p class="board">{copy.boardAt} <strong>{itinerary.start_station_name || itinerary.start_station}</strong></p>
+  {/if}
 </header>
 {@render belowHeader?.()}
 
@@ -181,6 +202,11 @@
   .stats strong { display: block; font-family: var(--mono); font-size: 20px; color: var(--gold); }
   .stats small { font-size: 10px; letter-spacing: .08em; text-transform: uppercase; color: #888; }
   .stats input { width: 100%; max-width: 110px; margin: 0 auto; padding: 4px; font-family: var(--mono); font-size: 18px; text-align: center; }
+  .board { display: flex; align-items: center; justify-content: center; gap: 8px; margin: 8px 0 0; font-size: 10px; letter-spacing: .08em; text-transform: uppercase; color: #888; }
+  .board select { font-family: var(--mono); font-size: 15px; padding: 4px; max-width: 220px; }
+  .board strong { font-family: var(--mono); font-size: 15px; letter-spacing: normal; text-transform: none; color: var(--gold); }
+  .opening { margin: 0 0 6px; }
+  .opening .meta { margin: 0; font-size: 12px; color: #888; }
   h2 { font-size: 18px; margin-top: 28px; }
   h3 { font-size: 15px; color: #aaa; margin: 20px 0 8px; }
   .dir { font-size: 12px; letter-spacing: .14em; text-transform: uppercase; color: var(--gold); margin: 18px 0 6px 46px; }

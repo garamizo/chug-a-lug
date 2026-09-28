@@ -156,6 +156,25 @@ test('draft with real train times, layover change, card edits, votes, comments, 
   await expect(page.getByTestId('dwell-0')).toHaveCount(0);
 });
 
+test('Board at counts the ride in to the first stop', async ({ page }) => {
+  await login(page, 'E2E Skipper', ADMIN);
+  await page.getByTestId('nav-plan').click();
+  await page.getByTestId('draft-title').fill('Board At');
+  await page.getByTestId('create-draft').click();
+  await expect(page).toHaveURL(/\/edit$/);
+  await page.getByTestId('station-dot-LAGRANGE').click();
+  await page.getByTestId('venue-p1').click();
+  await page.getByTestId('sheet-add').click();
+  await expect(page.getByTestId('stop-row-0')).toContainText('Arrive 11:00 AM');
+  await page.getByTestId('board-at').selectOption('NAPERVILLE');
+  // BN2 leaves Naperville 12:05, reaches La Grange 12:30, plus the 2 min walk.
+  await expect(page.getByTestId('opening-leg')).toContainText('12:05 PM');
+  await expect(page.getByTestId('stop-row-0')).toContainText('Arrive 12:32 PM');
+  await page.getByTestId('board-at').selectOption('');
+  await expect(page.getByTestId('opening-leg')).toHaveCount(0);
+  await expect(page.getByTestId('stop-row-0')).toContainText('Arrive 11:00 AM');
+});
+
 test('a stored venue shows its photos in the sheet on Add Stop', async ({ page }) => {
   const stored = { ...(venuesFor.LAGRANGE[0] as object), placeRef: 'place000000001' };
   await page.route('**/api/places/nearby**', (route) => route.fulfill({ json: { station: { id: 'LAGRANGE', name: 'LAGRANGE', lat: 0, lon: 0 }, venues: [stored], fetchedAt: '2026-09-19T00:00:00.000Z' } }));
