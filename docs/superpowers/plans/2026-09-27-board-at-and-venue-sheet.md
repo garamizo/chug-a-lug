@@ -32,7 +32,8 @@ reuses the attach code's fetch-once media step through a new endpoint.
 2. Start station equal to stop 1's station: no boarding journey; Live behaves as today; stop 1 arrives at Start + walk. Pinned in Tasks 2 and 4.
 3. Clearing Board at (empty option) returns the route to today's timing (no opening leg left behind). Pinned in Task 3 (recompute deletes all legs then writes only computed ones) and Task 6 e2e.
 4. A staged change on the locked Route editor survives opening and closing a stop sheet. Pinned in Task 9 e2e.
-5. Opening a venue whose Google photos were already fetched makes no Google call. Pinned in Task 7.
+5. Opening a venue whose Google photos were already fetched — or opening it twice at once, or opening it and adding it at once — makes one set of Google calls. Pinned in Task 7.
+6. A Conductor check-in at stop 1 before its planned arrival ends the boarding journey. Pinned in Tasks 4 and 5.
 
 ---
 
@@ -265,6 +266,15 @@ export function boardingJourney(itinerary: Pick<Itinerary, 'start_station' | 'st
     expect(r.source).toBe('before');
     expect(currentStop(stops, [opening, ...legs], new Date('2026-12-26T18:25:00.000Z'), { startAt }).source).toBe('clock');
   });
+
+  it('lets a check-in end the before state even ahead of the planned arrival', () => {
+    const opening = leg('', 'A', '2026-12-26T17:30:00.000Z', '2026-12-26T18:20:00.000Z');
+    const r = currentStop(stops, [opening, ...legs], new Date('2026-12-26T18:05:00.000Z'), {
+      startAt, override: { stopId: 'A', at: '2026-12-26T18:00:00.000Z' }
+    });
+    expect(r.source).toBe('override');
+    expect(r.stop?.id).toBe('A');
+  });
 ```
 
 `board.test.ts` (inside `describe('plannedTrain'`):
@@ -320,6 +330,11 @@ describe('boardingJourney', () => {
 
 - [ ] **Step 3: Implement.**
   - `current.ts` `timings`: `const arriveIso = inLeg?.arrive_at ?? (i === 0 ? startAt.toISOString() : undefined);`
+  - `current.ts` override guard: a check-in made while the crawl is still `before` always wins (it is the Conductor saying the crew is already there), otherwise the existing newer-than-arrival rule:
+```ts
+    if (hit && (source === 'before' || new Date(override.at).getTime() > picked.arriveAt)) return result(hit, 'override');
+```
+    The override is only passed on the event day (`effectiveAnchor`), so practice days are unaffected.
   - `strip.ts:20`: `arriveAt: arrive.get(stop.id) ?? (i === 0 ? startAt.toISOString() : null),`
   - `board.ts` `plannedTrain`: `const rank = (id: string) => (id ? order.get(id) ?? 0 : -Infinity);` and sort by `rank(a.from_stop) - rank(b.from_stop)`.
   - `board.ts` new function:
@@ -362,7 +377,7 @@ export function boardingJourney(itinerary: Pick<Itinerary, 'start_station' | 'st
 - Consumes: `boardingJourney`, `Boarding` (Task 4).
 - Produces: `liveDay.boarding: Boarding | null`.
 
-- [ ] **Step 1: Failing unit test** in `liveDay.test.ts`, following its existing LiveDay construction/mocking of `fetchNext` (read the file's first 80 lines for the harness): give the day a locked itinerary with `start_station: 'AURORA', start_station_name: 'Aurora'`, **one** stop at NAPERVILLE, an opening leg whose train segment departs AURORA, `now` before that departure; call `loadTrains()` and assert `fetchNext` was called with `('AURORA', 'NAPERVILLE', eventDate, <planned dep − 60 s>, practice)` and that `day.plannedTrip` equals the segment's `{ tripId, dep }`. Second case: same route with a second stop at CUS — `fetchNext` is still called `('AURORA', 'NAPERVILLE', …)`.
+- [ ] **Step 1: Failing unit test** in `liveDay.test.ts`, following its existing LiveDay construction/mocking of `fetchNext` (read the file's first 80 lines for the harness): give the day a locked itinerary with `start_station: 'AURORA', start_station_name: 'Aurora'`, **one** stop at NAPERVILLE, an opening leg whose train segment departs AURORA, `now` before that departure; call `loadTrains()` and assert `fetchNext` was called with `('AURORA', 'NAPERVILLE', eventDate, <planned dep − 60 s>, practice)` and that `day.plannedTrip` equals the segment's `{ tripId, dep }`. Second case: same route with a second stop at CUS — `fetchNext` is still called `('AURORA', 'NAPERVILLE', …)`. Third case (event day): the same two-stop route with a Conductor anchor on stop 1 timestamped before the opening leg's arrival — `day.boarding` is null and `fetchNext` is called `('NAPERVILLE', 'CUS', …)`.
 
 - [ ] **Step 2:** run it → FAIL (today it returns early / asks NAPERVILLE→CUS).
 
@@ -443,7 +458,7 @@ test('Board at counts the ride in to the first stop', async ({ page }) => {
   await expect(page.getByTestId('stop-row-0')).toContainText('Arrive 11:00 AM');
 });
 ```
-(`sheet-add` comes from Task 8; if Task 8 is not done yet, use the venue row as today and switch it in Task 8.)
+(Execute Task 8 before Task 6 so `sheet-add` exists; the task numbers stay as written.)
 
 - [ ] **Step 2:** run → FAIL.
 
@@ -526,19 +541,40 @@ describe('venueMedia', () => {
   });
 });
 ```
-Check the file's `beforeEach` resets `pbState`, `envState.dataDir` (tmp dir) and the google mocks; reuse it.
+  it('fetches once when the sheet is opened twice at the same time', async () => {
+    pbState.places.set('placeg2', { id: 'placeg2', ref: 'google:G2', source: 'google', place_id: 'G2', name: 'Bar', photos: [], photo_refs: [] });
+    let release!: () => void;
+    const gate = new Promise<void>((r) => (release = r));
+    vi.mocked(placeDetails).mockImplementation(async () => { await gate; return { name: 'Bar', address: '', lat: 1, lon: 2, hours: [], rating: null, phone: '', website: '', mapsUrl: '', photos: [{ name: 'p/1', attribution: '' }], fetchedAt: '' } as never; });
+    vi.mocked(photoBytes).mockResolvedValue(new Uint8Array([1]) as never);
+    const both = Promise.all([venueMedia('placeg2'), venueMedia('placeg2')]);
+    release();
+    await both;
+    expect(placeDetails).toHaveBeenCalledTimes(1);
+    expect(photoBytes).toHaveBeenCalledTimes(1);
+  });
+  it('fetches once when a venue is opened and added at the same time', async () => {
+    pbState.places.set('placeg3', { id: 'placeg3', ref: 'google:G3', source: 'google', place_id: 'G3', name: 'Bar', photos: [], photo_refs: [] });
+    seedStop('stopg3000000001', { place: 'placeg3', place_id: 'G3' });
+    // (same gated placeDetails mock as above)
+    …
+    await Promise.all([venueMedia('placeg3'), attachPlace('stopg3000000001')]);
+    expect(placeDetails).toHaveBeenCalledTimes(1);
+  });
+```
+Check the file's `beforeEach` resets `pbState`, `envState.dataDir` (tmp dir) and the google mocks; reuse it. (Write the third test's gate in full, as in the second; the `…` above is only this plan eliding the repeat.)
 
 - [ ] **Step 2:** run → FAIL (`venueMedia` not exported).
 
 - [ ] **Step 3: Implement.** Move the body of the `serialize(placeQueues, ref, async () => { … })` callback into
 ```ts
 /** Details and up to five photos for one Google venue, once. Returns the place, or why not. */
-async function ensurePlaceMedia(pb: PocketBase, cfg: { key: string }, placeId: string, seed: { existing: Place | null; name: string; kind: string; lat: number; lon: number; address: string; station_id: string }): Promise<Place | string> {
+async function ensurePlaceMedia(pb: PocketBase, cfg: { key: string }, placeId: string, seed: { name: string; kind: string; lat: number; lon: number; address: string; station_id: string }): Promise<Place | string> {
   const ref = `google:${placeId}`;
-  return serialize(placeQueues, ref, async () => { /* the existing body, using seed.* where it used stop.* and seed.existing where it used place */ });
+  return serialize(placeQueues, ref, async () => { /* the existing body, starting from findPlace(pb, ref), using seed.* where it used stop.* */ });
 }
 ```
-and call it from `doAttachPlace` with `{ existing: place, name: stop.name, kind: stop.kind || 'other', lat: stop.lat, lon: stop.lon, address: stop.address, station_id: stop.station_id }`. Add:
+**Inside the queue, always re-read the place by ref** (`let p = await findPlace(pb, ref);`, creating it from `seed` only when absent) — never trust a snapshot taken before the queue, or a second caller that waited in line would fetch again from its stale copy. `seed.existing` is then unused; drop it from the seed type. Call it from `doAttachPlace` with `{ name: stop.name, kind: stop.kind || 'other', lat: stop.lat, lon: stop.lon, address: stop.address, station_id: stop.station_id }`. Add:
 ```ts
 export async function venueMedia(placeRecordId: string) {
   const pb = await adminPb();
@@ -548,7 +584,7 @@ export async function venueMedia(placeRecordId: string) {
   if (place.details_at && (place.photos.length || !(place.photo_refs ?? []).length)) return { status: 'done' as const, place };
   if (!serverEnv.googleKey) return { status: 'none' as const, place };
   try {
-    const out = await ensurePlaceMedia(pb, { key: serverEnv.googleKey }, place.place_id, { existing: place, name: place.name, kind: place.kind, lat: place.lat, lon: place.lon, address: place.address, station_id: place.station_id });
+    const out = await ensurePlaceMedia(pb, { key: serverEnv.googleKey }, place.place_id, { name: place.name, kind: place.kind, lat: place.lat, lon: place.lon, address: place.address, station_id: place.station_id });
     return typeof out === 'string' ? { status: 'failed' as const, place, message: out } : { status: 'done' as const, place: out };
   } catch (err) {
     console.error('[places] venue media', placeRecordId, err);
@@ -639,7 +675,7 @@ export function closeVenue() {
 
 **Interfaces:**
 - Consumes: `openStop`/`closeStop` from `$lib/nav`; `ItineraryView`'s existing `onopenstop` prop.
-- Produces: `StopSheet` props `photos?: Record<string, string>` (fallback thumb when the stop has no `expand.place`), `detailsLink?: boolean` (default `true`; the link also still needs `isAdmin`).
+- Produces: `StopSheet` props `photos?: Record<string, string>` (fallback thumb when the stop has no `expand.place`), `detailsLink?: boolean` (default `true`; the link also still needs `isAdmin`), `detailsFrom?: 'edit'`.
 
 - [ ] **Step 1: Failing e2e.**
   - `planning.spec.ts` (big test): replace `await page.getByTestId('stop-link-1').click();` with
@@ -653,7 +689,7 @@ export function closeVenue() {
   await page.getByTestId('stop-link-1').click();
   await page.getByTestId('sheet-edit').click();
 ```
-    and after the detail-page `reload` assertions, `await page.getByTestId('back').click(); await expect(page).toHaveURL(editUrl);` — use the detail page back link's test id (add `testid="stop-back"` to that `IconLink` and use it).
+    and after the detail-page `reload` assertions (the reload keeps `?from=edit`), `await page.getByTestId('stop-back').click(); await expect(page).toHaveURL(editUrl);`. Also: `await page.goto(`${draftUrl}/stops/<id>`)` directly (no `from`) → `stop-back` goes to `draftUrl`.
   - `liveEdit.spec.ts`: after a staged dwell change in an existing test, tap `stop-link-0`, expect `stop-sheet` visible and `sheet-edit` count 0, close, and expect the staged dwell option still selected and Save still enabled.
 
 - [ ] **Step 2:** run → FAIL.
@@ -663,7 +699,7 @@ export function closeVenue() {
   - Edit page: `import StopSheet` and `openStop` from `$lib/nav`; pass `onopenstop={openStop}` to `ItineraryView`; render
 ```svelte
     <StopSheet stops={sheetStops} media={[]} eventDate={draft.itinerary.event_date} itineraryId={draft.itinerary.id}
-      isAdmin={editable} detailsLink={!live} photos={stopPhotos(draft.stops)} />
+      isAdmin={editable} detailsLink={!live} detailsFrom="edit" photos={stopPhotos(draft.stops)} />
 ```
     with
 ```ts
@@ -672,7 +708,7 @@ export function closeVenue() {
     ? plan.stops.map((s) => ({ ...(draft!.stops.find((d) => d.id === s.id) ?? {}), ...s }) as unknown as Stop)
     : draft.stops);
 ```
-  - Detail page back link: `<IconLink href="/plan/{data.id}" icon="back" label={copy.backToDraft} testid="stop-back" onclick={(e) => { if (history.length > 1 && document.referrer.startsWith(location.origin)) { e.preventDefault(); history.back(); } }} />` — if `IconLink` lacks `onclick`, add an optional `onclick` prop passed to its `<a>`.
+  - The return destination travels in the URL, so it survives a reload and needs no history guessing: `StopSheet` gets `detailsFrom?: 'edit'`, and its edit link becomes `href="/plan/{itineraryId}/stops/{stop.id}{detailsFrom ? `?from=${detailsFrom}` : ''}"`; the editor passes `detailsFrom="edit"`. The detail page's back link: `<IconLink href={page.url.searchParams.get('from') === 'edit' ? `/plan/${data.id}/edit` : `/plan/${data.id}`} icon="back" label={copy.backToDraft} testid="stop-back" />` (import `page` from `$app/state`; add a `testid` prop to `IconLink` if it lacks one). Only the literal `edit` is honoured, so the parameter cannot redirect anywhere else.
 
 - [ ] **Step 4:** both e2e specs → PASS; `npm run check`.
 - [ ] **Step 5: Commit** — `feat(plan): the editor opens stops in the sheet and keeps you in the editor`.
