@@ -71,6 +71,8 @@ export async function seedLockedCrawl(opts: {
   extraVenueAtFirstStation?: boolean;
   /** Names the first bar, so two seeded routes can be told apart on screen. */
   firstStopName?: string;
+  /** Boards at another station: the planner then opens the route with a ride to the first stop. */
+  startStation?: { id: string; name: string };
 }) {
   const token = await superuserToken();
   const users = await fetch(`${PB}/api/collections/users/records?filter=${encodeURIComponent(`name_key="${opts.ownerName.toLowerCase()}"`)}`, {
@@ -87,7 +89,7 @@ export async function seedLockedCrawl(opts: {
   }, token);
   const lockRes = await fetch(`${PB}/api/collections/itineraries/records/${draft.id}`, {
     method: 'PATCH', headers: { 'content-type': 'application/json', Authorization: token },
-    body: JSON.stringify({ status: 'locked' })
+    body: JSON.stringify({ status: 'locked', ...(opts.startStation ? { start_station: opts.startStation.id, start_station_name: opts.startStation.name } : {}) })
   });
   if (!lockRes.ok) throw new Error(`Lock itinerary failed: ${lockRes.status} ${await lockRes.text()}`);
   const itinerary = await lockRes.json();

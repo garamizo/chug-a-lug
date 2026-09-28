@@ -469,3 +469,47 @@ describe('before the crawl the board waits for the planned train', () => {
     expect(day.trip?.tripId).toBe('BN4');
   });
 });
+
+describe('a route that boards at another station', () => {
+  const boardsAt = { ...route, start_station: 'AURORA', start_station_name: 'Aurora' } as Itinerary;
+  const napervilleStop = { id: 'a', order: 1, station_id: 'NAPERVILLE', station_name: 'Naperville', dwell_min: 30, walk_min: 2 };
+  const cusStop = { id: 'b', order: 2, station_id: 'CUS', station_name: 'Chicago Union Station', dwell_min: 30, walk_min: 2 };
+  const opening = { from_stop: '', to_stop: 'a', kind: 'train', depart_at: '2026-12-26T17:20:00Z', arrive_at: '2026-12-26T17:35:00Z',
+    segments: [{ kind: 'train', tripId: 'BN2', routeId: 'BNSF', headsign: 'Chicago', from: 'AURORA', to: 'NAPERVILLE', dep: '2026-12-26T17:20:00.000Z', arr: '2026-12-26T17:35:00.000Z' }] };
+  const onward = { from_stop: 'a', to_stop: 'b', kind: 'train', depart_at: '2026-12-26T18:30:00Z', arrive_at: '2026-12-26T19:05:00Z',
+    segments: [{ kind: 'train', tripId: 'BN6', routeId: 'BNSF', headsign: 'Chicago', from: 'NAPERVILLE', to: 'CUS', dep: '2026-12-26T18:30:00.000Z', arr: '2026-12-26T19:05:00.000Z' }] };
+  function boardingDay(twoStops: boolean) {
+    const day = new LiveDay();
+    day.itinerary = boardsAt;
+    day.stops = (twoStops ? [napervilleStop, cusStop] : [napervilleStop]) as never;
+    day.legs = (twoStops ? [opening, onward] : [opening]) as never;
+    return day;
+  }
+  beforeEach(() => { mocks.fetchNext.mockResolvedValue({ trips: [], mode: 'schedule_only', fetchedAt: null }); });
+
+  it('before the crawl, asks for the train from the start station to stop 1, even with only one stop', async () => {
+    const day = boardingDay(false);
+    day.realNow = new Date('2026-12-26T16:00:00Z'); day.syncPlan();
+    await day.loadTrains();
+    expect(mocks.fetchNext).toHaveBeenCalledWith('AURORA', 'NAPERVILLE', '2026-12-26', new Date('2026-12-26T17:19:00.000Z'), day.practice);
+    expect(day.plannedTrip).toEqual({ tripId: 'BN2', dep: '2026-12-26T17:20:00.000Z' });
+  });
+
+  it('boards to stop 1, not onward, when the route has more stops', async () => {
+    const day = boardingDay(true);
+    day.realNow = new Date('2026-12-26T16:00:00Z'); day.syncPlan();
+    await day.loadTrains();
+    expect(mocks.fetchNext).toHaveBeenCalledWith('AURORA', 'NAPERVILLE', '2026-12-26', new Date('2026-12-26T17:19:00.000Z'), day.practice);
+    expect(day.boarding?.fromName).toBe('Aurora');
+  });
+
+  it('a Conductor check-in at stop 1 ends the boarding journey on the event day', async () => {
+    const day = boardingDay(true);
+    day.anchor = { stopId: 'a', at: '2026-12-26T17:25:00Z' };
+    day.realNow = new Date('2026-12-26T17:26:00Z'); day.syncPlan();
+    expect(day.isEventDay).toBe(true);
+    expect(day.boarding).toBeNull();
+    await day.loadTrains();
+    expect(mocks.fetchNext).toHaveBeenCalledWith('NAPERVILLE', 'CUS', '2026-12-26', expect.any(Date), false);
+  });
+});

@@ -173,3 +173,20 @@ test('two venues at one station still show the onward train', async ({ page }) =
   await expect(board).toContainText('Leave in');
   await expect(board).not.toContainText('No train left today');
 });
+
+test('before the crawl on a route that boards elsewhere, the board counts down to the boarding train', async ({ page }) => {
+  // The real timetable, not the stub: the planner picks the boarding train from it, and the board
+  // must ask for the same ride. The first Naperville train after an 11:00 start leaves at 12:05.
+  await page.route('**/api/metra/alerts', (r) => r.fulfill({ json: { mode: 'schedule_only', fetchedAt: null, alerts: [] } }));
+  await login(page, 'E2E Boarding Skipper', ADMIN);
+  await clearLockedCrawls();
+  await seedLockedCrawl({ ownerName: 'E2E Boarding Skipper', eventDate: DATE, startTime: '11:00', departAt: DEPART, arriveAt: ARRIVE,
+    startStation: { id: 'NAPERVILLE', name: 'Naperville' } });
+  await page.clock.install({ time: new Date('2026-12-26T17:30:00.000Z') });   // 11:30 on the day
+  await page.goto('/live');
+  const board = page.getByTestId('departure-board');
+  await expect(board.getByRole('heading')).toHaveText('Naperville');
+  await expect(board).toContainText('La Grange Road');
+  await expect(board).toContainText('12:05 PM');
+  await expect(page.getByTestId('practice-badge')).toHaveCount(0);
+});

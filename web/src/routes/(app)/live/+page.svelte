@@ -151,12 +151,13 @@
   <p data-testid="no-active-route">{copy.noActiveRoute} <a href="/plan">{copy.backToPlanner}</a></p>
 {:else if here?.stop}
   <AlertBubbles alerts={liveDay.alerts} onopen={() => goto('/notifications')} />
+  {@const b = liveDay.boarding}
   <DepartureBoard
-    station={here.stop.station_name || here.stop.station_id}
+    station={b ? b.fromName : here.stop.station_name || here.stop.station_id}
     stopName={here.stop.name}
-    nextStation={here.onwardStop?.station_name || here.onwardStop?.station_id || ''}
+    nextStation={b ? b.toName : here.onwardStop?.station_name || here.onwardStop?.station_id || ''}
     trip={liveDay.trip}
-    walkMin={here.stop.walk_min}
+    walkMin={b ? b.walkMin : here.stop.walk_min}
     now={liveDay.now}
     mode={liveDay.mode}
     rtFetchedAt={liveDay.rtFetchedAt} />

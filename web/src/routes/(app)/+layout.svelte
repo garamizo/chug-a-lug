@@ -43,7 +43,7 @@
   let coveredByStart = true;
   $effect(() => {
     const stopId = here?.stop?.id;
-    const key = stopId === undefined ? null : `${stopId}:${here?.onwardStop?.id ?? ''}`;
+    const key = stopId === undefined ? null : `${stopId}:${here?.onwardStop?.id ?? ''}:${liveDay.boarding?.from ?? ''}`;
     if (coveredByStart) {
       if (key === null) return;
       coveredByStart = false;
@@ -79,12 +79,13 @@
 
 {#if $auth.user}
   {#if showBanner}
+    {@const b = liveDay.boarding}
     <a class="banner" href="/live" data-testid="banner">
       <DepartureBoard compact
-        station={here?.stop?.station_name || here?.stop?.station_id || ''}
+        station={b ? b.fromName : here?.stop?.station_name || here?.stop?.station_id || ''}
         stopName={here?.stop?.name ?? ''}
-        nextStation={here?.onwardStop?.station_name || here?.onwardStop?.station_id || ''}
-        trip={liveDay.trip} walkMin={here?.stop?.walk_min ?? 0} now={liveDay.now}
+        nextStation={b ? b.toName : here?.onwardStop?.station_name || here?.onwardStop?.station_id || ''}
+        trip={liveDay.trip} walkMin={b ? b.walkMin : here?.stop?.walk_min ?? 0} now={liveDay.now}
         mode={liveDay.mode} rtFetchedAt={liveDay.rtFetchedAt} />
     </a>
   {/if}
