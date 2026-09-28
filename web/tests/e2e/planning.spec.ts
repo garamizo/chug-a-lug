@@ -175,6 +175,22 @@ test('a stored venue shows its photos in the sheet on Add Stop', async ({ page }
   await expect(page.getByTestId('sheet-add')).toBeEnabled();
 });
 
+test('a failed add shows its error inside the venue sheet', async ({ page }) => {
+  await page.route('**/api/collections/stops/records', (route) => route.request().method() === 'POST'
+    ? route.fulfill({ status: 400, json: { status: 400, message: 'Stop rejected for the test.', data: {} } })
+    : route.fallback());
+  await login(page, 'E2E Skipper', ADMIN);
+  await page.getByTestId('nav-plan').click();
+  await page.getByTestId('draft-title').fill('Add Fails');
+  await page.getByTestId('create-draft').click();
+  await expect(page).toHaveURL(/\/plan\/[a-z0-9]{15}\/edit$/);
+  await page.goto(page.url().replace(/\/edit$/, '/add?station=NAPERVILLE&side=left'));
+  await page.getByTestId('venue-node-2').click();
+  await page.getByTestId('sheet-add').click();
+  await expect(page.getByTestId('venue-sheet').getByTestId('venue-sheet-error')).toContainText('Stop rejected for the test.');
+  await expect(page.getByTestId('sheet-add')).toBeEnabled();
+});
+
 test('another crew member can read and cheer a draft but not change it, even by deep link', async ({ page, browser }) => {
   await login(page, 'E2E Builder', process.env.CREW_PASSWORD ?? 'crew-test-password');
   await page.getByTestId('nav-plan').click();

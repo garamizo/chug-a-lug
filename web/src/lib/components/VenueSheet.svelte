@@ -7,8 +7,8 @@
   import { hoursFor } from '$lib/live/venue';
   import type { Place, Venue } from '$lib/types';
 
-  let { venue, weekday, walkMin, busy, onadd, onclose }: {
-    venue: Venue | null; weekday: string; walkMin: number; busy: boolean; onadd: () => void; onclose: () => void;
+  let { venue, weekday, walkMin, busy, error = '', onadd, onclose }: {
+    venue: Venue | null; weekday: string; walkMin: number; busy: boolean; error?: string; onadd: () => void; onclose: () => void;
   } = $props();
 
   const hours = $derived(hoursFor(venue?.hours ?? null, weekday));
@@ -54,6 +54,8 @@
       <h3>{copy.hours}</h3>
       <p class="today">{hours.line ?? copy.hoursUnknown}</p>
     </section>
+    <!-- The page's own error sits behind this modal, so a failed add is shown here too. -->
+    {#if error}<p class="error" role="alert" data-testid="venue-sheet-error">{error}</p>{/if}
     <footer>
       <button type="button" class="secondary" onclick={onclose} data-testid="venue-sheet-close">{copy.closeSheet}</button>
       <button type="button" onclick={onadd} disabled={busy} data-testid="sheet-add">{copy.addThisStop}</button>

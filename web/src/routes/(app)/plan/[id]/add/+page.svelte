@@ -171,7 +171,7 @@
 
 <VenueSheet venue={openVenueObj} weekday={itinerary ? fmtWeekday(itinerary.event_date) : ''}
   walkMin={openVenueObj && station ? walkMinutes(haversineM(station.lat, station.lon, openVenueObj.lat, openVenueObj.lon)) : 0}
-  busy={!!busy} onadd={() => openVenueObj && void add(openVenueObj)} onclose={closeVenue} />
+  busy={!!busy} {error} onadd={() => openVenueObj && void add(openVenueObj)} onclose={closeVenue} />
 
 <style>
   h2 { font-size: 18px; margin-top: 28px; }
