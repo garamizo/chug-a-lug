@@ -94,6 +94,8 @@ export const copy = {
   draftTitle: 'Draft title',
   noDrafts: 'No drafts yet. Start the first one.',
   startTime: 'At the first stop by',
+  /** The Start input's label once Board at is set: Start is then when the crew boards, not stop 1. */
+  startTimeBoard: 'At the boarding station by',
   boardAt: 'Board at',
   boardAtPick: 'Pick where the crew boards',
   stops: 'Stops',

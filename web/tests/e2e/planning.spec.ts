@@ -170,9 +170,12 @@ test('Board at counts the ride in to the first stop', async ({ page }) => {
   // BN2 leaves Naperville 12:05, reaches La Grange 12:30, plus the 2 min walk.
   await expect(page.getByTestId('opening-leg')).toContainText('12:05 PM');
   await expect(page.getByTestId('stop-row-0')).toContainText('Arrive 12:32 PM');
+  // With Board at set, Start is the boarding time, not the time at stop 1.
+  await expect(page.getByLabel(copy.startTimeBoard)).toHaveValue('11:00');
   await page.getByTestId('board-at').selectOption('');
   await expect(page.getByTestId('opening-leg')).toHaveCount(0);
   await expect(page.getByTestId('stop-row-0')).toContainText('Arrive 11:00 AM');
+  await expect(page.getByLabel(copy.startTime)).toHaveValue('11:00');
 });
 
 test('a stored venue shows its photos in the sheet on Add Stop', async ({ page }) => {

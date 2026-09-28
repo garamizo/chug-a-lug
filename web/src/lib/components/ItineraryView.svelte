@@ -143,7 +143,7 @@
     <div><strong>{sorted.length}</strong><small>{copy.statStops}</small></div>
     <div>
       {#if canManage && actions.setStartTime}
-        <input type="time" aria-label={copy.startTime} bind:value={startTime} onchange={() => { if (/^([01]\d|2[0-3]):[0-5]\d$/.test(startTime) && startTime !== itinerary.start_time) void actions.setStartTime?.(startTime); }} data-testid="start-time" />
+        <input type="time" aria-label={itinerary.start_station ? copy.startTimeBoard : copy.startTime} bind:value={startTime} onchange={() => { if (/^([01]\d|2[0-3]):[0-5]\d$/.test(startTime) && startTime !== itinerary.start_time) void actions.setStartTime?.(startTime); }} data-testid="start-time" />
       {:else}<strong>{itinerary.start_time}</strong>{/if}
       <small>{copy.statStart}</small>
     </div>
