@@ -75,8 +75,9 @@ Every reader that keys by `from_stop` must tolerate the opening leg:
   - the Live page's and the Home banner's `DepartureBoard` show `fromName` as the station, `toName` as
     the next station, the stop's name as the destination venue, and `walkMin = 0` (the crew meets at
     the platform).
-  Once `here.source` leaves `before` (Start passes, or an anchor exists), Live behaves exactly as
-  today.
+  Once `here.source` leaves `before`, Live behaves exactly as today. A Conductor check-in made while
+  the crawl is still `before` wins in `currentStop` even ahead of stop 1's planned arrival, which ends
+  the boarding journey.
 - `$lib/live/cohesion.ts` (`impossibleFromAnchor`, `cohesionBlockers`), the edit page's `departAt`
   and `planDiff`: the opening leg is included. An impossible opening leg blocks Save like any other
   impossible leg ahead of the anchor, and counts as history once an anchor exists.
@@ -119,8 +120,8 @@ Every reader that keys by `from_stop` must tolerate the opening leg:
 - **Edit details** (the link to the stop detail page) appears in the editor's sheet only on the draft
   path, whose edits are already written as they are made. On the staged Route editor it is hidden:
   `plan` and `before` are component state, so leaving the page would discard staged changes.
-- The stop detail page's back button goes to `history.back()` when the app navigated there, else to
-  the draft page, so a draft reaching it from the editor's sheet and backing out lands in the editor
+- The editor's sheet links to the detail page with `?from=edit`, and the detail page's back button goes
+  to `/plan/{id}/edit` when `from=edit` (only that literal), else to the draft page, so a draft reaching it from the editor's sheet and backing out lands in the editor
   (which reloads from the database, where those edits already are).
 
 ## Error handling
