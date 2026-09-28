@@ -109,8 +109,8 @@ refuses a non-admin rename of a non-draft route.
 
 - `recordActions.rename` writes `itineraries.update(id, { title })`. This is the draft path, and
   the hook records the note.
-- The live editor's actions stage the title instead. `StagedPlan` gains `title: string`, seeded
-  from the itinerary in `stagePlan`, and `commitPayload` sends it.
+- The live editor's actions stage the title instead. `StagedPlan` gains an optional `title`, set
+  only by a rename, and `commitPayload` sends it only when it is set.
 - `ItineraryView` still writes nothing itself. There is no rename button. When
   `canManage && actions.rename`, the `<h1>` *is* the text box: an `<input>` styled like the heading,
   with test id `route-title` and accessible name `copy.routeName`, `maxlength 80`.
@@ -236,7 +236,8 @@ picker). The Conductor clones a locked route from its route page instead.
 
 - `venueGroup_bar|restaurant|other`
 - `cloneRoute`, `cloneTitle(title)`
-- `noteClonedFrom(who, title)`, `noteClonedTo(who, title)`, `noteRenamed(who, from, to)`
+- `noteClonedFrom`, `noteClonedTo`, `noteRenamedFrom`, `noteRenamedTo`: phrases placed after the
+  author's name, so the route title can be a link
 - `routeName` (the accessible name of the title box), `titleTaken`, `titleInvalid`
 
 ## Testing (written first; each task ends green)
