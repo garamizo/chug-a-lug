@@ -55,6 +55,7 @@ onRecordUpdateRequest((e) => {
   const nameChanged = name.key !== original.getString('title_key')
   e.record.set('title', name.display)
   e.record.set('title_key', name.key)
+  const renamed = e.record.getString('title') !== original.getString('title')
   const locking = e.record.getString('status') === 'locked' && original.getString('status') !== 'locked'
   if (locking) e.record.set('locked_at', new Date().toISOString())
   // Back to draft (admin only): the record is no longer locked, so it carries no lock time.
@@ -69,6 +70,16 @@ onRecordUpdateRequest((e) => {
       e.app = tx
       if (nameChanged && titles.taken(tx, name.key, e.record.id)) throw new BadRequestError('title_taken')
       e.next()
+      // The rename and its note land together: a title never changes without its history.
+      if (renamed && isCrew) {
+        const note = new Record(tx.findCollectionByNameOrId('comments'))
+        note.set('user', e.auth.id)
+        note.set('target_collection', 'itineraries')
+        note.set('target_id', e.record.id)
+        note.set('kind', 'renamed')
+        note.set('meta', { from: original.getString('title'), to: e.record.getString('title') })
+        tx.save(note)
+      }
     })
   } finally { e.app = app }
   if (locking) {

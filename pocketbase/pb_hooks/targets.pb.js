@@ -13,7 +13,8 @@ onRecordCreate((e) => {
       const id = e.record.getString('target_id')
       if (col !== 'itineraries' && col !== 'stops') throw new BadRequestError('Comments and cheers are for routes and stops.')
       try { tx.findRecordById(col, id) } catch (_) { throw new BadRequestError('That route or stop no longer exists.') }
-      if (e.record.collection().name === 'comments' && !e.record.getString('body').trim() &&
+      if (e.record.collection().name === 'comments' && !e.record.getString('kind') &&
+          !e.record.getString('body').trim() &&
           !e.record.getString('file') && !e.record.getUnsavedFiles('file').length) {
         throw new BadRequestError('Write something or attach a photo.')
       }
