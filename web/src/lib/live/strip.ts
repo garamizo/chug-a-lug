@@ -17,7 +17,7 @@ export function stripStops(stops: Stop[], legs: Leg[], here: Current | null, sta
   return ordered.map((stop, i) => ({
     stop,
     state: here?.source === 'after' || i < at ? 'done' : i === at ? 'current' : 'next',
-    arriveAt: i === 0 ? startAt.toISOString() : arrive.get(stop.id) ?? null,
+    arriveAt: arrive.get(stop.id) ?? (i === 0 ? startAt.toISOString() : null),
     arriveBy: link(i),
     leaveBy: link(i + 1)
   }));

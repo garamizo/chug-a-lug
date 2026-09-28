@@ -61,4 +61,10 @@ describe('cohesionBlockers', () => {
     expect(cohesionBlockers({ ...input, now: new Date('2026-09-22T19:05:00Z') }).map((b) => b.code)).toEqual(['impossible_leg']);
   });
 
+  it('names the start for an impossible opening leg', () => {
+    const blockers = cohesionBlockers({ eventDate: '2026-12-26', now: new Date('2026-09-27T12:00:00Z'), anchorStopId: 'a',
+      stops: [{ id: 'a', order: 1, name: 'Alpha' }], legs: [{ fromStopId: '', toStopId: 'a', kind: 'impossible' }] });
+    expect(blockers[0].message).toContain(`${copy.theStart} ${copy.blockTo} Alpha`);
+  });
+
 });

@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { BUFFER_MIN, WARNING_MIN, boardState, pickTrip, plannedTrain } from '../../src/lib/live/board';
+import { BUFFER_MIN, WARNING_MIN, boardState, boardingJourney, pickTrip, plannedTrain } from '../../src/lib/live/board';
+import type { Current } from '../../src/lib/live/current';
 import type { Leg, NextTrip, Stop } from '../../src/lib/types';
 
 const trip = (tripId: string, depart: string): NextTrip => ({
@@ -106,5 +107,37 @@ describe('plannedTrain', () => {
 
   it('is null when no planned train leaves that station', () => {
     expect(plannedTrain(stops, [leg('a', [])], 'LAGRANGE')).toBeNull();
+  });
+
+  it('prefers the opening leg, which sorts before every stop', () => {
+    const legs = [
+      leg('a', [seg('BN4', 'LAGRANGE', '2026-12-26T20:30:00.000Z')]),
+      leg('', [seg('BN2', 'LAGRANGE', '2026-12-26T18:30:00.000Z')])
+    ];
+    expect(plannedTrain(stops, legs, 'LAGRANGE')).toEqual({ tripId: 'BN2', dep: '2026-12-26T18:30:00.000Z' });
+  });
+});
+
+describe('boardingJourney', () => {
+  const stop = (id: string, order: number, station_id: string, station_name: string) => ({ id, order, station_id, station_name, walk_min: 5 }) as Stop;
+  const seg = { kind: 'train' as const, tripId: 'BN2', routeId: 'BNSF', headsign: 'Chicago', from: 'AURORA', to: 'NAPERVILLE', dep: '2026-12-26T17:12:00.000Z', arr: '2026-12-26T17:31:00.000Z' };
+  const opening = { from_stop: '', to_stop: 'a', kind: 'train', segments: [seg] } as unknown as Leg;
+  const stops = [stop('a', 1, 'NAPERVILLE', 'Naperville')];
+  const it1 = { start_station: 'AURORA', start_station_name: 'Aurora' };
+  const before = { stop: stops[0], nextStop: null, onwardStop: null, departAt: null, source: 'before' } as Current;
+
+  it('is the ride from the start station to stop 1 before the crawl, even with one stop', () => {
+    expect(boardingJourney(it1, stops, [opening], before)).toEqual({
+      from: 'AURORA', fromName: 'Aurora', to: 'NAPERVILLE', toName: 'Naperville', walkMin: 0,
+      planned: { tripId: 'BN2', dep: '2026-12-26T17:12:00.000Z' }
+    });
+  });
+  it('is null once the crawl has started', () => {
+    expect(boardingJourney(it1, stops, [opening], { ...before, source: 'clock' })).toBeNull();
+  });
+  it('is null with no start station, or when stop 1 is at it, or with no train', () => {
+    expect(boardingJourney({ start_station: '', start_station_name: '' }, stops, [opening], before)).toBeNull();
+    expect(boardingJourney({ start_station: 'NAPERVILLE', start_station_name: 'Naperville' }, stops, [opening], before)).toBeNull();
+    expect(boardingJourney(it1, stops, [{ ...opening, kind: 'impossible', segments: [] } as Leg], before)).toBeNull();
   });
 });

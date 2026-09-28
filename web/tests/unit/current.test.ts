@@ -127,4 +127,20 @@ describe('currentStop', () => {
   it('onward is simply the next stop when the stations already differ', () => {
     expect(at('2026-12-26T18:30:00.000Z').onwardStop?.id).toBe('B');
   });
+
+  it('arrives at stop 1 when the opening leg does, not at the start', () => {
+    const opening = leg('', 'A', '2026-12-26T17:30:00.000Z', '2026-12-26T18:20:00.000Z');
+    const r = currentStop(stops, [opening, ...legs], new Date('2026-12-26T18:10:00.000Z'), { startAt });
+    expect(r.source).toBe('before');
+    expect(currentStop(stops, [opening, ...legs], new Date('2026-12-26T18:25:00.000Z'), { startAt }).source).toBe('clock');
+  });
+
+  it('lets a check-in end the before state even ahead of the planned arrival', () => {
+    const opening = leg('', 'A', '2026-12-26T17:30:00.000Z', '2026-12-26T18:20:00.000Z');
+    const r = currentStop(stops, [opening, ...legs], new Date('2026-12-26T18:05:00.000Z'), {
+      startAt, override: { stopId: 'A', at: '2026-12-26T18:00:00.000Z' }
+    });
+    expect(r.source).toBe('override');
+    expect(r.stop?.id).toBe('A');
+  });
 });

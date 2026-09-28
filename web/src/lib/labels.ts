@@ -277,6 +277,7 @@ export const copy = {
   blockNoTrain: 'No train from',
   blockTo: 'to',
   blockHint: 'Shorten a layover, annul a stop, or move the crew.',
+  theStart: 'the start',
   bulletinPosition: 'We are still at',
   bulletinHold: 'Holding at',
   bulletinUntil: 'until the',

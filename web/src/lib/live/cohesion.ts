@@ -33,7 +33,8 @@ export function cohesionBlockers(input: {
   const ordered = [...input.stops].sort((a, b) => a.order - b.order);
   const index = new Map(ordered.map((s, i) => [s.id, i]));
   if (index.get(input.anchorStopId) === undefined) return [{ code: 'anchor_missing', message: copy.blockAnchorMissing }];
-  const name = (id: string) => ordered.find((s) => s.id === id)?.name ?? id;
+  // The opening leg's `fromStopId` is '': the ride starts before any stop on the route.
+  const name = (id: string) => (id ? ordered.find((s) => s.id === id)?.name ?? id : copy.theStart);
 
   // A selected position is still required off-day, but no leg is history until the event day.
   const impossible = input.eventDate === todayInTz(input.now)

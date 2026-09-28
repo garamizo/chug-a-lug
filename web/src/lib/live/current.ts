@@ -32,7 +32,7 @@ function timings(stops: Stop[], legs: Leg[], startAt: Date): Timing[] {
   return ordered.map((stop, i) => {
     const inLeg = incoming.get(stop.id);
     const outLeg = outgoing.get(stop.id);
-    const arriveIso = i === 0 ? startAt.toISOString() : inLeg?.arrive_at;
+    const arriveIso = inLeg?.arrive_at ?? (i === 0 ? startAt.toISOString() : undefined);
     return {
       stop,
       arriveAt: arriveIso ? new Date(arriveIso).getTime() : startAt.getTime(),
@@ -74,8 +74,10 @@ export function currentStop(
   const override = opts.override;
   if (override) {
     const hit = ts.find((t) => t.stop.id === override.stopId);
-    // A correction holds until the schedule catches up with it; an older one is a leftover.
-    if (hit && new Date(override.at).getTime() > picked.arriveAt) return result(hit, 'override');
+    // A correction holds until the schedule catches up with it; an older one is a leftover. While
+    // the crawl is still before its first stop, though, a check-in always wins: it is the Conductor
+    // saying the crew is already there, so there is nothing yet for it to be stale against.
+    if (hit && (source === 'before' || new Date(override.at).getTime() > picked.arriveAt)) return result(hit, 'override');
   }
   return result(picked, source);
 }

@@ -27,3 +27,7 @@ it('tags each stop with how the crew arrives and leaves: on foot or by train', (
     ['a', null, 'train'], ['b', 'train', 'walk'], ['c', 'walk', null]
   ]);
 });
+it('uses the opening leg\'s arrival for the first stop over the start time', () => {
+  const opening = [{ from_stop: '', to_stop: 'a', arrive_at: '2026-12-26T18:45:00.000Z' }, ...legs] as Leg[];
+  expect(stripStops(stops, opening, null, start)[0].arriveAt).toBe('2026-12-26T18:45:00.000Z');
+});
