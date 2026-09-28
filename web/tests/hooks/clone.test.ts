@@ -1,6 +1,19 @@
 import { beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { ADMIN_LOGIN_PASSWORD, get, loginToken, patch, post, superuserToken, truncate } from './setup';
 
+// Every field clone.pb.js's STOP_FIELDS lists, so a copy of a fully populated stop can be checked
+// field for field. `place` needs a real places row: places.createRule is null, so only a superuser
+// can write one (see web/tests/hooks/places.test.ts for the collection's shape). The coordinates
+// are nowhere near any real station fixture: places.test.ts's "nearby" lookup matches purely on a
+// lat/lon box (see venuesAround in $lib/server/places/nearby.ts), so a place planted here at a real
+// station's coordinates would leak into that other file's results.
+const FULL_STOP = {
+  order: 3, name: 'Full Fixture Bar', kind: 'bar', direction: 'out', station_id: 'LAGRANGE', station_name: 'La Grange Road',
+  place_id: 'full-clone-place-1', osm_id: 'node/99', address: '123 Full St', lat: 45.0, lon: -100.0,
+  hours: ['Saturday: 11:00 AM – 2:00 AM'], phone: '555-0100', website: 'https://hophaus.test',
+  confirmed_open: true, dwell_min: 45, walk_min: 6, notes: 'full fixture', meet_point: 'door'
+};
+
 let owner: { token: string; id: string };
 let cloner: { token: string; id: string };
 let admin: { token: string; id: string };
@@ -45,6 +58,26 @@ describe('POST /api/crawl/clone', () => {
     expect(to[0]).toMatchObject({ kind: 'cloned_to', user: cloner.id, meta: { route: id, title: 'Copy of Loop Crawl' } });
     // The source is untouched apart from its note.
     expect((await (await get(`/api/collections/itineraries/records/${source.id}`, cloner.token)).json()).status).toBe('locked');
+  });
+
+  it('copies every STOP_FIELDS entry of a fully populated stop, place link included, and keeps photos_status done', async () => {
+    const su = await superuserToken();
+    const place = await (await post('/api/collections/places/records', {
+      ref: 'google:full-clone-place-1', source: 'google', place_id: FULL_STOP.place_id, name: 'The Hop Haus',
+      kind: 'bar', lat: FULL_STOP.lat, lon: FULL_STOP.lon, address: FULL_STOP.address, hours: FULL_STOP.hours,
+      phone: FULL_STOP.phone, website: FULL_STOP.website, station_id: FULL_STOP.station_id
+    }, su)).json();
+    // The source is already locked (beforeEach); admin can still add to it (stops' create rule is
+    // draft-or-admin), which is exactly how a fully detailed, post-lock stop exists in practice.
+    const full = await (await post('/api/collections/stops/records', { itinerary: source.id, place: place.id, ...FULL_STOP }, admin.token)).json();
+    await patch(`/api/collections/stops/records/${full.id}`, { photos_status: 'done' }, admin.token);
+    expect((await (await get(`/api/collections/stops/records/${full.id}`, admin.token)).json()).photos_status).toBe('done');
+
+    const id = newId();
+    expect((await clone(cloner.token, { source: source.id, id, title: 'Copy of Loop Crawl' })).status).toBe(200);
+    const stops = await list('stops', `itinerary="${id}"`, cloner.token);
+    const cloned = stops.find((s: { name: string }) => s.name === 'Full Fixture Bar');
+    expect(cloned).toMatchObject({ ...FULL_STOP, place: place.id, photos_status: 'done' });
   });
 
   it('a retry, even overlapping, returns the one clone and writes nothing more', async () => {
