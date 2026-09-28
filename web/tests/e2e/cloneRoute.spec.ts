@@ -92,3 +92,53 @@ test('the Conductor renames The Route through Save', async ({ page }) => {
   await expect(page).toHaveURL(new RegExp(`/plan/${itineraryId}$`));
   await expect(page.getByTestId('note-renamed')).toContainText(name);
 });
+
+test('Save waits for a pending rename: a refusal keeps the Conductor on the editor, a slow but accepted one still lands', async ({ page }) => {
+  await clearLockedCrawls();
+  await login(page, 'E2E Slow Rename Conductor', ADMIN);
+  const { itineraryId } = await seedLockedCrawl({ ownerName: 'E2E Slow Rename Conductor', eventDate: '2026-12-26', startTime: '12:00',
+    departAt: '2026-12-26T20:34:00.000Z', arriveAt: '2026-12-26T20:49:00.000Z', extraVenueAtFirstStation: true });
+  await page.goto(`/plan/${itineraryId}/edit`);
+  await page.getByTestId('set-here-1').click();
+
+  // Gated exactly like liveEdit.spec's preview-pending test: the in-flight window has to be
+  // observed, not raced past. Fill the box and click Save straight away, the way a Conductor on a
+  // slow connection would — the blur's title-check is still out when the click lands.
+  let releaseTaken: (() => void) | undefined;
+  const takenGate = new Promise<void>((resolve) => { releaseTaken = resolve; });
+  await page.route('**/api/plan/title-check**', async (route) => {
+    await takenGate;
+    await route.fulfill({ status: 400, contentType: 'application/json', body: JSON.stringify({ message: copy.titleTaken }) });
+  });
+  const takenName = `Taken Slow ${RUN}`;
+  await page.getByTestId('route-title').fill(takenName);
+  await page.getByTestId('save-plan').click();
+  await expect(page.getByTestId('save-plan')).toBeDisabled();
+  releaseTaken?.();
+  // The refusal must not vanish under a Save that went through anyway.
+  await expect(page.getByTestId('route-title-error')).toHaveText(copy.titleTaken);
+  await expect(page).toHaveURL(new RegExp(`/plan/${itineraryId}/edit$`));
+  await expect(page.getByTestId('bulletin-skip')).toHaveCount(0);
+  await page.unroute('**/api/plan/title-check**');
+
+  // A slow but successful check: Save still waits for it, then the saved route is renamed.
+  let releaseOk: (() => void) | undefined;
+  const okGate = new Promise<void>((resolve) => { releaseOk = resolve; });
+  await page.route('**/api/plan/title-check**', async (route) => {
+    await okGate;
+    await route.fulfill({ contentType: 'application/json', body: JSON.stringify({ ok: true }) });
+  });
+  const okName = `Slow OK ${RUN}`;
+  await page.getByTestId('route-title').fill(okName);
+  await page.getByTestId('save-plan').click();
+  await expect(page.getByTestId('save-plan')).toBeDisabled();
+  releaseOk?.();
+  // The rename lands (the box already carries the new name): once the fresh route check the title
+  // change itself triggers has come back, Save re-enables — and the route saved from there ends up
+  // renamed, not stuck on the name that was on screen when the click happened.
+  await expect(page.getByTestId('save-plan')).toBeEnabled();
+  await page.getByTestId('save-plan').click();
+  await page.getByTestId('bulletin-skip').click();
+  await expect(page).toHaveURL(new RegExp(`/plan/${itineraryId}$`));
+  await expect(page.getByTestId('note-renamed')).toContainText(okName);
+});

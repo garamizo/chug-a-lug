@@ -45,6 +45,30 @@
   // The Bulletin drafted from `before` vs. the staged plan, waiting on the sheet: sent as-is,
   // edited, or skipped. Its id is minted once here so a retried save cannot post it twice.
   let pending = $state<{ id: string; text: string; kind: BulletinKind } | null>(null);
+  // The name box renames on blur, asynchronously (a title-check round trip). Save and Clone both
+  // read the staged/record title, so both have to wait for that check to land before they act on
+  // it — otherwise a slow "taken" answer can lose a rename silently (Save commits the old name)
+  // or Clone can copy the old name (see `askToTell` and `clone`). One tracker covers both: the
+  // live editor's Save button only exists when `live`, Clone only when `!live`, so the two never
+  // race each other. `renamedTitle` is the last title a tracked rename actually committed, so
+  // Clone need not wait on `draft`'s realtime reload to see it.
+  let renaming = $state<Promise<void> | null>(null);
+  let renamedTitle = $state<string | null>(null);
+  function trackRename(rename: (title: string) => Promise<void>): (title: string) => Promise<void> {
+    return (title) => {
+      const p = rename(title).then(() => { renamedTitle = title; });
+      renaming = p;
+      // A second observer of `p`, only to clear the tracker — its own rejection is not left
+      // unhandled; the original `p` (returned below) still carries it for whoever awaits that.
+      void p.catch(() => {}).finally(() => { if (renaming === p) renaming = null; });
+      return p;
+    };
+  }
+  /** The draft (non-live) screen's rename goes straight through `recordActions`; wrap it the same
+   *  way so `clone()` can wait on it too. */
+  function withTrackedRename(actions: PlanActions): PlanActions {
+    return actions.rename ? { ...actions, rename: trackRename(actions.rename) } : actions;
+  }
 
   const snapshot = (p: StagedPlan): PlanSnapshot => ({
     anchorStopId: p.anchorStopId,
@@ -126,6 +150,7 @@
 
   $effect(() => {
     draft = null; error = ''; saveError = ''; plan = null; before = null; previewLegs = [];
+    renaming = null; renamedTitle = null;
     void load(draftFrom(data.early, data.id));
     // A staged edit must not be clobbered by the realtime reload, so on The Route only the first
     // load builds the plan (see `load`); the watcher keeps the draft path live as before.
@@ -181,12 +206,13 @@
     },
     get anchorStopId() { return plan?.anchorStopId ?? null; },
     setAnchor: (stopId) => { if (plan) plan = setAnchor(plan, stopId); },
-    // Staged like the rest, but checked now so "taken" shows on blur, not at Save.
-    rename: async (title) => {
+    // Staged like the rest, but checked now so "taken" shows on blur, not at Save. Tracked so Save
+    // can wait for it: see `renaming` above.
+    rename: trackRename(async (title) => {
       try { await api(`/api/plan/title-check?title=${encodeURIComponent(title)}&route=${data.id}`); }
       catch (err) { throw err instanceof TypeError ? new Error(copy.noSignal) : err; }
       if (plan) plan = setTitle(plan, title);
-    }
+    })
   };
 
   // A venue picked on the add screen comes back through sessionStorage and slots into the staged
@@ -212,7 +238,12 @@
   /** The Save button: drafts the Bulletin from what actually changed and opens the sheet. The
    *  commit itself waits for the sheet's answer (sent, edited, or skipped) in `commit()`. */
   const simBlocked = $derived(clientClock.enabled && (!clientClock.synchronized || previewRevision !== clientClock.revision || previewFailed));
-  function askToTell() {
+  async function askToTell() {
+    // A rename in flight from the name box has to land — one way or the other — before Save reads
+    // the title: waiting here (not just disabling the button) covers the blur-then-click race even
+    // if the disabled attribute hasn't painted yet. A refused rename leaves its error under the
+    // box; Save must not paper over it by committing and navigating away.
+    if (renaming) { try { await renaming; } catch { return; } }
     if (!plan || !before || blockers.length || simBlocked || previewPending || saving || pending) return;
     const departAt = (stopId: string) => previewLegs.find((l) => l.from_stop === stopId)?.depart_at ?? null;
     const changes = planDiff(before, snapshot(plan), departAt);
@@ -258,7 +289,16 @@
   async function clone() {
     if (!draft) return;
     cloning = true; error = '';
-    try { const id = await cloneRoute(draft.itinerary); await goto(`/plan/${id}/edit?named=1`); }
+    try {
+      // Clicking Clone blurs the name box, which can start a rename; wait for it so the clone is
+      // named after the title the Conductor actually landed on, not the one still on screen when
+      // the click happened. A refused rename leaves its error under the box and the draft's own
+      // title unchanged — either way `renamedTitle`/`draft.itinerary.title` is the right name.
+      if (renaming) { try { await renaming; } catch { /* left visible in the title box */ } }
+      const title = renamedTitle ?? draft.itinerary.title;
+      const id = await cloneRoute({ id: draft.itinerary.id, title });
+      await goto(`/plan/${id}/edit?named=1`);
+    }
     catch (err) { error = (err as Error).message || copy.genericError; }
     finally { cloning = false; }
   }
@@ -296,7 +336,7 @@
       photos={live && plan ? stopPhotos(draft.stops) : undefined}
       legs={live ? previewLegs : draft.legs}
       {editable} {canManage} {selectTitle}
-      actions={live ? stagedActions : recordActions(draft.itinerary.id, (m) => (error = m))}
+      actions={live ? stagedActions : withTrackedRename(recordActions(draft.itinerary.id, (m) => (error = m)))}
       onerror={(m) => (error = m)} onopenstop={openStop} />
     <!-- Over the editor, not away from it: the staged plan lives in this component. Edit details
          leaves the page, so only a draft (written as it goes) offers it. -->
@@ -316,7 +356,7 @@
             {#each blockers as blocker (blocker.message)}<li>{blocker.message}</li>{/each}
           </ul>
         {/if}
-        <button type="button" onclick={askToTell} disabled={!!blockers.length || simBlocked || previewPending || saving || !!pending} data-testid="save-plan">
+        <button type="button" onclick={() => void askToTell()} disabled={!!blockers.length || simBlocked || previewPending || saving || !!pending || !!renaming} data-testid="save-plan">
           {saving ? copy.saving : copy.savePlan}
         </button>
       </div>
