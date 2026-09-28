@@ -60,7 +60,9 @@ It also tightens the rules:
 
 - `createRule`: add `&& @request.body.kind:isset = false && @request.body.meta:isset = false`.
   Only the server, as superuser or inside hooks, writes notes.
-- `updateRule`: add `&& kind = ''`, so nobody can edit a note.
+- `updateRule`: add `&& kind = '' && @request.body.kind:isset = false && @request.body.meta:isset = false`.
+  Nobody can edit a note, and nobody can turn an ordinary comment into one by PATCHing
+  `kind`/`meta` onto it.
 - `deleteRule`: `(user = auth && kind = '') || admin`. The actor cannot delete their own note, so
   the trail survives. The Conductor can still clean up.
 - The down migration restores the previous rules and removes the fields.
@@ -92,6 +94,12 @@ before and after `e.next()`. When the title changed, it saves a `renamed` commen
 - `target_collection 'itineraries'` and `target_id` = the route
 - `user` = the crew member making the request
 - `meta { from, to }`
+
+The title update and its note are **atomic**. The hook wraps `e.next()` and the note save in
+`e.app.runInTransaction`, swapping `e.app` for the transaction app as `targets.pb.js` does. If the
+note cannot be saved, the rename is rolled back too, so a title can never change without its
+history. The existing lock and archive work and the recompute trigger run after the transaction,
+unchanged.
 
 If the request came from a superuser with no crew identity, it writes no note, because `user` is
 required. Every product path renames with a crew token (see below). The existing freeze already
@@ -126,12 +134,22 @@ refuses a non-admin rename of a non-draft route.
 ## 4. Clone
 
 **Endpoint `POST /api/plan/clone`** (`web/src/routes/api/plan/clone/+server.ts`), body
-`{ itinerary }`:
+`{ itinerary, id }`. `id` is the clone's record id, minted by the client with `newRecordId()` when
+the page loads. The client keeps it across retries and mints a fresh one only after a success. This
+follows the commit endpoint's stable-id idempotency.
+
+0. **Retry check.**
+   - If an itinerary with `id` already exists, and it is `created_by` this user, and the source has
+     a `cloned_to` note whose `meta.route = id`, the clone finished earlier. Return `{ id }` and
+     write nothing.
+   - If it exists without that note, it is a half-made clone from a failed attempt. Delete it with
+     `adminPb()` and continue.
+   - If it exists but belongs to someone else, return 409.
 
 1. `requireUser(request)`: any signed-in user. Validate that the id is 15 characters `[a-z0-9]`.
 2. Read the source route and its stops (sorted by `order,created`) with `adminPb()`. A missing
    route returns 404.
-3. Create the new itinerary with `userPb(request)`, so the create hook forces `status: draft` and
+3. Create the new itinerary, with the record id `id`, using `userPb(request)`, so the create hook forces `status: draft` and
    sets `created_by` to the cloner. The new itinerary has:
    - `title`: `copy.cloneTitle(source.title)` ("Copy of …"), cut to 80 characters
    - `event_date`, `start_time`, `start_station`, `start_station_name` copied from the source
@@ -148,9 +166,11 @@ refuses a non-admin rename of a non-draft route.
 
    Not copied: legs (the stop-create hook's recompute regenerates them), comments, votes,
    approvals, check-ins, drinks, media, and chat or Bulletins.
-5. Write the two notes with `adminPb()`, `user` = the cloner:
+5. Write the two notes with `adminPb()`, `user` = the cloner, in this order:
    - on the new route: `cloned_from { route: source.id, title: source.title }`
-   - on the source: `cloned_to { route: new.id, title: new.title }`
+   - on the source, **last**: `cloned_to { route: new.id, title: new.title }`
+
+   Because the source note is written last, it is the completion marker that step 0 looks for.
 6. Return `{ id: new.id }`.
 
 **Failure:** if anything after step 3 fails, delete the new itinerary with `adminPb()`, best effort.
@@ -162,14 +182,17 @@ answers with 202 and queues. N queued recomputes for one clone are acceptable at
 (about 10 stops). The last one sees every stop.
 
 **UI:** an icon button, `clone-route`, with a new `copy` icon in `icons.ts` and the label
-`copy.cloneRoute` "Clone route". It sits in the nav bar of `plan/[id]/+page.svelte` and
-`plan/[id]/edit/+page.svelte`, for any signed-in user. It posts to the endpoint through `api()`,
-then `goto('/plan/<id>/edit')`. It is disabled while the request is in flight, and errors show in
-the page's existing `error` line.
+`copy.cloneRoute` "Clone route". It posts to the endpoint through `api()`, then goes to
+`goto('/plan/<id>/edit')`. It is disabled while the request is in flight, and errors show in the
+page's existing `error` line. It appears in the nav bar of:
 
-In the live editor the Conductor may have unsaved staged edits. Cloning copies the **saved** route,
-and the staged edits stay parked in the editor. That matches "clone the route", and the button's
-title/label does not suggest otherwise.
+- `plan/[id]/+page.svelte`, for any signed-in user and any status
+- `plan/[id]/edit/+page.svelte`, **for a draft only**. A draft's edits are already written, so the
+  clone copies exactly what is on screen.
+
+It is not offered in the locked (staged) editor. That editor keeps unsaved staged edits in
+component state, and navigating away would throw them away (parking happens only for the venue
+picker). The Conductor clones a locked route from its route page instead.
 
 ## Labels (all in `labels.ts`, glossary rows in README)
 
@@ -184,6 +207,8 @@ title/label does not suggest otherwise.
   - `groupByKind`: order, empty groups left out, ranking kept.
   - Clone endpoint with PocketBase mocked, like `planCommit`/`planEndpoints`: copied fields,
     owner via the user token, 404, cleanup on a failed stop create, and both notes.
+  - Clone retries: a retry after full completion returns the same id and writes no second note. A
+    retry after a half-made clone deletes it and rebuilds. Someone else's `id` gets 409.
   - `planCommit`: a title written through the user client, bad titles refused with 400, and an
     unchanged title not written.
   - `staged`: the title is seeded and carried in `commitPayload`.
@@ -193,8 +218,11 @@ title/label does not suggest otherwise.
   - A draft rename writes one `renamed` note with the right user and meta, and a no-op update writes
     none.
   - A non-admin rename of a locked route gets 403 and writes no note.
-  - A client cannot create a comment with `kind`/`meta`, cannot edit a note, and cannot delete their
-    own note. The admin can delete a note.
+  - A client cannot create a comment with `kind`/`meta`, cannot PATCH `kind`/`meta` onto their
+    ordinary comment (try each kind), cannot edit a note, and cannot delete their own note. The
+    admin can delete a note.
+  - Atomicity: if the note save fails (e.g. forced through a hook-test fixture), the title is
+    unchanged.
   - A note with an empty body passes `targets.pb.js`.
 - **E2E:**
   - The picker shows Bars open and Restaurants collapsed with counts, and a restaurant row is
