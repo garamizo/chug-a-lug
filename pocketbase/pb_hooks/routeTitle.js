@@ -11,9 +11,7 @@ module.exports = {
     return { display, key: display.replace(/\s+/g, ' ').toLowerCase() }
   },
   taken(app, key, exceptId) {
-    try {
-      app.findFirstRecordByFilter('itineraries', 'title_key = {:k} && id != {:id}', { k: key, id: exceptId || '' })
-      return true
-    } catch (_) { return false }
+    const rows = app.findRecordsByFilter('itineraries', 'title_key = {:k} && id != {:id}', '', 1, 0, { k: key, id: exceptId || '' })
+    return rows.length > 0
   }
 }
