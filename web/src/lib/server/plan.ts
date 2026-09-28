@@ -5,7 +5,7 @@ import { error } from '@sveltejs/kit';
 import type PocketBase from 'pocketbase';
 import { metra } from './metra';
 import { computeLegs as computeWithSchedule } from '$lib/metra/compute';
-import { todayInTz } from '$lib/time';
+import { anchorOnEventDay } from '$lib/anchor';
 import type { Checkin, Segment } from '$lib/types';
 
 export type PlanStop = { id: string; order: number; station_id: string; dwell_min: number; walk_min: number };
@@ -77,7 +77,7 @@ export function activeAnchor(
   anchor: { stopId: string; at: string } | null,
   now: Date = new Date()
 ): { stopId: string; at: string } | null {
-  return anchor && eventDate === todayInTz(now) && todayInTz(new Date(anchor.at)) === eventDate ? anchor : null;
+  return anchor && anchorOnEventDay(eventDate, anchor, now) ? anchor : null;
 }
 
 /** Leg times for a set of stops, in UTC. Pure apart from reading the cached GTFS schedule. */

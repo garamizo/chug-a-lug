@@ -195,11 +195,18 @@ describe('practice days', () => {
   it('ignores the Conductor’s position on a practice day', () => {
     const day = new LiveDay();
     day.itinerary = route; day.stops = [] as never;
-    day.anchor = { stopId: 's2', at: '2026-09-22T18:00:00Z' };
+    day.anchor = { stopId: 's2', at: '2026-12-26T18:00:00Z' };
     day.realNow = new Date('2026-09-22T19:05:00Z'); day.syncPlan();
     expect(day.effectiveAnchor).toBeNull();
     day.realNow = new Date('2026-12-26T19:05:00Z'); day.syncPlan();
     expect(day.effectiveAnchor).toEqual(day.anchor);
+  });
+  it('ignores a check-in from an earlier day on the event day, as the server does', () => {
+    const day = new LiveDay();
+    day.itinerary = route; day.stops = [] as never;
+    day.anchor = { stopId: 's2', at: '2026-09-22T18:00:00Z' };
+    day.realNow = new Date('2026-12-26T19:05:00Z'); day.syncPlan();
+    expect(day.effectiveAnchor).toBeNull();
   });
   it('asks for timetable-only trains on a practice day and skips alerts', async () => {
     mocks.fetchNext.mockResolvedValue({ trips: [], mode: 'schedule_only', fetchedAt: null });
@@ -501,6 +508,26 @@ describe('a route that boards at another station', () => {
     await day.loadTrains();
     expect(mocks.fetchNext).toHaveBeenCalledWith('AURORA', 'NAPERVILLE', '2026-12-26', new Date('2026-12-26T17:19:00.000Z'), day.practice);
     expect(day.boarding?.fromName).toBe('Aurora');
+  });
+
+  it('a check-in left over from the day before does not end the boarding journey', () => {
+    const day = boardingDay(true);
+    // A Route save on Christmas Day wrote this check-in; on the event morning it is history.
+    day.anchor = { stopId: 'a', at: '2026-12-25T20:00:00Z' };
+    day.realNow = new Date('2026-12-26T16:00:00Z'); day.syncPlan();
+    expect(day.here?.source).toBe('before');
+    expect(day.boarding?.fromName).toBe('Aurora');
+    expect(day.plannedTrip).toEqual({ tripId: 'BN2', dep: '2026-12-26T17:20:00.000Z' });
+  });
+
+  it('a check-in left over from the day before does not hide the planned train without Board at', () => {
+    const day = boardingDay(true);
+    day.itinerary = route;
+    day.legs = [onward] as never;
+    day.anchor = { stopId: 'b', at: '2026-12-25T20:00:00Z' };
+    day.realNow = new Date('2026-12-26T16:00:00Z'); day.syncPlan();
+    expect(day.here?.source).toBe('before');
+    expect(day.plannedTrip).toEqual({ tripId: 'BN6', dep: '2026-12-26T18:30:00.000Z' });
   });
 
   it('a Conductor check-in at stop 1 ends the boarding journey on the event day', async () => {

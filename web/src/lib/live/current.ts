@@ -76,7 +76,8 @@ export function currentStop(
     const hit = ts.find((t) => t.stop.id === override.stopId);
     // A correction holds until the schedule catches up with it; an older one is a leftover. While
     // the crawl is still before its first stop, though, a check-in always wins: it is the Conductor
-    // saying the crew is already there, so there is nothing yet for it to be stale against.
+    // saying the crew is already there, so there is nothing yet for it to be stale against. A
+    // check-in from an earlier day never gets here: callers gate it with `anchorOnEventDay`.
     if (hit && (source === 'before' || new Date(override.at).getTime() > picked.arriveAt)) return result(hit, 'override');
   }
   return result(picked, source);

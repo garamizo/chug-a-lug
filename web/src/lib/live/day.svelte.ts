@@ -5,6 +5,7 @@ import { untrack } from 'svelte';
 import { pb, subscribe } from '$lib/pb';
 import { dayBounds, localToUtc, parseHm, todayInTz } from '$lib/time';
 import { clearMirror, mirrorPayload, readMirror, saveMirror, scopeMirror } from '$lib/offline';
+import { anchorOnEventDay } from '$lib/anchor';
 import { currentStop, type Current } from './current';
 import { boardingJourney, pickTrip, plannedTrain, type Boarding } from './board';
 import { fetchAlerts, fetchDay, fetchNext, fetchStatus } from './feed';
@@ -53,8 +54,13 @@ export class LiveDay {
   get hasRoute(): boolean { return this.clockKnown && !!this.itinerary; }
   get isEventDay(): boolean { return this.hasRoute && onEventDate(this.itinerary!.event_date, this.realNow); }
   get practice(): boolean { return this.hasRoute && !this.isEventDay; }
-  /** A Conductor's correction steers the board only on the event day; practice runs the timetable. */
-  get effectiveAnchor() { return this.isEventDay ? this.anchor : null; }
+  /**
+   * A Conductor's correction steers the board only on the event day, and only one made that day:
+   * the same gate as the planner's `activeAnchor`. Practice runs the timetable.
+   */
+  get effectiveAnchor() {
+    return this.isEventDay && anchorOnEventDay(this.itinerary!.event_date, this.anchor, this.realNow) ? this.anchor : null;
+  }
   /** Recomputes plan time from `realNow`. Pure: reads no clock. */
   syncPlan() { this.now = planNow(this.itinerary?.event_date ?? null, this.realNow); }
   syncNow() { this.realNow = clientClock.eventNow() ?? this.realNow; this.syncPlan(); }
