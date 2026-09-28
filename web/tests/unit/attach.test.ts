@@ -3,7 +3,7 @@ import { mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { writeJson } from '../../src/lib/server/places/cache';
-import { attachPlace } from '$lib/server/places/attach';
+import { attachPlace, venueMedia } from '$lib/server/places/attach';
 import { searchText, placeDetails, photoBytes } from '$lib/server/places/google';
 
 // Mutable state closed over by the mock factories below (vi.hoisted runs before the mocks and
@@ -243,5 +243,73 @@ describe('attachPlace', () => {
     expect(searchText).not.toHaveBeenCalled();
     expect(placeDetails).not.toHaveBeenCalled();
     expect(photoBytes).not.toHaveBeenCalled();
+  });
+});
+
+describe('venueMedia', () => {
+  // A details answer that waits for `release()`, so two callers are both in flight before either
+  // one has fetched anything.
+  function gatedDetails() {
+    let release!: () => void;
+    const gate = new Promise<void>((r) => (release = r));
+    vi.mocked(placeDetails).mockImplementation(async () => {
+      await gate;
+      return { name: 'Bar', address: '', lat: 1, lon: 2, hours: [], rating: null, phone: '', website: '', mapsUrl: '', photos: [{ name: 'p/1', attribution: '' }], fetchedAt: '' } as never;
+    });
+    vi.mocked(photoBytes).mockResolvedValue(new Uint8Array([1]) as never);
+    return () => release();
+  }
+
+  it('fetches a stored Google venue\'s details and photos once, then serves them without Google', async () => {
+    pbState.places.set('placeg1', { id: 'placeg1', ref: 'google:G1', source: 'google', place_id: 'G1', name: 'Bar', photos: [], photo_refs: [] });
+    vi.mocked(placeDetails).mockResolvedValue({ name: 'Bar', address: 'A', lat: 1, lon: 2, hours: [], rating: 4.5, phone: '', website: '', mapsUrl: '', photos: [{ name: 'p/1', attribution: 'x' }], fetchedAt: '' } as never);
+    vi.mocked(photoBytes).mockResolvedValue(new Uint8Array([1]) as never);
+
+    const first = await venueMedia('placeg1');
+
+    expect(first.status).toBe('done');
+    expect(first.place?.photos).toEqual(['1.jpg']);
+    vi.mocked(placeDetails).mockClear();
+    vi.mocked(photoBytes).mockClear();
+    await venueMedia('placeg1');
+    expect(placeDetails).not.toHaveBeenCalled();
+    expect(photoBytes).not.toHaveBeenCalled();
+  });
+
+  it('returns no photos for an OpenStreetMap venue and never calls Google', async () => {
+    pbState.places.set('placeo1', { id: 'placeo1', ref: 'osm:node/1', source: 'osm', place_id: '', name: 'Pub', photos: [] });
+
+    expect(await venueMedia('placeo1')).toMatchObject({ status: 'none' });
+    expect(placeDetails).not.toHaveBeenCalled();
+  });
+
+  it('fetches once when the sheet is opened twice at the same time', async () => {
+    pbState.places.set('placeg2', { id: 'placeg2', ref: 'google:G2', source: 'google', place_id: 'G2', name: 'Bar', photos: [], photo_refs: [] });
+    const release = gatedDetails();
+
+    const both = Promise.all([venueMedia('placeg2'), venueMedia('placeg2')]);
+    release();
+    const [a, b] = await both;
+
+    expect(placeDetails).toHaveBeenCalledTimes(1);
+    expect(photoBytes).toHaveBeenCalledTimes(1);
+    expect(a.place?.photos).toEqual(['1.jpg']);
+    expect(b.place?.photos).toEqual(['1.jpg']);
+  });
+
+  it('fetches once when a venue is opened and added at the same time', async () => {
+    pbState.places.set('placeg3', { id: 'placeg3', ref: 'google:G3', source: 'google', place_id: 'G3', name: 'Bar', photos: [], photo_refs: [] });
+    seedStop('stopg3000000001', { place: 'placeg3', place_id: 'G3' });
+    const release = gatedDetails();
+
+    const both = Promise.all([venueMedia('placeg3'), attachPlace('stopg3000000001')]);
+    release();
+    const [media, attached] = await both;
+
+    expect(placeDetails).toHaveBeenCalledTimes(1);
+    expect(photoBytes).toHaveBeenCalledTimes(1);
+    expect(media.status).toBe('done');
+    expect(attached).toEqual({ status: 'done', photos: 1 });
+    expect(pbState.places.size).toBe(1);
   });
 });

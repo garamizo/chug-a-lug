@@ -8,6 +8,7 @@ import { metra } from '$lib/server/metra';
 import { consumeBudget } from './budget';
 import { photoBytes, placeDetails, searchText } from './google';
 import { findPlace } from './store';
+import type PocketBase from 'pocketbase';
 import type { AttachResult, Itinerary, Place, Stop } from '$lib/types';
 
 /** Who asked for the attach. Optional so tests (and future server jobs) can skip the check. */
@@ -32,6 +33,73 @@ function serialize<T>(queues: Map<string, Promise<unknown>>, key: string, fn: ()
     .catch((err) => { console.error('[places] attach', key, err); })
     .finally(() => { if (queues.get(key) === run) queues.delete(key); });
   return run;
+}
+
+type PlaceSeed = { name: string; kind: string; lat: number; lon: number; address: string; station_id: string };
+
+/** Details and up to five photos for one Google venue, once. Returns the place, or why not. */
+async function ensurePlaceMedia(pb: PocketBase, cfg: { key: string }, placeId: string, seed: PlaceSeed): Promise<Place | string> {
+  const ref = `google:${placeId}`;
+  return serialize(placeQueues, ref, async (): Promise<Place | string> => {
+    // Re-read inside the queue: a caller that waited in line must see what the one before it
+    // fetched, never a copy taken before it queued.
+    let p = await findPlace(pb, ref);
+    if (!p) {
+      p = await pb.collection('places').create<Place>({
+        ref, source: 'google', place_id: placeId, name: seed.name, kind: seed.kind,
+        lat: seed.lat, lon: seed.lon, address: seed.address, station_id: seed.station_id, fetched_at: new Date().toISOString()
+      });
+    }
+    if (!p.details_at) {
+      if (!(await consumeBudget(serverEnv.dataDir, 'details', DETAILS_LIMIT))) return 'Monthly Google budget reached.';
+      const meta = await placeDetails(cfg, placeId);
+      p = await pb.collection('places').update<Place>(p.id, {
+        name: meta.name || p.name, address: meta.address || p.address, lat: meta.lat || p.lat, lon: meta.lon || p.lon,
+        hours: meta.hours.length ? { source: 'google', weekday: meta.hours } : p.hours,
+        rating: meta.rating ?? p.rating, phone: meta.phone || p.phone, website: meta.website || p.website, maps_url: meta.mapsUrl,
+        photo_refs: meta.photos.map((ph) => ph.name), photo_attributions: meta.photos.map((ph) => ph.attribution),
+        details_at: new Date().toISOString()
+      });
+    }
+    const refs = p.photo_refs ?? [];
+    if (!p.photos.length && refs.length) {
+      const form = new FormData();
+      let got = 0, blocked = false;
+      for (const [i, name] of refs.entries()) {
+        if (!(await consumeBudget(serverEnv.dataDir, 'photos', PHOTOS_LIMIT))) { blocked = true; break; }
+        const bytes = await photoBytes(cfg, name);
+        form.append('photos', new File([bytes.slice().buffer as ArrayBuffer], `${i + 1}.jpg`, { type: 'image/jpeg' }));
+        got++;
+      }
+      // The budget can stop the batch before any photo was obtained; treat that like the
+      // details-budget case rather than finishing 'done' with zero photos.
+      if (blocked && !got) return 'Monthly Google budget reached.';
+      if (got) p = await pb.collection('places').update<Place>(p.id, form);
+    }
+    return p;
+  });
+}
+
+/**
+ * A venue's details and photos before it is added to a route (the Add Stop sheet). Goes through
+ * the same per-venue queue as attach, so opening and adding a venue pays Google once.
+ */
+export async function venueMedia(placeRecordId: string): Promise<{ status: 'done' | 'none' | 'failed'; place: Place | null; message?: string }> {
+  const pb = await adminPb();
+  const place = await pb.collection('places').getOne<Place>(placeRecordId).catch(() => null);
+  if (!place) return { status: 'none', place: null };
+  if (place.source !== 'google' || !place.place_id || !/^[A-Za-z0-9_-]+$/.test(place.place_id)) return { status: 'none', place };
+  if (place.details_at && (place.photos.length || !(place.photo_refs ?? []).length)) return { status: 'done', place };
+  if (!serverEnv.googleKey) return { status: 'none', place };
+  try {
+    const out = await ensurePlaceMedia(pb, { key: serverEnv.googleKey }, place.place_id, {
+      name: place.name, kind: place.kind, lat: place.lat, lon: place.lon, address: place.address, station_id: place.station_id
+    });
+    return typeof out === 'string' ? { status: 'failed', place, message: out } : { status: 'done', place: out };
+  } catch (err) {
+    console.error('[places] venue media', placeRecordId, err);
+    return { status: 'failed', place, message: (err as Error).message };
+  }
 }
 
 export function attachPlace(stopId: string, caller?: AttachCaller): Promise<AttachResult> {
@@ -81,42 +149,8 @@ async function doAttachPlace(stopId: string, caller?: AttachCaller): Promise<Att
 
     // 2. Details and photos, once per venue (an OpenStreetMap-sourced stop is re-pointed at the
     //    Google record for the same venue, so its photos are shared too).
-    const ref = `google:${placeId}`;
-    const outcome = await serialize(placeQueues, ref, async (): Promise<Place | string> => {
-      let p = place && place.ref === ref ? place : await findPlace(pb, ref);
-      if (!p) {
-        p = await pb.collection('places').create<Place>({
-          ref, source: 'google', place_id: placeId, name: stop.name, kind: stop.kind || 'other',
-          lat: stop.lat, lon: stop.lon, address: stop.address, station_id: stop.station_id, fetched_at: new Date().toISOString()
-        });
-      }
-      if (!p.details_at) {
-        if (!(await consumeBudget(serverEnv.dataDir, 'details', DETAILS_LIMIT))) return 'Monthly Google budget reached.';
-        const meta = await placeDetails(cfg, placeId);
-        p = await pb.collection('places').update<Place>(p.id, {
-          name: meta.name || p.name, address: meta.address || p.address, lat: meta.lat || p.lat, lon: meta.lon || p.lon,
-          hours: meta.hours.length ? { source: 'google', weekday: meta.hours } : p.hours,
-          rating: meta.rating ?? p.rating, phone: meta.phone || p.phone, website: meta.website || p.website, maps_url: meta.mapsUrl,
-          photo_refs: meta.photos.map((ph) => ph.name), photo_attributions: meta.photos.map((ph) => ph.attribution),
-          details_at: new Date().toISOString()
-        });
-      }
-      const refs = p.photo_refs ?? [];
-      if (!p.photos.length && refs.length) {
-        const form = new FormData();
-        let got = 0, blocked = false;
-        for (const [i, name] of refs.entries()) {
-          if (!(await consumeBudget(serverEnv.dataDir, 'photos', PHOTOS_LIMIT))) { blocked = true; break; }
-          const bytes = await photoBytes(cfg, name);
-          form.append('photos', new File([bytes.slice().buffer as ArrayBuffer], `${i + 1}.jpg`, { type: 'image/jpeg' }));
-          got++;
-        }
-        // The budget can stop the batch before any photo was obtained; treat that like the
-        // details-budget case rather than finishing 'done' with zero photos.
-        if (blocked && !got) return 'Monthly Google budget reached.';
-        if (got) p = await pb.collection('places').update<Place>(p.id, form);
-      }
-      return p;
+    const outcome = await ensurePlaceMedia(pb, cfg, placeId, {
+      name: stop.name, kind: stop.kind || 'other', lat: stop.lat, lon: stop.lon, address: stop.address, station_id: stop.station_id
     });
     if (typeof outcome === 'string') return fail(outcome);
     place = outcome;
