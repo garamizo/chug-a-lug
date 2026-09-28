@@ -70,6 +70,7 @@ users see. Bars and restaurants keep their plain names.
 | Train leg | **Run** | Rail, "the 8:40 run" | |
 | Walk between station and stop | **Walk** | Plain | |
 | Venue card | **Stop card** | Plain | |
+| Venue details sheet | **Venue details** | Plain | Opens from Add Stop when a stop card is tapped, before it becomes a stop; photos, rating, hours, walk time, then **Add stop** |
 | Departure banner | **Departure Board** | Rail | |
 | First warning (about 10 min out) | **Last Call** | Bar | |
 | Leave-now alert | **All Aboard** | Rail | |
@@ -126,7 +127,9 @@ Goal: by early December, one locked itinerary that everyone has seen and voted o
   the layover. The last stop at a station picks its departure from that day's trains toward the next
   stop; earlier stops at the same station pick a plain layover and can swap places with the small arrows.
   A draft has two screens: the view (`/plan/<id>`) with the read-only route, cheers, comments and the
-  Highball, and the edit screen (`/plan/<id>/edit`) with the controls and nothing else.
+  Highball, and the edit screen (`/plan/<id>/edit`) with the controls. Tapping a stop opens its details
+  in a sheet over the editor; Edit details from there leaves for the full stop page, and both the sheet
+  and that page return to the editor.
 - Build an itinerary draft: ordered stops, each tied to a station and a planned dwell time. The app fills
   in train legs and walks from the Saturday Metra schedule, so the draft shows real train times and flags
   any leg that doesn't work.

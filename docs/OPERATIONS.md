@@ -52,6 +52,9 @@ dev (the PocketBase hook calls the SvelteKit server with that secret and URL aft
   stop or draft asks first; details and photos sit on the `places` record. `~/.chug-a-lug/places/budget.json` counts
   calls per month; the server refuses new calls past 200 nearby or 800 of the other two. Do not delete it:
   it is the only guard between a bug and the bill, and Google's own count does not reset with it.
+- Opening a venue's sheet on Add Stop (`POST /api/places/photos`) spends 1 details call plus up to 5 photo
+  calls the first time anyone opens that venue; the result sits on its `places` record, so every later
+  open of the same venue — from Add Stop or once it is a stop — costs nothing further.
 - The Metra timetable zip is cached in `~/.chug-a-lug/gtfs/` (a bind mount, so it survives `docker compose up`) and
   `published.txt` is checked once a day; delete the folder to force a fresh download.
 - A stop whose photos failed shows "Try again" on its card. Setting `place_id` on the stop in the PocketBase admin UI
