@@ -104,6 +104,10 @@ users see. Bars and restaurants keep their plain names.
 A draft can be changed or deleted only by its builder or the Conductor; once locked, only the Conductor
 can change or delete it.
 
+A route name is 1–80 characters after trimming, stored trimmed, and must be unique across every route
+regardless of status, compared case-insensitively with runs of spaces collapsed; keeping a route's own
+name (even re-cased) is never a clash.
+
 ---
 
 ## Phase 1: planning

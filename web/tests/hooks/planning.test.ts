@@ -5,8 +5,9 @@ let crew: { token: string; id: string };
 let other: { token: string; id: string };
 let admin: { token: string; id: string };
 
+let titleSeq = 0;
 const createItinerary = (token: string, body: Record<string, unknown> = {}) =>
-  post('/api/collections/itineraries/records', { title: 'Test draft', ...body }, token);
+  post('/api/collections/itineraries/records', { title: `Test draft ${++titleSeq}`, ...body }, token);
 
 const createStop = (token: string, itinerary: string, body: Record<string, unknown> = {}) =>
   post('/api/collections/stops/records', { itinerary, name: 'Test Tavern', station_id: 'ELMHURST', station_name: 'Elmhurst', ...body }, token);
@@ -32,10 +33,10 @@ describe('itineraries', () => {
 
   it('lets the owner rename but not lock; admin can lock and it is logged', async () => {
     const { id } = await (await createItinerary(crew.token)).json();
-    expect((await patch(`/api/collections/itineraries/records/${id}`, { title: 'Renamed' }, crew.token)).status).toBe(200);
+    expect((await patch(`/api/collections/itineraries/records/${id}`, { title: 'Renamed by owner' }, crew.token)).status).toBe(200);
     expect((await patch(`/api/collections/itineraries/records/${id}`, { status: 'locked' }, crew.token)).status).toBe(403);
     expect((await patch(`/api/collections/itineraries/records/${id}`, { vote_open: true }, crew.token)).status).toBe(403);
-    expect((await patch(`/api/collections/itineraries/records/${id}`, { title: 'Nope' }, other.token)).status).toBe(404);
+    expect((await patch(`/api/collections/itineraries/records/${id}`, { title: 'Nope from other' }, other.token)).status).toBe(404);
     const locked = await patch(`/api/collections/itineraries/records/${id}`, { status: 'locked' }, admin.token);
     expect(locked.status).toBe(200);
     expect((await locked.json()).locked_at).toBeTruthy();
@@ -53,14 +54,14 @@ describe('itineraries', () => {
   });
 
   it('freezes a locked itinerary for its creator; the admin can edit it and unlock it', async () => {
-    const { id } = await (await createItinerary(crew.token, { title: 'Frozen' })).json();
+    const { id } = await (await createItinerary(crew.token, { title: 'Frozen 1' })).json();
     await patch(`/api/collections/itineraries/records/${id}`, { status: 'locked' }, admin.token);
     expect((await patch(`/api/collections/itineraries/records/${id}`, { start_time: '12:00' }, crew.token)).status).toBe(403);
-    expect((await patch(`/api/collections/itineraries/records/${id}`, { title: 'Renamed' }, crew.token)).status).toBe(403);
+    expect((await patch(`/api/collections/itineraries/records/${id}`, { title: 'Renamed frozen' }, crew.token)).status).toBe(403);
     expect((await patch(`/api/collections/itineraries/records/${id}`, { event_date: '2026-12-27' }, crew.token)).status).toBe(403);
     expect((await patch(`/api/collections/itineraries/records/${id}`, { start_station: 'AURORA', start_station_name: 'Aurora' }, crew.token)).status).toBe(403);
     // A no-op write of the same values is not an edit, so it still goes through.
-    expect((await patch(`/api/collections/itineraries/records/${id}`, { title: 'Frozen' }, crew.token)).status).toBe(200);
+    expect((await patch(`/api/collections/itineraries/records/${id}`, { title: 'Frozen 1' }, crew.token)).status).toBe(200);
     expect((await patch(`/api/collections/itineraries/records/${id}`, { start_time: '12:00' }, admin.token)).status).toBe(200);
     const back = await patch(`/api/collections/itineraries/records/${id}`, { status: 'draft' }, admin.token);
     expect(back.status).toBe(200);
@@ -104,6 +105,35 @@ describe('itineraries', () => {
     expect((await del(`/api/collections/itineraries/records/${id}`, admin.token)).status).toBe(204);
     const after = await (await get(`/api/collections/crawl_settings/records/${sid}`, su)).json();
     expect(after.current_itinerary).toBe('');
+  });
+
+  it('names are unique ignoring case and spaces, 1–80 characters, stored trimmed', async () => {
+    const a = await (await createItinerary(crew.token, { title: '  Unique Loop ' })).json();
+    expect(a.title).toBe('Unique Loop');
+    expect(a.title_key).toBe('unique loop');
+    const dup = await createItinerary(other.token, { title: 'unique   LOOP' });
+    expect(dup.status).toBe(400);
+    // PocketBase sentenizes ApiError messages (capitalizes, appends a period), so the code
+    // arrives on the wire as `Title_taken.`; web/src/lib/routeTitle.ts's titleError() undoes that.
+    expect((await dup.json()).message).toBe('Title_taken.');
+    expect((await (await createItinerary(crew.token, { title: '   ' })).json()).message).toBe('Title_invalid.');
+    const b = await (await createItinerary(crew.token, { title: 'Unique Other' })).json();
+    const clash = await patch(`/api/collections/itineraries/records/${b.id}`, { title: 'UNIQUE LOOP' }, crew.token);
+    expect(clash.status).toBe(400);
+    expect((await clash.json()).message).toBe('Title_taken.');
+    // Keeping your own name (even re-cased) is not a clash.
+    expect((await patch(`/api/collections/itineraries/records/${a.id}`, { title: 'Unique loop' }, crew.token)).status).toBe(200);
+    // A forged title_key is overwritten from the title.
+    const forged = await (await patch(`/api/collections/itineraries/records/${b.id}`, { title_key: 'zzz' }, crew.token)).json();
+    expect(forged.title_key).toBe('unique other');
+  });
+
+  it('racing requests cannot both take a free name', async () => {
+    const creates = await Promise.all(Array.from({ length: 5 }, () => createItinerary(crew.token, { title: 'Race name' })));
+    expect(creates.filter((r) => r.status === 200)).toHaveLength(1);
+    const [x, y] = await Promise.all([createItinerary(crew.token), createItinerary(crew.token)].map(async (p) => (await p).json()));
+    const renames = await Promise.all([x, y].map((r) => patch(`/api/collections/itineraries/records/${r.id}`, { title: 'Race rename' }, crew.token)));
+    expect(renames.filter((r) => r.status === 200)).toHaveLength(1);
   });
 });
 

@@ -84,7 +84,7 @@ export async function seedLockedCrawl(opts: {
   // The planning hook forces every new itinerary to `draft`, superuser included, so locking is only
   // reachable through an update — the same path the Highball takes in the app.
   const draft = await create('itineraries', {
-    title: 'E2E Live Crawl', event_date: opts.eventDate,
+    title: `E2E Live Crawl ${Math.random().toString(36).slice(2, 8)}`, event_date: opts.eventDate,
     start_time: opts.startTime, vote_open: false, created_by: owner.id
   }, token);
   const lockRes = await fetch(`${PB}/api/collections/itineraries/records/${draft.id}`, {

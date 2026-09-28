@@ -13,7 +13,19 @@ onRecordCreateRequest((e) => {
   if (isCrew) r.set('created_by', e.auth.id)
   if (!r.getString('event_date')) r.set('event_date', '2026-12-26')
   if (!r.getString('start_time')) r.set('start_time', '11:00')
-  e.next()
+  const titles = require(`${__hooks}/routeTitle.js`)
+  const name = titles.normalize(r.getString('title'))
+  if (!name) throw new BadRequestError('title_invalid')
+  r.set('title', name.display)
+  r.set('title_key', name.key)
+  const app = e.app
+  try {
+    app.runInTransaction((tx) => {
+      e.app = tx
+      if (titles.taken(tx, name.key, '')) throw new BadRequestError('title_taken')
+      e.next()
+    })
+  } finally { e.app = app }
 }, 'itineraries')
 
 onRecordUpdateRequest((e) => {
@@ -37,6 +49,12 @@ onRecordUpdateRequest((e) => {
       }
     }
   }
+  const titles = require(`${__hooks}/routeTitle.js`)
+  const name = titles.normalize(e.record.getString('title'))
+  if (!name) throw new BadRequestError('title_invalid')
+  const nameChanged = name.key !== original.getString('title_key')
+  e.record.set('title', name.display)
+  e.record.set('title_key', name.key)
   const locking = e.record.getString('status') === 'locked' && original.getString('status') !== 'locked'
   if (locking) e.record.set('locked_at', new Date().toISOString())
   // Back to draft (admin only): the record is no longer locked, so it carries no lock time.
@@ -45,7 +63,14 @@ onRecordUpdateRequest((e) => {
     e.record.getString('event_date') !== original.getString('event_date') ||
     e.record.getString('start_station') !== original.getString('start_station')
   const eventAt = locking ? require(`${__hooks}/clock.js`).eventNow(e.app) : null
-  e.next()
+  const app = e.app
+  try {
+    app.runInTransaction((tx) => {
+      e.app = tx
+      if (nameChanged && titles.taken(tx, name.key, e.record.id)) throw new BadRequestError('title_taken')
+      e.next()
+    })
+  } finally { e.app = app }
   if (locking) {
     const others = $app.findRecordsByFilter('itineraries',
       "status = 'locked' && event_date = {:date} && id != {:id}", '', 0, 0,
