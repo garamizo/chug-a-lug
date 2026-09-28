@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { kindFromGoogleType, photoBytes, placeDetails, searchNearby, searchText } from '../../src/lib/server/places/google';
+import { NEARBY_GROUPS, kindFromGoogleType, photoBytes, placeDetails, searchNearby, searchText } from '../../src/lib/server/places/google';
 
 function capture(body: unknown, status = 200) {
   const calls: { url: string; init: RequestInit }[] = [];
@@ -34,14 +34,16 @@ describe('searchText', () => {
 });
 
 describe('searchNearby', () => {
-  it('restricts to the radius, asks for ratings, and maps results with a distance', async () => {
+  it('restricts to the radius, asks for ratings and hours, and maps results with a distance', async () => {
     const { calls, fetchImpl } = capture({ places: [
-      { id: 'p1', displayName: { text: 'Corner Tap' }, formattedAddress: '2 Main St', location: { latitude: 41.8155, longitude: -87.8694 }, primaryType: 'bar', rating: 4.6, userRatingCount: 312 },
+      { id: 'p1', displayName: { text: 'Corner Tap' }, formattedAddress: '2 Main St', location: { latitude: 41.8155, longitude: -87.8694 }, primaryType: 'bar', rating: 4.6, userRatingCount: 312,
+        regularOpeningHours: { weekdayDescriptions: ['Saturday: 11:00 AM – 2:00 AM'] } },
       { id: 'p2', displayName: { text: 'No Location' }, primaryType: 'bar' }
     ] });
-    const venues = await searchNearby({ key: 'K', fetchImpl }, { lat: 41.8144444, lon: -87.8694444 }, 250);
+    const venues = await searchNearby({ key: 'K', fetchImpl }, { lat: 41.8144444, lon: -87.8694444 }, 805, NEARBY_GROUPS.bars);
     expect(venues).toHaveLength(1);
-    expect(venues[0]).toMatchObject({ source: 'google', id: 'p1', name: 'Corner Tap', kind: 'bar', address: '2 Main St', rating: 4.6, ratingCount: 312 });
+    expect(venues[0]).toMatchObject({ source: 'google', id: 'p1', name: 'Corner Tap', kind: 'bar', address: '2 Main St', rating: 4.6, ratingCount: 312,
+      hours: { source: 'google', weekday: ['Saturday: 11:00 AM – 2:00 AM'] } });
     expect(venues[0].distanceM).toBeGreaterThan(100);
     expect(venues[0].distanceM).toBeLessThan(130);
     expect(calls[0].url).toBe('https://places.googleapis.com/v1/places:searchNearby');
@@ -49,14 +51,20 @@ describe('searchNearby', () => {
     expect(headers.get('x-goog-api-key')).toBe('K');
     expect(headers.get('x-goog-fieldmask')).toContain('places.rating');
     expect(headers.get('x-goog-fieldmask')).toContain('places.userRatingCount');
+    // Same Enterprise charge as the rating: hours come along for free.
+    expect(headers.get('x-goog-fieldmask')).toContain('places.regularOpeningHours');
     const body = JSON.parse(String(calls[0].init.body));
-    expect(body).toMatchObject({ maxResultCount: 20, locationRestriction: { circle: { center: { latitude: 41.8144444, longitude: -87.8694444 }, radius: 250 } } });
-    expect(body.includedTypes).toContain('bar');
-    expect(body.includedTypes).toContain('restaurant');
+    expect(body).toMatchObject({ maxResultCount: 20, rankPreference: 'POPULARITY', includedTypes: NEARBY_GROUPS.bars,
+      locationRestriction: { circle: { center: { latitude: 41.8144444, longitude: -87.8694444 }, radius: 805 } } });
+  });
+  it('asks for bars and restaurants separately, so each gets its own top 20', () => {
+    expect(NEARBY_GROUPS.bars).toEqual(expect.arrayContaining(['bar', 'pub']));
+    expect(NEARBY_GROUPS.bars).not.toContain('restaurant');
+    expect(NEARBY_GROUPS.restaurants).toEqual(['restaurant']);
   });
   it('throws with the status on failure', async () => {
     const { fetchImpl } = capture({ error: { message: 'nope' } }, 429);
-    await expect(searchNearby({ key: 'K', fetchImpl }, { lat: 0, lon: 0 }, 250)).rejects.toThrow('Google 429');
+    await expect(searchNearby({ key: 'K', fetchImpl }, { lat: 0, lon: 0 }, 805, NEARBY_GROUPS.bars)).rejects.toThrow('Google 429');
   });
 });
 

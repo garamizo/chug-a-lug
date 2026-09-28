@@ -36,16 +36,19 @@ changing it means `docker compose up -d --build web`.
 dev (the PocketBase hook calls the SvelteKit server with that secret and URL after every `stops` write).
 
 ## Planning data
-- Nearby venues per station (within 250 m, best rated first) come from Google Places Nearby Search once; the
+- Nearby venues per station (within half a mile, best rated first) come from Google Places Nearby Search,
+  one call for bars and one for restaurants, each the 20 most popular with rating and hours; the
   venues are stored in the `places` collection and the station is marked in `place_lookups`, after which
   the database answers. Without `GOOGLE_PLACES_KEY` the server falls back to OpenStreetMap (no ratings,
   nearest first). To search a station again: as the Conductor, open
   `/api/places/nearby?station=LAGRANGE&refresh=1` (with the app's token; easiest is the browser console snippet in the M1 plan, Task 6).
+  To fill or refresh every BNSF station at once (52 calls), run `just places-warm` against the running stack;
+  it refuses up front if the month has too few nearby calls left.
   Old `~/.chug-a-lug/places/nearby/*.json` and `~/.chug-a-lug/places/<place_id>/` folders from before the table existed can be deleted.
-- Google Places is called once per station (nearby), once per venue (details) plus once per photo, whichever
+- Google Places is called twice per station (nearby), once per venue (details) plus once per photo, whichever
   stop or draft asks first; details and photos sit on the `places` record. `~/.chug-a-lug/places/budget.json` counts
-  calls per month; the server refuses new calls past 200 nearby or 800 of the other two. Reset by deleting
-  the file at month start if needed.
+  calls per month; the server refuses new calls past 200 nearby or 800 of the other two. Do not delete it:
+  it is the only guard between a bug and the bill, and Google's own count does not reset with it.
 - The Metra timetable zip is cached in `~/.chug-a-lug/gtfs/` (a bind mount, so it survives `docker compose up`) and
   `published.txt` is checked once a day; delete the folder to force a fresh download.
 - A stop whose photos failed shows "Try again" on its card. Setting `place_id` on the stop in the PocketBase admin UI

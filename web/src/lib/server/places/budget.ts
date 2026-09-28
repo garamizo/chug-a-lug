@@ -28,3 +28,11 @@ async function doConsumeBudget(dataDir: string, kind: BudgetKind, limit: number)
   await writeJson(path, b);
   return true;
 }
+
+/** Calls of `kind` still allowed this month: a batch checks it before its first Google call. */
+export async function budgetLeft(dataDir: string, kind: BudgetKind, limit: number): Promise<number> {
+  await queue.catch(() => undefined);
+  const b = await readJson<Budget>(join(dataDir, 'places', 'budget.json'));
+  const used = b && b.month === new Date().toISOString().slice(0, 7) ? b[kind] ?? 0 : 0;
+  return Math.max(0, limit - used);
+}

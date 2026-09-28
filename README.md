@@ -110,8 +110,9 @@ Goal: by early December, one locked itinerary that everyone has seen and voted o
 
 **Must have (MVP)**
 - The BNSF line drawn top to bottom, Aurora at the top and Union Station at
-  the bottom. Tap a station to see the best rated bars and restaurants within 250 m of it (Google Places
-  Nearby Search, one call per station cached forever; OpenStreetMap, nearest first, when no key is set).
+  the bottom. Tap a station to see the best rated bars and restaurants within half a mile of it (Google Places
+  Nearby Search, two calls per station — bars, restaurants — cached until a refresh; OpenStreetMap,
+  nearest first, when no key is set). A venue near two stations is on both lists, measured from each.
 - The draft is laid out on that line unfolded: every station top to bottom toward Chicago
   (**Aurora → Chicago**), a **Turn around** divider, then every station again bottom to top on the way
   back (**Chicago → Aurora**). Each stop sits right of the line in its station's row of the half it is
@@ -379,11 +380,12 @@ re-reads the feed rather than hard-coding it.
 
 Numbered to match the earlier review; each is reversible.
 
-1. **Bars near a station come from Google Places Nearby Search, ranked by rating.** One call per station
-   (about 20 for the BNSF line); the venues go into the `places` table and a `place_lookups` row marks the
+1. **Bars near a station come from Google Places Nearby Search, ranked by rating.** Two calls per station,
+   bars and restaurants, each its 20 most popular with rating and hours (52 for the 26 BNSF stations;
+   `just places-warm` fetches them all, through the monthly counter); the venues go into the `places` table and a `place_lookups` row marks the
    station as searched, so the database answers every later request. The key never reaches the browser.
    OpenStreetMap remains the fallback without a key; it has no ratings, so that list is nearest first.
-   Both are cut at 250 m.
+   Both are cut at half a mile (805 m).
 2. **Metra key verified on Sept 19, 2026.** All three realtime endpoints return protobuf that decodes; the
    static schedule needs no key. The file in `.secrets/` is git-ignored.
 3. **Venue-card photos come from Google Places, fetched once per venue and stored on the venue's record.**
@@ -414,7 +416,7 @@ Numbered to match the earlier review; each is reversible.
    12:40 AM. BNSF 20 trips each way, hourly, last outbound 12:33 AM. Last inbound: UP-W 10:25 PM from
    Elburn, MD-W 10:10 PM from Elgin, BNSF 11:05 PM from Aurora.
 10. **Route optimizer is a nice-to-have, not a phase.**
-11. **Venue lookup has three sources.** The rated list within 250 m of the station (Google, cached forever;
+11. **Venue lookup has three sources.** The rated list within half a mile of the station (Google, cached forever;
     OpenStreetMap fallback), Google text search by name for anything farther out, and plain name entry.
     Google details and photos are still fetched once per stop.
 

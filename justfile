@@ -6,7 +6,8 @@ default:
 pb-download:
     bash scripts/pb-download.sh
 
-pb DATA_DIR=env("CHUG_DATA", env("HOME") + "/.chug-a-lug") + "/pb_dev":
+# PocketBase for dev; with no argument it uses $CHUG_DATA/pb_dev (~/.chug-a-lug/pb_dev).
+pb DATA_DIR="":
     bash scripts/pb-dev.sh "{{DATA_DIR}}"
 
 web:
@@ -47,6 +48,12 @@ index-recording NAME ZIP DATE WINDOW_START WINDOW_END:
 
 inspect-recording NAME:
     node web/scripts/index-recording.mjs {{quote(NAME)}}
+
+# Counted against the monthly budget; refuses up front if the month has too few calls left.
+# Refresh every BNSF station's best bars and restaurants from Google on the running stack.
+places-warm:
+    curl --fail-with-body -sS --max-time 900 -X POST -H "x-internal-secret: $INTERNAL_SECRET" http://127.0.0.1:3000/api/internal/places/warm
+    @echo
 
 sim-fixture:
     node web/scripts/generate-sim-fixture.mjs

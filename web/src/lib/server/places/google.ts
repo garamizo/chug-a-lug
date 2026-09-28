@@ -44,26 +44,35 @@ export async function searchText(cfg: GoogleConfig, query: string, bias: { lat: 
   }));
 }
 
-/** Place types (Table A) the station list asks for. Breweries and taprooms carry `bar` as well. */
-export const NEARBY_TYPES = ['bar', 'pub', 'wine_bar', 'night_club', 'restaurant', 'cafe'];
+/**
+ * Place types (Table A) the station list asks for, one Nearby Search per group: Google returns at
+ * most 20 places a call, most popular first, so bars and restaurants each get their own top 20
+ * instead of restaurants crowding the bars out. Breweries and taprooms carry `bar` as well.
+ */
+export const NEARBY_GROUPS = {
+  bars: ['bar', 'pub', 'wine_bar', 'night_club'],
+  restaurants: ['restaurant']
+} as const;
 
 /**
- * Bars and restaurants inside a circle, with their Google rating so the list can be ranked. One
- * call returns at most 20 places, plenty for a 250 m circle around a suburban station.
+ * The most popular places of `includedTypes` inside a circle, with rating and opening hours. The
+ * rating already makes this an Enterprise call; hours are Enterprise too, so they cost nothing more.
  */
-export async function searchNearby(cfg: GoogleConfig, center: { lat: number; lon: number }, radiusM: number): Promise<Venue[]> {
+export async function searchNearby(cfg: GoogleConfig, center: { lat: number; lon: number }, radiusM: number, includedTypes: readonly string[]): Promise<Venue[]> {
   const res = await call(cfg, `${BASE}/places:searchNearby`, {
-    method: 'POST', headers: { 'content-type': 'application/json' },
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
-      includedTypes: NEARBY_TYPES, maxResultCount: 20,
+      includedTypes, maxResultCount: 20, rankPreference: 'POPULARITY',
       locationRestriction: { circle: { center: { latitude: center.lat, longitude: center.lon }, radius: radiusM } }
     })
-  }, 'places.id,places.displayName,places.formattedAddress,places.location,places.primaryType,places.rating,places.userRatingCount');
+  }, 'places.id,places.displayName,places.formattedAddress,places.location,places.primaryType,places.rating,places.userRatingCount,places.regularOpeningHours');
   const places = ((await res.json()).places ?? []) as GPlace[];
   return places.filter((p) => p.location).map((p) => ({
     source: 'google', id: p.id, name: p.displayName?.text ?? '', kind: kindFromGoogleType(p.primaryType),
     lat: p.location!.latitude, lon: p.location!.longitude, address: p.formattedAddress,
     rating: p.rating, ratingCount: p.userRatingCount,
+    ...(p.regularOpeningHours?.weekdayDescriptions?.length ? { hours: { source: 'google' as const, weekday: p.regularOpeningHours.weekdayDescriptions } } : {}),
     distanceM: Math.round(haversineM(center.lat, center.lon, p.location!.latitude, p.location!.longitude))
   }));
 }

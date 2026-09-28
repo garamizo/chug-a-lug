@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { consumeBudget } from '../../src/lib/server/places/budget';
+import { budgetLeft, consumeBudget } from '../../src/lib/server/places/budget';
 
 describe('consumeBudget', () => {
   it('counts per month and refuses past the limit', async () => {
@@ -38,5 +38,20 @@ describe('consumeBudget', () => {
     expect(results.filter((r) => r === true)).toHaveLength(5);
     const budget = JSON.parse(readFileSync(join(dir, 'places', 'budget.json'), 'utf8'));
     expect(budget.photos).toBe(5);
+  });
+});
+
+describe('budgetLeft', () => {
+  it('is the whole limit in a fresh month and shrinks as calls are counted', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'budget-'));
+    expect(await budgetLeft(dir, 'nearby', 200)).toBe(200);
+    await consumeBudget(dir, 'nearby', 200);
+    expect(await budgetLeft(dir, 'nearby', 200)).toBe(199);
+  });
+  it('ignores the counts of an earlier month', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'budget-'));
+    mkdirSync(join(dir, 'places'), { recursive: true });
+    writeFileSync(join(dir, 'places', 'budget.json'), JSON.stringify({ month: '2000-01', details: 0, photos: 0, nearby: 150 }));
+    expect(await budgetLeft(dir, 'nearby', 200)).toBe(200);
   });
 });
