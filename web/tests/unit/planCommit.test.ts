@@ -347,6 +347,15 @@ describe('title', () => {
     await call({ ...rideable, title: 'Old name' });
     expect(state.writes.some((w) => w.op === 'userUpdate')).toBe(false);
   });
+  it('skips an unchanged title even when a legacy duplicate elsewhere shares its key', async () => {
+    // The migration deliberately preserves legacy duplicate names; a retry sending this route's
+    // own unchanged title must not be refused just because another route shares that key.
+    state.itinerary = { ...state.itinerary, title: 'Old name', title_key: 'old name' };
+    state.titleTaken = true;
+    const res = await call({ ...rideable, title: 'Old name' });
+    expect(res.status).toBe(200);
+    expect(state.writes.some((w) => w.op === 'userUpdate')).toBe(false);
+  });
   it('refuses a bad or taken title before any write', async () => {
     await expect(call({ ...rideable, title: '' })).rejects.toMatchObject({ status: 400, body: { message: copy.titleInvalid } });
     state.titleTaken = true;
