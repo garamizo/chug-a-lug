@@ -186,6 +186,7 @@ test('Board at counts the ride in to the first stop', async ({ page }) => {
   await page.getByTestId('board-at').selectOption('NAPERVILLE');
   // BN2 leaves Naperville 12:05, reaches La Grange 12:30, plus the 2 min walk.
   await expect(page.getByTestId('opening-leg')).toContainText('12:05 PM');
+  await expect(page.getByTestId('opening-leg')).toContainText(`${copy.boardAt} Naperville · 11:00 AM`);
   await expect(page.getByTestId('stop-row-0')).toContainText('Arrive 12:32 PM');
   // With Board at set, Start is the boarding time, not the time at stop 1.
   await expect(page.getByLabel(copy.startTimeBoard)).toHaveValue('11:00');

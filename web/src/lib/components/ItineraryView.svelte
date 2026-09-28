@@ -106,7 +106,7 @@
   {@const stop = sorted[i]}
   {#if i === 0 && opening}
     <div class="opening" data-testid="opening-leg">
-      <p class="meta">{copy.boardAt} {itinerary.start_station_name || itinerary.start_station} · {itinerary.start_time}</p>
+      <p class="meta">{copy.boardAt} {itinerary.start_station_name || itinerary.start_station} · {fmtTime(localToUtc(itinerary.event_date, parseHm(itinerary.start_time)))}</p>
       <LegRow leg={opening} index={-1} {names} />
     </div>
   {/if}
