@@ -7,7 +7,14 @@ const ADMIN = process.env.ADMIN_PASSWORD ?? 'admin-test-password';
 // Both venues are about 100 m from their BNSF station (a 2-minute walk).
 const venuesFor: Record<string, unknown[]> = {
   LAGRANGE: [{ source: 'google', id: 'p1', name: 'Test Tavern', kind: 'bar', lat: 41.8155, lon: -87.8694, distanceM: 118, address: '1 Burlington Ave', rating: 4.6, ratingCount: 312 }],
-  NAPERVILLE: [{ source: 'osm', id: 'node/2', name: 'Naperville Wine Bar', kind: 'bar', lat: 41.7811, lon: -88.1467, distanceM: 91 }]
+  NAPERVILLE: [{ source: 'osm', id: 'node/2', name: 'Naperville Wine Bar', kind: 'bar', lat: 41.7811, lon: -88.1467, distanceM: 91 }],
+  // CUS stands in for the brief's AURORA example: this fixture's BNSF line only serves CUS,
+  // LAGRANGE and NAPERVILLE, and the other two already have venue mocks above.
+  CUS: [
+    { source: 'google', id: 'r9', name: 'Union Diner', kind: 'restaurant', lat: 41.8789, lon: -87.6389, distanceM: 50, rating: 4.9, ratingCount: 900 },
+    { source: 'google', id: 'b9', name: 'Union Taproom', kind: 'bar', lat: 41.8789, lon: -87.6389, distanceM: 80, rating: 4.1, ratingCount: 40 },
+    { source: 'google', id: 'o9', name: 'Union Arcade', kind: 'other', lat: 41.8789, lon: -87.6389, distanceM: 90 }
+  ]
 };
 
 async function login(page: Page, name: string, password: string) {
@@ -344,4 +351,21 @@ test('the route board drops its load error once a later reload succeeds', async 
   await other.close();
   await expect(page.getByTestId(`route-link-${id}`)).toBeVisible();
   await expect(page.getByRole('alert')).toHaveCount(0);
+});
+
+test('the picker opens on bars; restaurants and places wait folded with counts', async ({ page }) => {
+  await login(page, 'E2E Skipper', ADMIN);
+  await page.getByTestId('nav-plan').click();
+  await page.getByTestId('draft-title').fill(`Grouped ${Date.now().toString(36)}`);
+  await page.getByTestId('create-draft').click();
+  await expect(page).toHaveURL(/\/plan\/[a-z0-9]{15}\/edit$/);
+  await page.goto(page.url().replace(/\/edit$/, '/add?station=CUS&side=left'));
+  await expect(page.getByTestId('venue-group-bar')).toHaveAttribute('open', '');
+  await expect(page.getByTestId('venue-b9')).toBeVisible();
+  await expect(page.getByTestId('venue-group-restaurant')).not.toHaveAttribute('open');
+  await expect(page.getByTestId('venue-group-restaurant').locator('summary')).toHaveText(`${copy.venueGroup_restaurant} (1)`);
+  await expect(page.getByTestId('venue-r9')).toBeHidden();
+  await page.getByTestId('venue-group-restaurant').locator('summary').click();
+  await page.getByTestId('venue-r9').click();
+  await expect(page.getByTestId('venue-sheet')).toContainText('Union Diner');
 });

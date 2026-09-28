@@ -8,6 +8,7 @@
   import { canEditStops } from '$lib/permissions';
   import { haversineM, walkMinutes } from '$lib/geo';
   import { PLANNER_ROUTE, insertionIndex, plannerStations, type Direction } from '$lib/lineMap';
+  import { groupByKind } from '$lib/venueGroups';
   import Schematic from '$lib/components/Schematic.svelte';
   import type { Itinerary, Line, Station, Stop, Venue } from '$lib/types';
   import IconLink from '$lib/components/IconLink.svelte';
@@ -111,7 +112,15 @@
   const tid = (v: Venue) => `venue-${v.id.replace(/\//g, '-') || 'manual'}`;
   // A tapped venue opens its sheet first; Add stop there is what adds it.
   const openVenueObj = $derived([...(nearby ?? []), ...(results ?? [])].find((v) => tid(v) === sheetVenueId()) ?? null);
-  const rated = (v: Venue) => v.rating !== undefined ? ` · ★ ${v.rating.toFixed(1)}${v.ratingCount ? ` (${v.ratingCount})` : ''}` : '';
+  // Nearby row text drops the kind (the group heading says it): rating first when there is one,
+  // then distance, then address.
+  const venueSummary = (v: Venue) => {
+    const parts: string[] = [];
+    if (v.rating !== undefined) parts.push(`★ ${v.rating.toFixed(1)}${v.ratingCount ? ` (${v.ratingCount})` : ''}`);
+    parts.push(`${v.distanceM ?? 0} m`);
+    if (v.address) parts.push(v.address);
+    return parts.join(' · ');
+  };
 </script>
 
 <nav><IconLink href="/plan/{itineraryId}/edit" icon="back" label={copy.backToDraft} /></nav>
@@ -134,13 +143,18 @@
   {:else if nearby.length === 0}
     <p>{copy.noNearby}</p>
   {:else}
-    <ul class="venues">
-      {#each nearby as v (v.id)}
-        <li><button type="button" onclick={() => openVenue(tid(v))} disabled={!!busy} data-testid={tid(v)}>
-          <strong>{v.name}</strong><span>{copy[`kind_${v.kind}`]}{rated(v)} · {v.distanceM ?? 0} m{v.address ? ` · ${v.address}` : ''}</span>
-        </button></li>
-      {/each}
-    </ul>
+    {#each groupByKind(nearby) as group (group.kind)}
+      <details class="group" open={group.kind === 'bar'} data-testid="venue-group-{group.kind}">
+        <summary>{copy[`venueGroup_${group.kind}`]} ({group.venues.length})</summary>
+        <ul class="venues">
+          {#each group.venues as v (v.id)}
+            <li><button type="button" onclick={() => openVenue(tid(v))} disabled={!!busy} data-testid={tid(v)}>
+              <strong>{v.name}</strong><span>{venueSummary(v)}</span>
+            </button></li>
+          {/each}
+        </ul>
+      </details>
+    {/each}
     <p class="attribution">{nearby[0].source === 'google' ? copy.googleAttribution : copy.osmAttribution}</p>
   {/if}
 
@@ -181,6 +195,8 @@
   .tabs { display: flex; gap: 6px; margin: 12px 0 0; }
   .tab { flex: 1; margin: 0; padding: 8px; min-height: 44px; font-size: 14px; font-weight: 600; background: transparent; color: #aaa; border: 1px solid #444; border-radius: 10px; }
   .tab[aria-checked='true'] { background: #2a2a2a; color: #fff; border-color: #777; }
+  .group summary { cursor: pointer; font-weight: 700; padding: 10px 0; color: #ffce5c; }
+  .group { border-bottom: 1px solid #2a2a2a; }
   .venues { list-style: none; padding: 0; margin: 8px 0; }
   .venues button { background: #202020; color: #eee; text-align: left; display: flex; flex-direction: column; gap: 2px; margin-top: 8px; font-weight: 500; }
   .venues span { color: #aaa; font-size: 14px; }
