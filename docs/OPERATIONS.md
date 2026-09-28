@@ -10,19 +10,19 @@
   If one exists: `sudo cloudflared service uninstall` (removes the unit and its token file).
 - The site is public only while the stack is up: `docker compose stop` takes it offline, `docker compose up -d`
   brings it back. The tunnel reconnects on its own after reboots because of `restart: unless-stopped`.
-- Data: `data/pb_data` (SQLite + uploads), `data/pb_data/backups` (PocketBase zips), `data/backups/snapshot-*` (host copies).
-  The pocketbase container runs as uid 1000 (your user), so everything under `data/` stays yours. If a
+- Data: `~/.chug-a-lug/pb_data` (SQLite + uploads), `~/.chug-a-lug/pb_data/backups` (PocketBase zips), `~/.chug-a-lug-backups/snapshot-*` (host copies).
+  The pocketbase container runs as uid 1000 (your user), so everything under `~/.chug-a-lug/` stays yours. If a
   root-owned file ever appears there, fix it with
-  `docker run --rm -v "$PWD/data:/d" alpine sh -c 'chown -R 1000:1000 /d'`.
-- `data/gtfs/` (Metra static feed, re-downloaded when `published.txt` changes, safe to delete) and
-  `data/places/budget.json` (monthly Google call counters). Venues, their details and photos live in
+  `docker run --rm -v "$HOME/.chug-a-lug:/d" alpine sh -c 'chown -R 1000:1000 /d'`.
+- `~/.chug-a-lug/gtfs/` (Metra static feed, re-downloaded when `published.txt` changes, safe to delete) and
+  `~/.chug-a-lug/places/budget.json` (monthly Google call counters). Venues, their details and photos live in
   PocketBase (`places`, `place_lookups`), so they are covered by the database backup.
 - Secrets: `.env` (never committed). Metra token file in `.secrets/`.
 - Dashboards: Cloudflare Zero Trust → Networks → Tunnels → `chugalug`; PocketBase admin at http://127.0.0.1:8090/_/ from the box.
 
 ## Local development
     just pb-download          # once: pinned PocketBase binary
-    just pb                   # terminal 1: PocketBase with --dev on data/pb_dev
+    just pb                   # terminal 1: PocketBase with --dev on ~/.chug-a-lug/pb_dev
     just web                  # terminal 2: vite dev on http://localhost:5173
     just test-unit && just test-hooks && just test-e2e
 
@@ -41,12 +41,12 @@ dev (the PocketBase hook calls the SvelteKit server with that secret and URL aft
   the database answers. Without `GOOGLE_PLACES_KEY` the server falls back to OpenStreetMap (no ratings,
   nearest first). To search a station again: as the Conductor, open
   `/api/places/nearby?station=LAGRANGE&refresh=1` (with the app's token; easiest is the browser console snippet in the M1 plan, Task 6).
-  Old `data/places/nearby/*.json` and `data/places/<place_id>/` folders from before the table existed can be deleted.
+  Old `~/.chug-a-lug/places/nearby/*.json` and `~/.chug-a-lug/places/<place_id>/` folders from before the table existed can be deleted.
 - Google Places is called once per station (nearby), once per venue (details) plus once per photo, whichever
-  stop or draft asks first; details and photos sit on the `places` record. `data/places/budget.json` counts
+  stop or draft asks first; details and photos sit on the `places` record. `~/.chug-a-lug/places/budget.json` counts
   calls per month; the server refuses new calls past 200 nearby or 800 of the other two. Reset by deleting
   the file at month start if needed.
-- The Metra timetable zip is cached in `data/gtfs/` (a bind mount, so it survives `docker compose up`) and
+- The Metra timetable zip is cached in `~/.chug-a-lug/gtfs/` (a bind mount, so it survives `docker compose up`) and
   `published.txt` is checked once a day; delete the folder to force a fresh download.
 - A stop whose photos failed shows "Try again" on its card. Setting `place_id` on the stop in the PocketBase admin UI
   (and clearing its `place` relation) then retrying fixes wrong matches.
@@ -64,7 +64,7 @@ dev (the PocketBase hook calls the SvelteKit server with that secret and URL aft
   itself is fresh, and `/api/metra/alerts` likewise for alerts. A healthy positions feed never vouches for
   stale departures. If the board says "Timetable only" while `/status` looks fine, read `feeds.tripupdates`.
 - A fetch failure keeps the last good feed and logs one line per feed. It never clears one.
-- `just record <name>` writes raw feed snapshots to `data/recordings/<name>/` until Ctrl-C, one file per
+- `just record <name>` writes raw feed snapshots to `~/.chug-a-lug/recordings/<name>/` until Ctrl-C, one file per
   feed per change in `header.timestamp`. Run it on a Saturday for M4's replay. The folder is git-ignored
   and bind-mounted, so it survives `docker compose up`. The script lives at `web/scripts/record.mjs`
   because the repo root has no `package.json` for Node to resolve the protobuf bindings from.
@@ -93,7 +93,7 @@ dev (the PocketBase hook calls the SvelteKit server with that secret and URL aft
   records. It can add another `checkins` anchor and `event_log` entry; the newest anchor wins. Do not
   describe this as an atomic transaction. Unsaved edits are parked only for the venue-picker trip,
   expire after one hour, and are cleared on success; this is not durable draft recovery.
-- Freight files live in PocketBase's `data/pb_data` storage alongside venue photos and are included
+- Freight files live in PocketBase's `~/.chug-a-lug/pb_data` storage alongside venue photos and are included
   in the nightly PocketBase backup and host snapshot. Include uploads when estimating backup size.
   The application and `media.file` field both cap each file at 94,371,840 bytes (90 MiB, labeled 90 MB
   in the UI). This cap leaves room below the Cloudflare free-plan tunnel request limit; it is an
@@ -132,12 +132,12 @@ Migrations apply automatically when the `pocketbase` container starts. Environme
 
 ## Restore from backup
 1. `docker compose down`
-2. Either unzip a `pb_backup_*.zip` into a fresh `data/pb_data/`, or copy `data/backups/snapshot-<ts>/pocketbase.zip`
-   and unzip it there; copy `places/`, `gtfs/`, `recordings/` from the snapshot back under `data/`.
+2. Either unzip a `pb_backup_*.zip` into a fresh `~/.chug-a-lug/pb_data/`, or copy `~/.chug-a-lug-backups/snapshot-<ts>/pocketbase.zip`
+   and unzip it there; copy `places/`, `gtfs/`, `recordings/` from the snapshot back under `~/.chug-a-lug/`.
 3. `docker compose up -d`
 
 ## Disaster fallback (home internet or power is out on event day)
-1. On any Linux VPS: install Docker, `git clone` the repo, copy `.env` and the latest `data/backups/snapshot-*` over.
+1. On any Linux VPS: install Docker, `git clone` the repo, copy `.env` and the latest `~/.chug-a-lug-backups/snapshot-*` over.
 2. Restore as above and `docker compose up -d`. The tunnel token in `.env` moves with it; Cloudflare routes
    to whichever `cloudflared` is connected, so `docker compose stop cloudflared` at home first if that box
    is still alive.
@@ -155,20 +155,11 @@ it), so rotate it with `docker compose up -d --force-recreate pocketbase web`.
 
 Live runs every day on the one real stack; there is no separate rehearsal deployment or
 `REHEARSAL` switch (see README ["Practice days"](../README.md#practice-days)). `just up` runs
-`docker compose -f compose.yml up -d --build` against the real database, `data/pb_data`. On the
+`docker compose -f compose.yml up -d --build` against the real database, `~/.chug-a-lug/pb_data`. On the
 current route's `event_date` it is the event day; any other day, Live shows the route at today's
 Chicago time against that date's timetable, with a Practice badge, and nothing people post that
 day reaches the event day.
 
-`just practice-route` builds the canned route once, validating it while still a draft, then locks
-it; a re-run replaces its own leftover draft and refuses if a locked canned route already exists,
-reusing its cached Places answers and photos under `data/practice-route/`. It becomes current
-through the newest-locked fallback, not by writing `crawl_settings` itself. When a real route is
-later locked, that fallback takes over automatically — nobody has to press anything for the event
-day to stop being a practice day. The Conductor uses **Make current** on the canned route's page in
-the planner to return to practising on it afterward. The old shared-rehearsal database,
-`data/rehearsal/`, is left on disk; nothing removes it automatically, so delete it by hand once you
-no longer need it.
 
 Tests use disposable credentials/data and ports 15173/18093, one suite at a time. Never test against
 the regular stack ports 3000/8090. The advanced standalone launcher remains available through

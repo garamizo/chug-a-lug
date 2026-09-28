@@ -51,5 +51,3 @@ inspect-recording NAME:
 sim-fixture:
     node web/scripts/generate-sim-fixture.mjs
 
-practice-route:
-    cd web && node --env-file=../.env scripts/practice-route.mjs

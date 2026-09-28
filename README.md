@@ -248,16 +248,9 @@ current route's `event_date` it is the event day; any other day is a practice da
 the route at today's Chicago time against that date's timetable (no realtime, no alerts), with a
 small **Practice** badge. Nothing is deleted: drinks, chat, photos and Bulletins are all
 server-stamped and visible only on the day they were posted, so practice activity never lands on
-the event day. (The old shared-rehearsal database, `data/rehearsal/`, is left on disk; nothing
-deletes it automatically.)
+the event day.
 
-`just practice-route` (`cd web && node --env-file=../.env scripts/practice-route.mjs`) builds a
-canned out-and-back route once against the real stack: it validates the route while still a
-draft, then locks it. It becomes current through the newest-locked fallback until a real route is
-locked. A re-run replaces its own leftover draft and refuses if a locked canned route already
-exists; its Places answers and photos are cached under `~/.chug-a-lug/practice-route/` so a retry does not
-spend the budget again. The Conductor makes any locked route current from its page in the planner
-with **Make current**.
+The Conductor makes any locked route current from its page in the planner with **Make current**.
 
 ### Shakedown Run
 
