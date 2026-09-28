@@ -111,15 +111,46 @@ refuses a non-admin rename of a non-draft route.
   the hook records the note.
 - The live editor's actions stage the title instead. `StagedPlan` gains `title: string`, seeded
   from the itinerary in `stagePlan`, and `commitPayload` sends it.
-- `ItineraryView` still writes nothing itself. When `canManage && actions.rename`, the `<h1>`
-  becomes a button (test id `rename-route`) that turns into a text input (1–80 characters, trimmed).
-  Enter or blur calls `actions.rename`, and Escape cancels.
-  - It is offered in the editor only, not on the read-only route page.
+- `ItineraryView` still writes nothing itself. There is no rename button. When
+  `canManage && actions.rename`, the `<h1>` *is* the text box: an `<input>` styled like the heading,
+  with test id `route-title` and accessible name `copy.routeName`, `maxlength 80`.
+  - **Blur sends the edit.** If the trimmed value differs from the saved title, blur calls
+    `actions.rename`. Enter blurs the box. Escape restores the saved title and blurs.
+  - If the value is empty or unchanged, nothing is sent, and an empty box goes back to the saved
+    title.
+  - **A rejected name stays in the box**, with the server's reason shown under it
+    (`role="alert"`). The saved title does not change until the server accepts one.
+  - `rename` may therefore reject with an error. `ItineraryView` renders that error, and each
+    action implementation decides which errors are about the name.
+  - The text box appears in the editor only. The read-only route page keeps the plain `<h1>`.
   - `canManage` is `canEditSettings`: the builder's draft, or the admin.
+  - On a locked route, blur *stages* the title and sends nothing; Save sends it (see Commit).
+    Before staging, the client does a quick uniqueness check against `/api/plan/title-check`, so
+    the Conductor hears "taken" at blur rather than at Save.
+
+**Name rules (server).** A route name is valid when it is:
+
+- 1–80 characters after trimming. It is stored trimmed.
+- **Unique** among all routes, of any status, compared case-insensitively after trimming. The same
+  route keeping its own name does not count as a clash.
+
+Where the rules are enforced:
+
+- `planning.pb.js` checks them on itinerary create and on every title update. It throws a
+  PocketBase field error (`title`, code `title_taken` or `title_invalid`).
+- The client maps the code to `copy.titleTaken` or `copy.titleInvalid`, so the wording stays in
+  `labels.ts`.
+- The existing `/plan` create form gets the same errors.
+- No database unique index: existing data may already hold duplicates, and the migration must not
+  fail on them. The hook is the gate.
+- `GET /api/plan/title-check?title=&route=` (any signed-in user) answers `{ ok, code? }` using the
+  same rule. It is used only for the locked editor's early warning.
 
 **Commit.** `CommitBody` gains an optional `title`.
 
-- Validate it: a string, 1–80 characters after trimming.
+- Validate it **before any stop write**: a string, 1–80 characters after trimming, and unique (the
+  same rule as the hook). A bad or taken title returns 400 with the same code, and nothing is
+  written.
 - If it differs from the stored title, write it after the stop writes, through a PocketBase client
   authenticated **with the Conductor's own token** from the request's `Authorization` header. Add a
   helper `userPb(request)` in `web/src/lib/server/pb.ts`. That way the hook records who renamed the
@@ -151,7 +182,9 @@ follows the commit endpoint's stable-id idempotency.
    route returns 404.
 3. Create the new itinerary, with the record id `id`, using `userPb(request)`, so the create hook forces `status: draft` and
    sets `created_by` to the cloner. The new itinerary has:
-   - `title`: `copy.cloneTitle(source.title)` ("Copy of …"), cut to 80 characters
+   - `title`: `copy.cloneTitle(source.title)` ("Copy of …"), cut to 80 characters. If that is
+     taken, the endpoint tries "Copy of … (2)", "(3)" and so on until one is free, cutting the base
+     so the suffix still fits.
    - `event_date`, `start_time`, `start_station`, `start_station_name` copied from the source
 4. Create each stop with `userPb`. The new route is the user's own draft, so the stop rules allow
    it. Copied fields:
@@ -181,9 +214,14 @@ The source is never modified, apart from its note, which is written last.
 answers with 202 and queues. N queued recomputes for one clone are acceptable at crawl sizes
 (about 10 stops). The last one sees every stop.
 
-**UI:** an icon button, `clone-route`, with a new `copy` icon in `icons.ts` and the label
-`copy.cloneRoute` "Clone route". It posts to the endpoint through `api()`, then goes to
-`goto('/plan/<id>/edit')`. It is disabled while the request is in flight, and errors show in the
+**UI:** an icon-only button (`IconButton`, like edit and delete), `clone-route`, with a new `copy`
+icon in `icons.ts`. `copy.cloneRoute` "Clone route" is used only as its accessible name and tooltip.
+It posts to the endpoint through `api()`, then goes to `goto('/plan/<id>/edit?named=1')`.
+
+In the new route's editor, `?named=1` focuses the title box with **all its text selected**, so the
+user can just type over "Copy of …". Blur then saves the new name, and the hook writes the
+`renamed` note. Afterwards the editor drops the query with `replaceState`, so reloading does not
+select the text again. It is disabled while the request is in flight, and errors show in the
 page's existing `error` line. It appears in the nav bar of:
 
 - `plan/[id]/+page.svelte`, for any signed-in user and any status
@@ -199,7 +237,7 @@ picker). The Conductor clones a locked route from its route page instead.
 - `venueGroup_bar|restaurant|other`
 - `cloneRoute`, `cloneTitle(title)`
 - `noteClonedFrom(who, title)`, `noteClonedTo(who, title)`, `noteRenamed(who, from, to)`
-- `renameRoute` (the accessible name of the title button)
+- `routeName` (the accessible name of the title box), `titleTaken`, `titleInvalid`
 
 ## Testing (written first; each task ends green)
 
@@ -212,12 +250,18 @@ picker). The Conductor clones a locked route from its route page instead.
   - `planCommit`: a title written through the user client, bad titles refused with 400, and an
     unchanged title not written.
   - `staged`: the title is seeded and carried in `commitPayload`.
-  - `planActions.rename`.
+  - `planActions.rename`, including a `title_taken` rejection surfacing as `copy.titleTaken`.
+  - Name rule helper: trim, length, case-insensitive clash, and the same route not clashing with
+    itself.
+  - Clone title suffixing: "(2)" when "Copy of X" is taken, with the base cut so the suffix fits
+    in 80 characters.
   - `labels`.
 - **Hooks** (`scripts/test-hooks.sh`):
   - A draft rename writes one `renamed` note with the right user and meta, and a no-op update writes
     none.
   - A non-admin rename of a locked route gets 403 and writes no note.
+  - Create and rename with a duplicate name (different case, extra spaces) get 400 `title_taken`.
+    An empty or 81-character name gets `title_invalid`. Re-saving a route's own title passes.
   - A client cannot create a comment with `kind`/`meta`, cannot PATCH `kind`/`meta` onto their
     ordinary comment (try each kind), cannot edit a note, and cannot delete their own note. The
     admin can delete a note.
@@ -228,7 +272,8 @@ picker). The Conductor clones a locked route from its route page instead.
   - The picker shows Bars open and Restaurants collapsed with counts, and a restaurant row is
     reachable after expanding its group.
   - User B clones user A's route: B lands in the clone's editor, the stops match, and the title is
-    "Copy of …". B renames it. The clone's chat shows "cloned from" and "renamed", and the
+    "Copy of …", **fully selected in the title box**. B types a new name and tabs out. Typing an
+    existing route's name shows "taken" and keeps the box's text. The clone's chat shows "cloned from" and "renamed", and the
     original's chat shows "cloned as" with the *new* title's link target.
   - The admin renames a locked route through Save, and the note appears.
 
