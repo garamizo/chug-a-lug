@@ -153,17 +153,21 @@ export const POST: RequestHandler = async ({ request }) => {
     // Conductor sees a bare "409 Conflict" instead of the reason (already user-facing copy).
     if (blockers.length) return json({ ok: false, blockers, message: blockers[0].message }, { status: 409 });
 
-    // Written as the Conductor, not the superuser, so the rename note names who did it. Renaming
-    // first keeps the endpoint's retry story intact: if the name was taken after the preflight, or
-    // the note fails, the rename is refused (and rolled back by the hook's transaction) before
-    // anything else changes; if a later stop write fails, the retry sends the same title, which is
-    // now a no-op, and converges.
-    if (rename) {
-      try { await userPb(request).collection('itineraries').update(id, { title: rename }); }
-      catch (err) { const message = titleError(err); if (message) throw error(400, message); throw err; }
-    }
-
     return await simulationClock.withEventWrite(context.enabled ? context.revision : undefined, async () => {
+      // Written as the Conductor, not the superuser, so the rename note names who did it. Done first
+      // inside the lease — not before it — because `withEventWrite` can still refuse here (the sim
+      // clock moved between the precheck above and this callback getting the lease): a bad Save has
+      // to change nothing, and skipping straight to the rename before the lease is granted would let
+      // the title change even when the rest of the write is refused. Renaming first among what the
+      // lease does allow keeps the endpoint's retry story intact: if the name was taken after the
+      // preflight, or the note fails, the rename is refused (and rolled back by the hook's
+      // transaction) before anything else changes; if a later stop write fails, the retry sends the
+      // same title, which is now a no-op, and converges.
+      if (rename) {
+        try { await userPb(request).collection('itineraries').update(id, { title: rename }); }
+        catch (err) { const message = titleError(err); if (message) throw error(400, message); throw err; }
+      }
+
       // 3. The stops. Deletes first so a freed `order` cannot collide with an update. Create-versus-update
       //    is decided from `persisted` — what the database actually holds — never from the editor's
       //    `isNew` flag: the flag describes the editor's intent when it staged the stop, but only the

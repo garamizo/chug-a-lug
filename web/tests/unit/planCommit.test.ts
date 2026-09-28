@@ -348,7 +348,7 @@ describe('title', () => {
     expect(state.writes.some((w) => w.op === 'userUpdate')).toBe(false);
   });
   it('refuses a bad or taken title before any write', async () => {
-    await expect(call({ ...rideable, title: '' })).rejects.toMatchObject({ status: 400 });
+    await expect(call({ ...rideable, title: '' })).rejects.toMatchObject({ status: 400, body: { message: copy.titleInvalid } });
     state.titleTaken = true;
     await expect(call({ ...rideable, title: 'Taken' })).rejects.toMatchObject({ status: 400, body: { message: copy.titleTaken } });
     expect(state.writes).toEqual([]);
@@ -379,6 +379,21 @@ describe('simulation commit', () => {
     });
     expect((await call({ ...rideable, clockRevision: 1 })).status).toBe(409);
     expect(state.writes).toEqual([]);
+  });
+  it('does not rename when the clock moved and the lease refuses before the rename runs', async () => {
+    // The precheck at the top of the handler passed on revision 1, but the clock moved again while
+    // computeLegs (validation, still ahead of the lease) was mid-flight — so `withEventWrite` itself
+    // refuses on entry, before its callback (which is where the rename now lives) ever runs. A bad
+    // Save has to change nothing, title included.
+    enableSim();
+    const { metra } = await import('$lib/server/metra');
+    vi.mocked(metra.getSchedule).mockImplementationOnce(async () => {
+      await clockSlot.current!.change(1, { action: 'seek', at: '2026-12-27T06:00:00.000Z' });
+      return fixtureSchedule();
+    });
+    const res = await call({ ...rideable, clockRevision: 1, title: 'New name' });
+    expect(res.status).toBe(409);
+    expect(state.writes.some((w) => w.op === 'userUpdate')).toBe(false);
   });
   it('blocks a controller during publication and releases after failure', async () => {
     enableSim();
