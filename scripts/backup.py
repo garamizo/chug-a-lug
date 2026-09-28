@@ -15,6 +15,25 @@ import uuid
 import zipfile
 
 
+# What a backup copies, so a destination inside any of them would copy itself into every snapshot
+# (pb_data: PocketBase zips the whole directory; the rest: copied below).
+COPIED = ("pb_data", "places", "gtfs", "recordings")
+
+
+def backup_destination(data_home, backup_dir=None):
+    """BACKUP_DIR, or CHUG_DATA/backups beside pb_data. Refuses CHUG_DATA itself and anything a
+    backup copies. Same disk either way: only the off-disk copy survives a disk failure."""
+    data_home = Path(data_home).expanduser().resolve()
+    destination = Path(backup_dir or data_home / "backups").expanduser().resolve()
+    if destination == data_home:
+        raise RuntimeError("BACKUP_DIR cannot be CHUG_DATA itself; use a folder such as CHUG_DATA/backups.")
+    for directory in COPIED:
+        source = data_home / directory
+        if destination == source or source in destination.parents:
+            raise RuntimeError(f"BACKUP_DIR cannot be inside CHUG_DATA/{directory}: every backup would copy the ones before it.")
+    return destination
+
+
 def main():
     os.umask(0o077)
     base = os.environ.get("PB_URL", "http://127.0.0.1:8090").rstrip("/")
@@ -45,12 +64,8 @@ def main():
             raise RuntimeError("PocketBase backup did not finish within five minutes.")
         time.sleep(1)
 
-    home = Path.home()
-    data_home = Path(os.environ.get("CHUG_DATA") or home / ".chug-a-lug").expanduser()
-    # Backups sit beside the data, never inside it: one bad delete must not take both.
-    destination = Path(os.environ.get("BACKUP_DIR") or home / ".chug-a-lug-backups").expanduser().resolve()
-    if destination == data_home.resolve() or data_home.resolve() in destination.parents:
-        raise RuntimeError("BACKUP_DIR cannot be inside CHUG_DATA.")
+    data_home = Path(os.environ.get("CHUG_DATA") or Path.home() / ".chug-a-lug").expanduser()
+    destination = backup_destination(data_home, os.environ.get("BACKUP_DIR"))
     destination.mkdir(parents=True, exist_ok=True)
     staging = Path(tempfile.mkdtemp(prefix=".partial-", dir=destination))
     try:

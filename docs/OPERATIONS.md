@@ -10,7 +10,7 @@
   If one exists: `sudo cloudflared service uninstall` (removes the unit and its token file).
 - The site is public only while the stack is up: `docker compose stop` takes it offline, `docker compose up -d`
   brings it back. The tunnel reconnects on its own after reboots because of `restart: unless-stopped`.
-- Data: `~/.chug-a-lug/pb_data` (SQLite + uploads), `~/.chug-a-lug/pb_data/backups` (PocketBase zips), `~/.chug-a-lug-backups/snapshot-*` (host copies).
+- Data: `~/.chug-a-lug/pb_data` (SQLite + uploads), `~/.chug-a-lug/pb_data/backups` (PocketBase zips), `~/.chug-a-lug/backups/snapshot-*` (host copies, `BACKUP_DIR`).
   The pocketbase container runs as uid 1000 (your user), so everything under `~/.chug-a-lug/` stays yours. If a
   root-owned file ever appears there, fix it with
   `docker run --rm -v "$HOME/.chug-a-lug:/d" alpine sh -c 'chown -R 1000:1000 /d'`.
@@ -138,12 +138,12 @@ Migrations apply automatically when the `pocketbase` container starts. Environme
 
 ## Restore from backup
 1. `docker compose down`
-2. Either unzip a `pb_backup_*.zip` into a fresh `~/.chug-a-lug/pb_data/`, or copy `~/.chug-a-lug-backups/snapshot-<ts>/pocketbase.zip`
+2. Either unzip a `pb_backup_*.zip` into a fresh `~/.chug-a-lug/pb_data/`, or copy `~/.chug-a-lug/backups/snapshot-<ts>/pocketbase.zip`
    and unzip it there; copy `places/`, `gtfs/`, `recordings/` from the snapshot back under `~/.chug-a-lug/`.
 3. `docker compose up -d`
 
 ## Disaster fallback (home internet or power is out on event day)
-1. On any Linux VPS: install Docker, `git clone` the repo, copy `.env` and the latest `~/.chug-a-lug-backups/snapshot-*` over.
+1. On any Linux VPS: install Docker, `git clone` the repo, copy `.env` and the latest `~/.chug-a-lug/backups/snapshot-*` over.
 2. Restore as above and `docker compose up -d`. The tunnel token in `.env` moves with it; Cloudflare routes
    to whichever `cloudflared` is connected, so `docker compose stop cloudflared` at home first if that box
    is still alive.

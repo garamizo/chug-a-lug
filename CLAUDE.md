@@ -33,7 +33,8 @@ Everything below is git-ignored, so a new worktree starts without it:
 
 Runtime state is *not* on that list: the database, GTFS zip, Places budget counters and recordings
 live in **`~/.chug-a-lug`** (`CHUG_DATA`), outside every checkout, and every worktree already reads
-the same copy. Backups go to `~/.chug-a-lug-backups` (`BACKUP_DIR`), never inside `CHUG_DATA`.
+the same copy. Backups go to `~/.chug-a-lug/backups` (`BACKUP_DIR`), beside `pb_data` and never inside
+it or any other folder a backup copies (`backup.py` refuses those).
 
 ## Never let git near runtime state
 

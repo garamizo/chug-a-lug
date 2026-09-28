@@ -337,7 +337,7 @@ Recommendation, not yet decided. See the references doc for the alternatives con
   chugalug.app is on the HSTS preload list, so HTTPS is mandatory; the tunnel provides the certificate
   and needs no port forwarding. Runtime state (database, GTFS, Places budget, recordings) lives in
   `~/.chug-a-lug` (`CHUG_DATA`), outside every git checkout; `just backup` writes snapshots to
-  `~/.chug-a-lug-backups` (`BACKUP_DIR`). Still to do: a nightly copy to a second disk or drive.
+  `~/.chug-a-lug/backups` (`BACKUP_DIR`). Still to do: a nightly copy to a second disk or drive.
 - **Frontend**: SvelteKit PWA (`@vite-pwa/sveltekit`), MapLibre GL for the map, a generated SVG schematic
   of the three lines (stations ordered from GTFS), PhotoSwipe for the gallery.
 - **Backend**: PocketBase, a single binary with SQLite, file storage on local disk, and server-sent-event realtime.
