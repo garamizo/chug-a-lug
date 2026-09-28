@@ -6,7 +6,7 @@ export type UserRecord = RecordModel & {
 
 export type ItineraryStatus = 'draft' | 'locked' | 'archived';
 export type Itinerary = RecordModel & {
-  title: string; status: ItineraryStatus; event_date: string; start_time: string; vote_open: boolean; created_by: string; locked_at: string;
+  title: string; status: ItineraryStatus; event_date: string; start_time: string; start_station: string; start_station_name: string; vote_open: boolean; created_by: string; locked_at: string;
   expand?: { created_by?: UserRecord };
 };
 

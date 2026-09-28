@@ -30,7 +30,7 @@ onRecordUpdateRequest((e) => {
     // Once it leaves draft the itinerary is frozen for everyone but the admin, its creator
     // included: the collection updateRule alone still lets the owner edit the schedule.
     if (original.getString('status') !== 'draft') {
-      for (const f of ['title', 'event_date', 'start_time']) {
+      for (const f of ['title', 'event_date', 'start_time', 'start_station', 'start_station_name']) {
         if (Object.prototype.hasOwnProperty.call(body, f) && String(body[f]) !== String(original.get(f))) {
           throw new ForbiddenError('This itinerary is no longer a draft')
         }
@@ -42,7 +42,8 @@ onRecordUpdateRequest((e) => {
   // Back to draft (admin only): the record is no longer locked, so it carries no lock time.
   if (original.getString('status') === 'locked' && e.record.getString('status') === 'draft') e.record.set('locked_at', '')
   const scheduleChanged = e.record.getString('start_time') !== original.getString('start_time') ||
-    e.record.getString('event_date') !== original.getString('event_date')
+    e.record.getString('event_date') !== original.getString('event_date') ||
+    e.record.getString('start_station') !== original.getString('start_station')
   const eventAt = locking ? require(`${__hooks}/clock.js`).eventNow(e.app) : null
   e.next()
   if (locking) {

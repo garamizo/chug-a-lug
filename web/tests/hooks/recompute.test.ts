@@ -35,5 +35,7 @@ describe('recompute trigger', () => {
     expect(forThis()).toHaveLength(0);
     await patch(`/api/collections/itineraries/records/${it.id}`, { start_time: '12:30' }, crew.token);
     expect(forThis()).toHaveLength(1);
+    await patch(`/api/collections/itineraries/records/${it.id}`, { start_station: 'AURORA', start_station_name: 'Aurora' }, crew.token);
+    expect(forThis()).toHaveLength(2);
   });
 });

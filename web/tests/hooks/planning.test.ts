@@ -58,6 +58,7 @@ describe('itineraries', () => {
     expect((await patch(`/api/collections/itineraries/records/${id}`, { start_time: '12:00' }, crew.token)).status).toBe(403);
     expect((await patch(`/api/collections/itineraries/records/${id}`, { title: 'Renamed' }, crew.token)).status).toBe(403);
     expect((await patch(`/api/collections/itineraries/records/${id}`, { event_date: '2026-12-27' }, crew.token)).status).toBe(403);
+    expect((await patch(`/api/collections/itineraries/records/${id}`, { start_station: 'AURORA', start_station_name: 'Aurora' }, crew.token)).status).toBe(403);
     // A no-op write of the same values is not an edit, so it still goes through.
     expect((await patch(`/api/collections/itineraries/records/${id}`, { title: 'Frozen' }, crew.token)).status).toBe(200);
     expect((await patch(`/api/collections/itineraries/records/${id}`, { start_time: '12:00' }, admin.token)).status).toBe(200);
@@ -79,6 +80,17 @@ describe('itineraries', () => {
 
     const { id: othersDraft } = await (await createItinerary(other.token)).json();
     expect((await del(`/api/collections/itineraries/records/${othersDraft}`, admin.token)).status).toBe(204);
+  });
+
+  it('stores a start station and accepts an opening leg with no from_stop', async () => {
+    const { id } = await (await createItinerary(crew.token, { title: 'Boarding' })).json();
+    const set = await patch(`/api/collections/itineraries/records/${id}`, { start_station: 'AURORA', start_station_name: 'Aurora' }, crew.token);
+    expect(set.status).toBe(200);
+    expect(await set.json()).toMatchObject({ start_station: 'AURORA', start_station_name: 'Aurora' });
+    const { id: stop } = await (await createStop(crew.token, id)).json();
+    const su = await superuserToken();
+    const leg = await post('/api/collections/legs/records', { itinerary: id, from_stop: '', to_stop: stop, kind: 'train' }, su);
+    expect(leg.status).toBe(200);
   });
 
   it('deleting the current route clears crawl_settings.current_itinerary', async () => {
