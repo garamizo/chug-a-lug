@@ -30,7 +30,11 @@ const state = vi.hoisted(() => ({
   /** Ids `getOne` will find and report as belonging to *this* itinerary. */
   found: ['s2', 's3'] as string[],
   /** Ids `getOne` will find, but report as belonging to some other itinerary entirely. */
-  foreign: [] as string[]
+  foreign: [] as string[],
+  /** Whether the admin's `getList` on `itineraries` should report the checked title as taken. */
+  titleTaken: false,
+  /** Whether `userPb`'s update should fail as if the name was taken after the preflight check. */
+  userFail: false
 }));
 
 vi.mock('$lib/server/pb', () => ({
@@ -45,6 +49,7 @@ vi.mock('$lib/server/pb', () => ({
         throw Object.assign(new Error('not found'), { status: 404 });
       },
       getFullList: async () => (collection === 'stops' ? state.persisted.map((id) => ({ id })) : []),
+      getList: async () => ({ totalItems: state.titleTaken ? 1 : 0, items: [] }),
       create: async (body: Record<string, unknown>) => {
         const key = `create:${collection}:${body.id ?? ''}`;
         if (state.fail[key]) throw Object.assign(new Error(state.fail[key].message), { status: state.fail[key].status });
@@ -59,6 +64,14 @@ vi.mock('$lib/server/pb', () => ({
         const key = `delete:${collection}:${id}`;
         if (state.fail[key]) throw Object.assign(new Error(state.fail[key].message), { status: state.fail[key].status });
         state.writes.push({ op: 'delete', collection, id });
+      }
+    })
+  })),
+  userPb: vi.fn(() => ({
+    collection: (collection: string) => ({
+      update: async (id: string, body: Record<string, unknown>) => {
+        if (state.userFail) throw Object.assign(new Error('title_taken'), { status: 400, response: { message: 'title_taken' } });
+        state.writes.push({ op: 'userUpdate', collection, id, body }); return { id };
       }
     })
   }))
@@ -88,12 +101,14 @@ beforeEach(() => {
   clockSlot.current = createClockService({ enabled: () => false, runId: () => '',
     read: async () => { throw new Error('normal mode read clock'); }, write: async () => {} });
   state.user = { id: 'u1', is_admin: true };
-  state.itinerary = { id: 'itinerary000001', status: 'locked', event_date: '2026-12-26', start_time: '11:00' };
+  state.itinerary = { id: 'itinerary000001', status: 'locked', event_date: '2026-12-26', start_time: '11:00', title: 'Old name' };
   state.persisted = ['s2', 's3'];
   state.found = ['s2', 's3'];
   state.foreign = [];
   state.writes = [];
   state.fail = {};
+  state.titleTaken = false;
+  state.userFail = false;
   vi.mocked(recomputeItinerary).mockClear().mockResolvedValue({ legs: 1, impossible: 0, impossibleFromAnchor: 0 });
   vi.setSystemTime(new Date('2026-12-26T18:00:00.000Z'));
 });
@@ -315,6 +330,30 @@ describe('POST /api/plan/commit', () => {
   });
 });
 
+describe('title', () => {
+  it('writes a changed title as the Conductor, before any stop write', async () => {
+    const res = await call({ ...rideable, stops: [...rideable.stops, newStop], title: '  New name ' });
+    expect(res.status).toBe(200);
+    const i = state.writes.findIndex((w) => w.op === 'userUpdate');
+    expect(state.writes[i]).toEqual({ op: 'userUpdate', collection: 'itineraries', id: 'itinerary000001', body: { title: 'New name' } });
+    expect(state.writes.slice(0, i).some((w) => w.collection === 'stops')).toBe(false);
+  });
+  it('a name taken after the preflight stops the save before any stop write', async () => {
+    state.userFail = true;
+    await expect(call({ ...rideable, stops: [...rideable.stops, newStop], title: 'Raced' })).rejects.toMatchObject({ status: 400, body: { message: copy.titleTaken } });
+    expect(state.writes.some((w) => w.collection === 'stops')).toBe(false);
+  });
+  it('skips an unchanged title', async () => {
+    await call({ ...rideable, title: 'Old name' });
+    expect(state.writes.some((w) => w.op === 'userUpdate')).toBe(false);
+  });
+  it('refuses a bad or taken title before any write', async () => {
+    await expect(call({ ...rideable, title: '' })).rejects.toMatchObject({ status: 400 });
+    state.titleTaken = true;
+    await expect(call({ ...rideable, title: 'Taken' })).rejects.toMatchObject({ status: 400, body: { message: copy.titleTaken } });
+    expect(state.writes).toEqual([]);
+  });
+});
 
 describe('simulation commit', () => {
   it('uses the captured event day for validation, anchor, log and explicit recompute', async () => {

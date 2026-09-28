@@ -15,6 +15,14 @@ export async function adminPb(): Promise<PocketBase> {
   return pb;
 }
 
+/** A client acting as the browser's user, so PocketBase's rules and hooks see who did it. */
+export function userPb(request: Request): PocketBase {
+  const pb = new PocketBase(serverEnv.pbUrl);
+  pb.autoCancellation(false);
+  pb.authStore.save(request.headers.get('authorization') ?? '', null);
+  return pb;
+}
+
 const cache = new Map<string, { user: UserRecord; until: number }>();
 
 /** Validates the browser's PocketBase token against PocketBase; cached five minutes per token. */

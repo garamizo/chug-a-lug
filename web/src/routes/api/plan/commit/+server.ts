@@ -2,10 +2,12 @@ import { simulationClock } from '$lib/server/sim/clock';
 import { ClockServiceError } from '$lib/server/sim/service';
 import { error, json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
-import { adminPb, requireUser } from '$lib/server/pb';
+import { adminPb, requireUser, userPb } from '$lib/server/pb';
 import { activeAnchor, computeLegs, readStops } from '$lib/server/plan';
 import { recomputeItinerary } from '$lib/server/recompute';
 import { cohesionBlockers } from '$lib/live/cohesion';
+import { checkTitle } from '$lib/server/routeTitle';
+import { titleError } from '$lib/routeTitle';
 import { copy } from '$lib/labels';
 import { parseHm } from '$lib/time';
 import type { BulletinKind } from '$lib/live/diff';
@@ -24,6 +26,7 @@ type CommitBody = {
   clockRevision?: number;
   itinerary?: string; anchorStopId?: string; stops?: CommitStop[]; removed?: string[];
   bulletin?: { id: string; kind: BulletinKind; body: string } | null;
+  title?: string;
 };
 
 const status = (err: unknown) => (err as { status?: number }).status;
@@ -45,13 +48,15 @@ const fields = (s: CommitStop) => ({
   ...(s.direction === undefined ? {} : { direction: s.direction })
 });
 
-// The only write path for a locked route: reconcile, validate, apply, anchor, recompute, tell the
-// crew, log. PocketBase has no cross-request transaction, so instead of pretending this is atomic
-// every stop and Bulletin write is keyed by an id the editor generated and is safe to repeat: the
-// same payload sent again after a failure at any step converges on the same route, with no
-// duplicate stop and no second Bulletin. (The `checkins` anchor row and the `event_log` entry are
-// not deduplicated the same way: a retry adds another anchor and Train Sheet entry. When the clock
-// is paused, action_order breaks timestamp ties so the latest accepted anchor still wins.)
+// The only write path for a locked route: reconcile, validate, rename, apply, anchor, recompute,
+// tell the crew, log. PocketBase has no cross-request transaction, so instead of pretending this is
+// atomic every stop and Bulletin write is keyed by an id the editor generated and is safe to repeat:
+// the same payload sent again after a failure at any step converges on the same route, with no
+// duplicate stop and no second Bulletin. The rename is naturally idempotent too — a retry sends the
+// same title, which is a no-op once it has already landed. (The `checkins` anchor row and the
+// `event_log` entry are not deduplicated the same way: a retry adds another anchor and Train Sheet
+// entry. When the clock is paused, action_order breaks timestamp ties so the latest accepted anchor
+// still wins.)
 export const POST: RequestHandler = async ({ request }) => {
   const user = await requireUser(request);
   if (!user.is_admin) throw error(403, 'Only the Conductor can change The Route.');
@@ -74,6 +79,14 @@ export const POST: RequestHandler = async ({ request }) => {
     const pb = await adminPb();
     const itinerary = await pb.collection('itineraries').getOne<Itinerary>(id);
     if (itinerary.status !== 'locked') throw error(409, 'This itinerary is not The Route.');
+
+    // A rename rides with Save. Checked before any write so a bad name changes nothing.
+    let rename: string | null = null;
+    if (body.title !== undefined) {
+      const check = await checkTitle(pb, body.title, id);
+      if (!check.ok) throw error(400, check.message);
+      if (check.title !== itinerary.title) rename = check.title;
+    }
 
     // 1. Reconcile. The set validated below has to be the set the recompute will plan, or this
     //    endpoint approves one route and publishes another.
@@ -139,6 +152,16 @@ export const POST: RequestHandler = async ({ request }) => {
     // `message` is what `api()` on the client surfaces as the caught error's text; without it the
     // Conductor sees a bare "409 Conflict" instead of the reason (already user-facing copy).
     if (blockers.length) return json({ ok: false, blockers, message: blockers[0].message }, { status: 409 });
+
+    // Written as the Conductor, not the superuser, so the rename note names who did it. Renaming
+    // first keeps the endpoint's retry story intact: if the name was taken after the preflight, or
+    // the note fails, the rename is refused (and rolled back by the hook's transaction) before
+    // anything else changes; if a later stop write fails, the retry sends the same title, which is
+    // now a no-op, and converges.
+    if (rename) {
+      try { await userPb(request).collection('itineraries').update(id, { title: rename }); }
+      catch (err) { const message = titleError(err); if (message) throw error(400, message); throw err; }
+    }
 
     return await simulationClock.withEventWrite(context.enabled ? context.revision : undefined, async () => {
       // 3. The stops. Deletes first so a freed `order` cannot collide with an update. Create-versus-update
