@@ -541,6 +541,8 @@ describe('venueMedia', () => {
   });
 });
 ```
+Add to the same `describe('venueMedia'`:
+```ts
   it('fetches once when the sheet is opened twice at the same time', async () => {
     pbState.places.set('placeg2', { id: 'placeg2', ref: 'google:G2', source: 'google', place_id: 'G2', name: 'Bar', photos: [], photo_refs: [] });
     let release!: () => void;
