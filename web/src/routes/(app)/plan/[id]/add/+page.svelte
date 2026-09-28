@@ -143,8 +143,8 @@
   {:else if nearby.length === 0}
     <p>{copy.noNearby}</p>
   {:else}
-    {#each groupByKind(nearby) as group (group.kind)}
-      <details class="group" open={group.kind === 'bar'} data-testid="venue-group-{group.kind}">
+    {#each groupByKind(nearby) as group, i (group.kind)}
+      <details class="group" open={i === 0} data-testid="venue-group-{group.kind}">
         <summary>{copy[`venueGroup_${group.kind}`]} ({group.venues.length})</summary>
         <ul class="venues">
           {#each group.venues as v (v.id)}
