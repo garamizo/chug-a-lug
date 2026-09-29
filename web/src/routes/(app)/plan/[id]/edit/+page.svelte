@@ -283,11 +283,13 @@
     // box and starts the check, and a browser sends no click to a button that went disabled
     // between mousedown and mouseup. So the click lands here with the check still out; Save is
     // queued and runs (below) once the check has settled and the plan's fresh preview is back.
-    if (renaming) { saveQueued = true; return; }
+    // The same goes for the re-plan a staged title triggers: it can start between mousedown and
+    // mouseup, so "waiting on a preview" is aria-disabled too and a click during it is queued.
+    if (renaming || previewPending) { saveQueued = true; return; }
     // A rename refused earlier, whose error is still showing under the box, is not covered by
     // `renaming` any more (it cleared once the check settled) — see `renameRefused`'s comment.
     if (renameRefused) return;
-    if (!plan || !before || blockers.length || simBlocked || previewPending || saving || pending) return;
+    if (!plan || !before || blockers.length || simBlocked || saving || pending) return;
     const departAt = (stopId: string) => previewLegs.find((l) => l.from_stop === stopId)?.depart_at ?? null;
     const changes = planDiff(before, snapshot(plan), departAt);
     // The id is minted here, once, so a retried save cannot post the same Bulletin twice.
@@ -399,8 +401,8 @@
             {#each blockers as blocker (blocker.message)}<li>{blocker.message}</li>{/each}
           </ul>
         {/if}
-        <button type="button" onclick={() => void askToTell()} disabled={!!blockers.length || simBlocked || previewPending || saving || !!pending || renameRefused}
-          aria-disabled={renaming ? 'true' : undefined} data-testid="save-plan">
+        <button type="button" onclick={() => void askToTell()} disabled={!!blockers.length || simBlocked || saving || !!pending || renameRefused}
+          aria-disabled={renaming || previewPending ? 'true' : undefined} data-testid="save-plan">
           {saving ? copy.saving : copy.savePlan}
         </button>
       </div>

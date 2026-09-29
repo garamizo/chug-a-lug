@@ -171,6 +171,36 @@ test('one tap on Save while the name box is focused renames and then saves, with
   await expect(page.getByTestId('note-renamed')).toContainText(okName);
 });
 
+test('one tap on Save still saves when the check answers between mousedown and mouseup and the preview is slow', async ({ page }) => {
+  await clearLockedCrawls();
+  await login(page, 'E2E Straddle Conductor', ADMIN);
+  const { itineraryId } = await seedLockedCrawl({ ownerName: 'E2E Straddle Conductor', eventDate: '2026-12-26', startTime: '12:00',
+    departAt: '2026-12-26T20:34:00.000Z', arriveAt: '2026-12-26T20:49:00.000Z', extraVenueAtFirstStation: true });
+  await page.goto(`/plan/${itineraryId}/edit`);
+  await page.getByTestId('set-here-1').click();
+  await expect(page.getByTestId('save-plan')).toBeEnabled();
+
+  // The check answers at once; the re-plan its title change triggers is held back.
+  let releasePreview: (() => void) | undefined;
+  const previewGate = new Promise<void>((resolve) => { releasePreview = resolve; });
+  await page.route('**/api/plan/title-check**', (route) => route.fulfill({ contentType: 'application/json', body: JSON.stringify({ ok: true }) }));
+  await page.route('**/api/plan/preview', async (route) => { await previewGate; await route.continue(); });
+  const okName = `Straddle ${RUN}`;
+  await page.getByTestId('route-title').fill(okName);
+  const save = page.getByTestId('save-plan');
+  const box = (await save.boundingBox())!;
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+  const checked = page.waitForResponse('**/api/plan/title-check**');
+  await page.mouse.down(); // blurs the box: the check starts and is answered while the button is held
+  await checked;
+  await expect(save).toBeDisabled(); // the re-plan is out
+  await page.mouse.up();
+  releasePreview?.();
+  await page.getByTestId('bulletin-skip').click({ timeout: 15_000 });
+  await expect(page).toHaveURL(new RegExp(`/plan/${itineraryId}$`));
+  await expect(page.getByTestId('note-renamed')).toContainText(okName);
+});
+
 test('one tap on Save while the name box holds a refused name stays on the editor with the error and no sheet', async ({ page }) => {
   await clearLockedCrawls();
   await login(page, 'E2E One Tap Refused Conductor', ADMIN);
