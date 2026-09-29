@@ -146,6 +146,50 @@ test('Save waits for a pending rename: a refusal keeps the Conductor on the edit
   await expect(page.getByTestId('note-renamed')).toContainText(okName);
 });
 
+test('one tap on Save while the name box is focused renames and then saves, with no second tap', async ({ page }) => {
+  await clearLockedCrawls();
+  await login(page, 'E2E One Tap Conductor', ADMIN);
+  const { itineraryId } = await seedLockedCrawl({ ownerName: 'E2E One Tap Conductor', eventDate: '2026-12-26', startTime: '12:00',
+    departAt: '2026-12-26T20:34:00.000Z', arriveAt: '2026-12-26T20:49:00.000Z', extraVenueAtFirstStation: true });
+  await page.goto(`/plan/${itineraryId}/edit`);
+  await page.getByTestId('set-here-1').click();
+
+  // A slow but accepted check; the real click's mousedown blurs the focused box and starts it.
+  let releaseOk: (() => void) | undefined;
+  const okGate = new Promise<void>((resolve) => { releaseOk = resolve; });
+  await page.route('**/api/plan/title-check**', async (route) => {
+    await okGate;
+    await route.fulfill({ contentType: 'application/json', body: JSON.stringify({ ok: true }) });
+  });
+  const okName = `One Tap ${RUN}`;
+  await page.getByTestId('route-title').fill(okName);
+  await expect(page.getByTestId('route-title')).toBeFocused();
+  await page.getByTestId('save-plan').click();
+  releaseOk?.();
+  await page.getByTestId('bulletin-skip').click({ timeout: 15_000 });
+  await expect(page).toHaveURL(new RegExp(`/plan/${itineraryId}$`));
+  await expect(page.getByTestId('note-renamed')).toContainText(okName);
+});
+
+test('one tap on Save while the name box holds a refused name stays on the editor with the error and no sheet', async ({ page }) => {
+  await clearLockedCrawls();
+  await login(page, 'E2E One Tap Refused Conductor', ADMIN);
+  const { itineraryId } = await seedLockedCrawl({ ownerName: 'E2E One Tap Refused Conductor', eventDate: '2026-12-26', startTime: '12:00',
+    departAt: '2026-12-26T20:34:00.000Z', arriveAt: '2026-12-26T20:49:00.000Z', extraVenueAtFirstStation: true });
+  await page.goto(`/plan/${itineraryId}/edit`);
+  await page.getByTestId('set-here-1').click();
+  await page.route('**/api/plan/title-check**', (route) => route.fulfill({
+    status: 400, contentType: 'application/json', body: JSON.stringify({ message: copy.titleTaken })
+  }));
+  await page.getByTestId('route-title').fill(`One Tap Taken ${RUN}`);
+  await page.getByTestId('save-plan').click();
+  await expect(page.getByTestId('route-title-error')).toHaveText(copy.titleTaken);
+  await page.waitForTimeout(500);
+  await expect(page).toHaveURL(new RegExp(`/plan/${itineraryId}/edit$`));
+  await expect(page.getByTestId('bulletin-skip')).toHaveCount(0);
+  await expect(page.getByTestId('save-plan')).toBeDisabled();
+});
+
 test('a rejected rename keeps Save blocked once the refusal has already landed, until it is corrected or cancelled', async ({ page }) => {
   await clearLockedCrawls();
   await login(page, 'E2E Stuck Rename Conductor', ADMIN);

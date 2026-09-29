@@ -158,7 +158,7 @@
 
   $effect(() => {
     draft = null; error = ''; saveError = ''; plan = null; before = null; previewLegs = [];
-    renaming = null; renamedTitle = null; renameRefused = false;
+    renaming = null; renamedTitle = null; renameRefused = false; saveQueued = false;
     void load(draftFrom(data.early, data.id));
     // A staged edit must not be clobbered by the realtime reload, so on The Route only the first
     // load builds the plan (see `load`); the watcher keeps the draft path live as before.
@@ -265,13 +265,25 @@
 
   /** The Save button: drafts the Bulletin from what actually changed and opens the sheet. The
    *  commit itself waits for the sheet's answer (sent, edited, or skipped) in `commit()`. */
+  let saveQueued = $state(false);
+  $effect(() => {
+    if (!saveQueued || renaming) return;
+    if (renameRefused) { saveQueued = false; return; }
+    if (previewPending) return;
+    saveQueued = false;
+    void askToTell();
+  });
   const simBlocked = $derived(clientClock.enabled && (!clientClock.synchronized || previewRevision !== clientClock.revision || previewFailed));
   async function askToTell() {
     // A rename in flight from the name box has to land — one way or the other — before Save reads
     // the title: waiting here (not just disabling the button) covers the blur-then-click race even
     // if the disabled attribute hasn't painted yet. A refused rename leaves its error under the
     // box; Save must not paper over it by committing and navigating away.
-    if (renaming) { try { await renaming; } catch { return; } }
+    // The button is only aria-disabled while a rename is in flight, not `disabled`: mousedown on it is what blurs the
+    // box and starts the check, and a browser sends no click to a button that went disabled
+    // between mousedown and mouseup. So the click lands here with the check still out; Save is
+    // queued and runs (below) once the check has settled and the plan's fresh preview is back.
+    if (renaming) { saveQueued = true; return; }
     // A rename refused earlier, whose error is still showing under the box, is not covered by
     // `renaming` any more (it cleared once the check settled) — see `renameRefused`'s comment.
     if (renameRefused) return;
@@ -387,7 +399,8 @@
             {#each blockers as blocker (blocker.message)}<li>{blocker.message}</li>{/each}
           </ul>
         {/if}
-        <button type="button" onclick={() => void askToTell()} disabled={!!blockers.length || simBlocked || previewPending || saving || !!pending || !!renaming || renameRefused} data-testid="save-plan">
+        <button type="button" onclick={() => void askToTell()} disabled={!!blockers.length || simBlocked || previewPending || saving || !!pending || renameRefused}
+          aria-disabled={renaming ? 'true' : undefined} data-testid="save-plan">
           {saving ? copy.saving : copy.savePlan}
         </button>
       </div>

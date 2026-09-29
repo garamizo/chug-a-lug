@@ -98,7 +98,7 @@
   :global(input), :global(button) { font: inherit; font-size: 18px; padding: 14px; width: 100%; margin-top: 8px; border-radius: 10px; }
   :global(input) { border: 1px solid #666; background: #202020; color: #fff; }
   :global(button) { background: #ffb400; color: #111; border: 0; font-weight: 700; cursor: pointer; min-height: 48px; }
-  :global(button:disabled) { opacity: .6; cursor: wait; }
+  :global(button:disabled), :global(button[aria-disabled='true']) { opacity: .6; cursor: wait; }
   :global(button.secondary) { background: transparent; color: #ffce5c; border: 1px solid #555; }
   :global(:focus-visible) { outline: 3px solid #fff; outline-offset: 3px; }
   :global(.error) { color: #ff9a9a; margin-top: 16px; }
