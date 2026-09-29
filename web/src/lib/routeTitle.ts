@@ -7,14 +7,17 @@ export const TITLE_MAX = 80;
 export function normalizeTitle(input: unknown): { display: string; key: string } | null {
   if (typeof input !== 'string') return null;
   const display = input.trim();
-  if (display.length < 1 || display.length > TITLE_MAX) return null;
+  // Code points, not UTF-16 units: PocketBase's TextField max counts runes.
+  const length = [...display].length;
+  if (length < 1 || length > TITLE_MAX) return null;
   return { display, key: display.replace(/\s+/g, ' ').toLowerCase() };
 }
 
 /** "Copy of X", then "Copy of X (2)"…, with X cut so the whole name stays within 80. */
 export function cloneTitle(source: string, n: number): string {
   const suffix = n > 1 ? ` (${n})` : '';
-  return `${copy.cloneTitlePrefix} ${source.trim()}`.slice(0, TITLE_MAX - suffix.length).trimEnd() + suffix;
+  const base = [...`${copy.cloneTitlePrefix} ${source.trim()}`].slice(0, TITLE_MAX - [...suffix].length).join('');
+  return base.trimEnd() + suffix;
 }
 
 /**

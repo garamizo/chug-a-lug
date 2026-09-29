@@ -50,11 +50,21 @@ onRecordUpdateRequest((e) => {
     }
   }
   const titles = require(`${__hooks}/routeTitle.js`)
-  const name = titles.normalize(e.record.getString('title'))
-  if (!name) throw new BadRequestError('title_invalid')
-  const nameChanged = name.key !== original.getString('title_key')
-  e.record.set('title', name.display)
-  e.record.set('title_key', name.key)
+  // Only a title that is actually changing is validated: a stored legacy title that the rule
+  // would refuse today must not block every other update to its route. Otherwise the stored
+  // title and key are kept as they are (a forged title_key in the body is discarded).
+  const titleChanging = e.record.getString('title') !== original.getString('title')
+  let name = null
+  let nameChanged = false
+  if (titleChanging) {
+    name = titles.normalize(e.record.getString('title'))
+    if (!name) throw new BadRequestError('title_invalid')
+    nameChanged = name.key !== original.getString('title_key')
+    e.record.set('title', name.display)
+    e.record.set('title_key', name.key)
+  } else {
+    e.record.set('title_key', original.getString('title_key'))
+  }
   const renamed = e.record.getString('title') !== original.getString('title')
   const locking = e.record.getString('status') === 'locked' && original.getString('status') !== 'locked'
   if (locking) e.record.set('locked_at', new Date().toISOString())

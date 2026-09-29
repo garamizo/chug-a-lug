@@ -128,6 +128,26 @@ describe('itineraries', () => {
     expect(forged.title_key).toBe('unique other');
   });
 
+  it('counts the 80-character limit in code points, and only validates a title that is changing', async () => {
+    const emoji = '🍺'.repeat(80); // 80 code points, 160 UTF-16 units
+    const res = await createItinerary(crew.token, { title: emoji });
+    expect(res.status).toBe(200);
+    const { id } = await res.json();
+    const url = `/api/collections/itineraries/records/${id}`;
+    // Other updates leave the stored title alone, however it counts.
+    expect((await patch(url, { start_time: '12:00' }, crew.token)).status).toBe(200);
+    const same = await patch(url, { title: emoji, start_time: '12:30' }, crew.token);
+    expect(same.status).toBe(200);
+    expect((await same.json()).title).toBe(emoji);
+    expect((await patch(url, { status: 'locked' }, admin.token)).status).toBe(200);
+    expect((await patch(url, { vote_open: true }, admin.token)).status).toBe(200);
+    // A rename to 81 code points is refused.
+    const b = await (await createItinerary(crew.token)).json();
+    const long = await patch(`/api/collections/itineraries/records/${b.id}`, { title: '🍺'.repeat(81) }, crew.token);
+    expect(long.status).toBe(400);
+    expect((await long.json()).message).toBe('Title_invalid.');
+  });
+
   it('racing requests cannot both take a free name', async () => {
     const creates = await Promise.all(Array.from({ length: 5 }, () => createItinerary(crew.token, { title: 'Race name' })));
     expect(creates.filter((r) => r.status === 200)).toHaveLength(1);

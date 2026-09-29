@@ -15,6 +15,24 @@ describe('normalizeTitle', () => {
   });
 });
 
+describe('normalizeTitle code points', () => {
+  it('counts an emoji as one character, like PocketBase', () => {
+    expect(normalizeTitle('🍺'.repeat(TITLE_MAX))).not.toBeNull();
+    expect(normalizeTitle('🍺'.repeat(TITLE_MAX + 1))).toBeNull();
+  });
+});
+
+describe('cloneTitle code points', () => {
+  it('never splits a surrogate pair and stays within 80 code points', () => {
+    for (const n of [1, 2, 12]) {
+      const t = cloneTitle('🍺'.repeat(80), n);
+      expect([...t].length).toBeLessThanOrEqual(TITLE_MAX);
+      expect(t).not.toMatch(/[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/);
+      expect(normalizeTitle(t)).not.toBeNull();
+    }
+  });
+});
+
 describe('cloneTitle', () => {
   it('prefixes the first copy and numbers later ones', () => {
     expect(cloneTitle('Loop Crawl', 1)).toBe(`${copy.cloneTitlePrefix} Loop Crawl`);

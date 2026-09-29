@@ -7,7 +7,9 @@ module.exports = {
   normalize(input) {
     if (typeof input !== 'string') return null
     const display = input.trim()
-    if (display.length < 1 || display.length > 80) return null
+    // Code points, not UTF-16 units: PocketBase's TextField max counts runes.
+    const length = [...display].length
+    if (length < 1 || length > 80) return null
     return { display, key: display.replace(/\s+/g, ' ').toLowerCase() }
   },
   taken(app, key, exceptId) {
