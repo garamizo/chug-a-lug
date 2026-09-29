@@ -1,3 +1,7 @@
+import { existsSync, readdirSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { DatabaseSync } from 'node:sqlite';
 import { beforeAll, describe, expect, it } from 'vitest';
 import { ADMIN_LOGIN_PASSWORD, PB, del, get, loginToken, patch, post, superuserToken, truncate } from './setup';
 
@@ -146,6 +150,43 @@ describe('itineraries', () => {
     const long = await patch(`/api/collections/itineraries/records/${b.id}`, { title: '🍺'.repeat(81) }, crew.token);
     expect(long.status).toBe(400);
     expect((await long.json()).message).toBe('Title_invalid.');
+  });
+
+  it('leaves a stored title the rule would refuse alone on every update that does not change it', async () => {
+    // The HTTP API cannot create such a row (the hooks normalise), so write it straight into the
+    // disposable instance's database: find the scratch data dir (scripts/pb-test-server.mjs) that
+    // holds the route we just created.
+    const { id } = await (await createItinerary(crew.token)).json();
+    const dbs = readdirSync(tmpdir()).filter((d) => d.startsWith('chugalug-pb-test-'))
+      .map((d) => join(tmpdir(), d, 'data.db')).filter((f) => existsSync(f));
+    let seeded = 0;
+    for (const file of dbs) {
+      const db = new DatabaseSync(file);
+      try {
+        db.exec('PRAGMA busy_timeout = 5000');
+        if (db.prepare('SELECT 1 FROM itineraries WHERE id = ?').get(id)) {
+          seeded = Number(db.prepare("UPDATE itineraries SET title = '   ', title_key = 'legacy-key' WHERE id = ?").run(id).changes);
+        }
+      } finally { db.close(); }
+    }
+    expect(seeded).toBe(1);
+    const url = `/api/collections/itineraries/records/${id}`;
+    const notes = async () => (await (await get(`/api/collections/comments/records?filter=${encodeURIComponent(`target_id="${id}" && kind="renamed"`)}`, crew.token)).json()).totalItems;
+    const stored = async () => { const r = await (await get(url, crew.token)).json(); return [r.title, r.title_key]; };
+    expect(await stored()).toEqual(['   ', 'legacy-key']);
+    // Sending the stored title back unchanged is not a rename.
+    expect((await patch(url, { title: '   ' }, crew.token)).status).toBe(200);
+    expect((await patch(url, { start_time: '12:00', title_key: 'forged' }, crew.token)).status).toBe(200);
+    expect((await patch(url, { status: 'locked' }, admin.token)).status).toBe(200);
+    expect((await patch(url, { vote_open: true }, admin.token)).status).toBe(200);
+    expect(await stored()).toEqual(['   ', 'legacy-key']);
+    expect(await notes()).toBe(0);
+    // A real change to the title is validated again.
+    const bad = await patch(url, { title: '' }, admin.token);
+    expect(bad.status).toBe(400);
+    expect((await bad.json()).message).toBe('Title_invalid.');
+    expect((await patch(url, { title: 'Repaired legacy' }, admin.token)).status).toBe(200);
+    expect(await stored()).toEqual(['Repaired legacy', 'repaired legacy']);
   });
 
   it('racing requests cannot both take a free name', async () => {
