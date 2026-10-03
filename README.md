@@ -32,8 +32,9 @@ with an album and a scoreboard to argue about at dinner.
 - **Event: Saturday, December 26, 2026.** Metra runs its Saturday timetable. About 10 users.
 - **Web only, no app stores.** Installable PWA is encouraged, never required.
 - **Works on a phone in a loud bar with one bar of signal.** Big buttons, cached plan, degrades gracefully.
-- **Private.** One shared crew password from the admin, plus your name so likes and comments are yours.
-  No sign-up, no recovery, no per-person accounts; the session lives in a cookie for a year.
+- **Private.** Everyone has their own account, keyed by email. A newcomer asks to board at
+  `/join`, any approved crew member lets them aboard, and from then on they sign in with Google or
+  an emailed code. No shared password.
 - **Lines:** UP-W (Ogilvie), MD-W (Union Station, turns at Elgin on weekends), BNSF (Union Station).
   Ogilvie and Union are a 6 min walk apart, so the plan can switch lines downtown.
 - **The crawl is settled on the BNSF line** (Aurora to Union Station). The planner shows only that line;
@@ -63,6 +64,12 @@ users see. Bars and restaurants keep their plain names.
 | Wrap-up phase | **Closing Time** | Bar | |
 | Admin | **Conductor** | Rail | |
 | Users | **Crew** | Rail | |
+| Sign-up page `/join` | **Board** | Rail | "Board the Chug-a-Lug" |
+| Join request | **Boarding request** | Rail | Shown as "waiting to board" |
+| Approve / reject a request | **Let aboard / Turn away** | Rail | Any approved crew member |
+| Conductor access panel `/crew/access` | **Manifest** | Rail | People, status, who let them aboard, last seen, access log |
+| Block / unblock a person | **Put off / Let back on** | Rail | Conductor only |
+| Account page `/account` | **Your ticket** | Rail | Name edit, email, sign out |
 | User roster | **Crew Board** | Rail | |
 | Stop (a bar or restaurant on the route) | **Stop** | Plain | A station is always a Metra station |
 | Start station | **Board at** | Plain | Draft header select; the station the crew boards at, at Start; the Start field then reads "At the boarding station by". Stop 1's arrival counts the ride in. |
@@ -355,9 +362,11 @@ Recommendation, not yet decided. See the references doc for the alternatives con
 - **Metra proxy**: SvelteKit server routes using `gtfs-realtime-bindings` and a pure-TypeScript GTFS loader
   (the feed is 700 KB; the three lines fit in memory). Polls Metra every 30 s, caches, computes "next train
   from station A to B", and serves the recorded replay in sim mode. The only component that talks to Metra.
-- **Auth**: name plus the shared crew password (or the admin password for the Conductor role), checked by a
-  PocketBase hook that creates the identity for that name on first login and returns a one-year token kept
-  in a cookie. No SMS, no email, no recovery flow.
+- **Auth**: per-person accounts keyed by email. Sign-in is an emailed one-time code (PocketBase OTP, sent
+  through Resend SMTP) or Google. A newcomer asks to board at `/join` (Cloudflare Turnstile guards the
+  form, the email is verified by code) and any approved crew member lets them aboard; only then does a
+  user record exist. The Conductor is the account minted from `CONDUCTOR_EMAIL`, and only the Conductor
+  can put someone off. No shared password.
 - **Places**: Google Places (server-side, key never leaves the box) for the rated list near each station,
   text search by name, and venue-card photos fetched once per stop and stored on disk; Overpass
   (OpenStreetMap) is the fallback for the station list when no key is configured.
@@ -413,11 +422,12 @@ Numbered to match the earlier review; each is reversible.
 5. **Media is tagged from the shared crawl clock.** The uploader's board supplies the stop; the server
    accepts it only if it belongs to a locked route, otherwise keeps the file untagged. No GPS or EXIF
    location lookup. Admin retagging is permitted by the collection rules; the album UI belongs to M5.
-6. **Login is a shared crew password plus your name.** Replaces the earlier phone-number plan. The admin
-   hands out one password in the family chat and keeps a second admin password for the Conductor role.
-   The first login with a name creates that identity; the same name on another phone is the same person.
-   The session is a one-year cookie. Trade-off: anyone with the password can pick any name, which is
-   fine for ten relatives and removes Twilio, SMS costs, and PIN resets entirely.
+6. **Boarding is peer-approved, and accounts are keyed by email.** A newcomer asks to board at `/join`;
+   any approved crew member can Let them aboard or Turn them away, and from then on they sign in with
+   Google or an emailed code. There is no shared password and no SMS. Trade-off: the crew can let
+   anyone aboard, so one careless approval admits a stranger, and only the Conductor can put someone
+   off (and let them back on). That fits ten relatives who know each other and removes Twilio, SMS
+   costs and PIN resets entirely.
 7. **Domain is chugalug.app.** HTTPS is mandatory on `.app`; Cloudflare Tunnel handles that from home.
 8. **Home server trade-offs.** Simpler and free, but the event depends on your power and internet.
    Mitigations: a UPS, the same Compose file restorable on a $5 VPS from the nightly backup in about

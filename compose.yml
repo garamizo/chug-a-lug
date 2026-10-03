@@ -29,6 +29,8 @@ services:
       context: ./web
       args:
         PUBLIC_PB_URL: ${PUBLIC_PB_URL:?Set PUBLIC_PB_URL in .env}
+        PUBLIC_TURNSTILE_SITE_KEY: ${PUBLIC_TURNSTILE_SITE_KEY:-}
+        PUBLIC_GOOGLE_ENABLED: ${PUBLIC_GOOGLE_ENABLED:-0}
     restart: unless-stopped
     env_file: .env
     environment:
@@ -36,6 +38,8 @@ services:
       PUBLIC_SIM: "0"
       ORIGIN: ${ORIGIN:?Set ORIGIN in .env}
       PUBLIC_PB_URL: ${PUBLIC_PB_URL:?Set PUBLIC_PB_URL in .env}
+      PUBLIC_TURNSTILE_SITE_KEY: ${PUBLIC_TURNSTILE_SITE_KEY:-}
+      PUBLIC_GOOGLE_ENABLED: ${PUBLIC_GOOGLE_ENABLED:-0}
       PB_URL: http://pocketbase:8090
       DATA_DIR: /data
     volumes:

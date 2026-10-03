@@ -114,7 +114,7 @@ migrate((app) => {
   fresh.otp.emailTemplate.body = '<p>Your Chug-a-Lug sign-in code is <strong>{OTP}</strong>.</p><p>It works for 10 minutes. If you did not ask for it, ignore this email.</p>'
   fresh.authToken.duration = 2592000
   // Google sign-in from the environment, so a first deploy has it without a restart.
-  // crew.js's onBootstrap re-applies the same on every start.
+  // config.pb.js's onBootstrap re-applies the same on every start.
   const googleId = $os.getenv('GOOGLE_CLIENT_ID'), googleSecret = $os.getenv('GOOGLE_CLIENT_SECRET')
   if (googleId && googleSecret) {
     fresh.oauth2.providers = [{ name: 'google', clientId: googleId, clientSecret: googleSecret }]

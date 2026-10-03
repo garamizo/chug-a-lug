@@ -55,6 +55,8 @@ The harnesses bind fixed ports, so two worktrees cannot run them simultaneously:
 
 - e2e (`npm run test:e2e`): **15173** for the web server, **18093** for its PocketBase.
 - The production stack (`just up`): **8090** for PocketBase, **3000** for the web server.
+- **12525–12528** for the SMTP sink, its control API, the Turnstile fake and the fake OIDC provider
+  (`web/scripts/test-fakes.mjs`).
 
 Never point a dev or test server at 8090 or 3000 — that is the live stack on this machine.
 
@@ -95,6 +97,11 @@ rebuild.
   PocketBase responses before assigning them into state, or storage can fail while the screen works.
 - **Seeding stops fires the recompute hook.** The planner replaces seeded leg times with its own
   answer. A test clock based on the fixture's hand-written departure may be watching the wrong train.
+
+- **Users are keyed by email.** Production signs in only by OTP or Google, and every session passes
+  `crew.signInGuard`; boarding requests are not users, and a decoy request must stay
+  indistinguishable from a real one. Tests mint sessions by impersonation (`loginToken`,
+  `sessionFor`), never through a backdoor route.
 
 - **Simulation has event time and wall time.** Use the shared clock for the live day, Tab, anchors,
   planning and Bulletins. Cache ages, auth, timeouts, parked-edit expiry and file capture metadata

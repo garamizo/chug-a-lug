@@ -119,17 +119,112 @@ dev (the PocketBase hook calls the SvelteKit server with that secret and URL aft
 - Backups run inside PocketBase at 04:00 UTC and `just backup` from host cron at 04:30 local.
 
 ## Crew access
-- Share `CREW_PASSWORD` in the family chat. People log in with their name and that password; the first
-  login creates their identity. The same name on a second phone is the same person.
-- `ADMIN_PASSWORD` gives the Conductor role. Once a name has it, later crew-password logins keep it.
-- Someone typed their name wrong and now has two identities: PocketBase admin → Collections → `users`,
-  delete the stray record (or rename `name` / `name_key` on the right one).
-- Force everyone to log in again (leaked password): change `CREW_PASSWORD` in `.env`, then in the
-  PocketBase admin UI → Collections → `users` → Options → Auth token → regenerate the secret.
-- The login endpoint reads `LOGIN_RATE_LIMIT` from PocketBase's environment: default **20 attempts
-  per IP per 15 minutes**. Only `web/tests/browser-config.ts` raises it (to 500) for the e2e harness.
-  Production keeps the default unless explicitly configured; do not copy the harness override into
-  production to solve a test failure.
+
+Everyone has their own account, keyed by email. There is no shared password.
+
+- **Boarding.** A newcomer opens `/join` (Board), enters a name and email, passes Cloudflare Turnstile
+  and confirms the emailed code. That creates a boarding request, not a user. Any approved crew member
+  can Let aboard or Turn away, from the popup or the Crew Board section. Once let aboard, the person
+  signs in at `/login` with an emailed code, or with Google when `PUBLIC_GOOGLE_ENABLED=1`. Conductors get
+  a batched email about waiting requests (at most one per 10 minutes).
+- **The Manifest** (`/crew/access`, Conductor only) lists people, their emails, who let them aboard,
+  last seen, and the access log (kept 90 days, at most 10,000 rows).
+- **Put off / Let back on** (Manifest, Conductor only) blocks or unblocks a person. Blocking from the
+  PocketBase admin UI (`users` -> the record -> `blocked`) also ends that user's sessions.
+- **Your ticket** (`/account`) lets a person rename themselves.
+- **Add another Conductor:** PocketBase admin (http://127.0.0.1:8090/_/ on the box) -> Collections ->
+  `users` -> the person's record -> tick `is_admin`; make sure `verified` is on too. The first Conductor is always the account
+  for `CONDUCTOR_EMAIL`, recreated on every start.
+- **Mail troubleshooting.** `docker compose logs pocketbase` shows SMTP errors. Check `SMTP_HOST`,
+  `SMTP_PORT=465` with `SMTP_TLS=1` (Resend uses implicit TLS), `SMTP_USERNAME=resend`, the API key in
+  `SMTP_PASSWORD` and that the sending domain is verified in Resend. Settings are re-applied from `.env`
+  at every start. If mail is down, a join returns an error and nothing is created; Google sign-up still
+  works. After a decision the decision stands and the notification retries.
+- **Conductor without mail:** on the box, open http://127.0.0.1:8090/_/ -> users -> your record ->
+  Impersonate, or temporarily enable password auth for the users collection.
+- **Never publish port 8090 anywhere but the tunnel and the Docker network:** PocketBase trusts
+  `CF-Connecting-IP`, so a directly reachable port would let anyone forge their address. Hooks in
+  `edge.pb.js` answer 404 for `/_/` and the superusers endpoints on any request that carries that
+  header, so the admin UI is reachable only from the box.
+- Rehearsal stacks (`SIM=1`) alone keep `CREW_PASSWORD` / `ADMIN_PASSWORD` and the
+  `/api/crawl/login` route; production has neither.
+- PocketBase's own rate limits are on (`PB_RATE_LIMITS`; only the test harness sets `off`).
+
+## Deploying crew access
+
+The migration `1758900000_crew_access.js` is destructive: it wipes every user except the Conductor and
+all personal activity (likes, comments, Tab, acks), keeps routes, and refuses to start without
+`CONDUCTOR_EMAIL`.
+
+1. `just backup`.
+2. Fill the new `.env` keys (see `.env.example`): `CONDUCTOR_EMAIL`, `APP_URL`, `MAIL_FROM`, `SMTP_*`,
+   `TURNSTILE_SECRET`, `PUBLIC_TURNSTILE_SITE_KEY`, and optionally `GOOGLE_CLIENT_ID`,
+   `GOOGLE_CLIENT_SECRET` with `PUBLIC_GOOGLE_ENABLED=1`. Remove `CREW_PASSWORD` and `ADMIN_PASSWORD`.
+   Do the Cloudflare checklist below first for the Turnstile, Resend and Google values.
+3. `just up`, then sign in as the Conductor by email code.
+4. Tell the family to board at `/join`.
+5. Delete and recreate any rehearsal runs (`.simulations/<run>`): the migration wipes their users while
+   their marker still says ready.
+6. Never publish port 8090 anywhere but the tunnel and the Docker network, because the
+   `CF-Connecting-IP` trust depends on it.
+7. Run the manual acceptance list below.
+
+### Manual acceptance
+
+The harness cannot prove these:
+
+- **Real Google round trip:** a phone boards by Google, and an existing member signs in by Google.
+- **Conductor-email batching:** two sign-ups a minute apart produce one email (tests run with
+  `NOTIFY_INTERVAL_SECONDS=0`).
+- **Daily access-log retention:** after the 03:17 UTC job, rows older than 90 days and rows past the
+  newest 10,000 are gone.
+- On the real stack after deploy:
+  1. `https://pb.chugalug.app/_/` and the superusers auth endpoint, by name and by ID, return 404.
+  2. Sign-in as the Conductor works by email code.
+  3. A phone boards by Google.
+  4. A second phone boards by email.
+  5. Popup approval works from a third browser, and the popup clears on the other approver's screen.
+  6. Put off works.
+  7. The Manifest shows real visitor IPs and countries.
+  8. Cloudflare Security Insights clears the chugalug.app findings after the checklist.
+
+## Cloudflare checklist
+
+Dashboard steps verified against developers.cloudflare.com on 2026-10-03. Each step names its source
+page; Cloudflare renames menus often, so re-check the page if a label is missing.
+
+1. **MFA on the Cloudflare account.** My Profile -> Authentication -> add a factor.
+   Source: https://developers.cloudflare.com/fundamentals/user-profiles/2fa/
+2. **HTTPS and TLS** (zone chugalug.app). SSL/TLS -> Edge Certificates:
+   - turn on **Always Use HTTPS** (the SSL/TLS encryption mode must not be Off);
+   - for **HTTP Strict Transport Security (HSTS)** select **Enable HSTS**, then **I understand**,
+     **Next**, set **Max Age Header** to 6 months, turn on **Apply HSTS policy to subdomains**, leave
+     **Preload** off, **Save**;
+   - set **Minimum TLS Version** to TLS 1.2.
+   Sources: .../ssl/edge-certificates/additional-options/always-use-https/,
+   .../http-strict-transport-security/, .../minimum-tls/ (HSTS is Cloudflare's job; the app does
+   not send it).
+3. **Bot Fight Mode.** Security -> Settings, filter by **Bot traffic**, turn **Bot fight mode** on. Then
+   confirm realtime updates (SSE) and photo/video uploads still work from a phone.
+   Source: https://developers.cloudflare.com/bots/get-started/bot-fight-mode/
+4. **WAF custom rule on `pb.chugalug.app`.** Security -> Security rules -> Create rule -> Custom rules.
+   Name it, match hostname equals `pb.chugalug.app` and URI path starts with `/_/` or starts with
+   `/api/collections/_superusers`, action **Block**, **Deploy**. A second layer: `edge.pb.js` already
+   returns 404 for these and also covers the collection ID.
+   Source: https://developers.cloudflare.com/waf/custom-rules/create-dashboard/
+5. **Visitor location headers.** Rules -> Settings -> **Managed Transforms** tab -> enable **Add visitor
+   location headers** (gives the Manifest its countries).
+   Source: https://developers.cloudflare.com/rules/transform/managed-transforms/configure/
+6. **Turnstile.** Turnstile page -> **Add widget**: name, hostname `chugalug.app`, mode Managed ->
+   **Create**; copy the sitekey into `PUBLIC_TURNSTILE_SITE_KEY` and the secret key into
+   `TURNSTILE_SECRET`.
+   Source: https://developers.cloudflare.com/turnstile/get-started/widget-management/dashboard/
+7. **Resend.** In Resend, add the chugalug.app domain, publish the DNS records it shows in Cloudflare DNS
+   (set them to DNS only), then create an API key; it is `SMTP_PASSWORD`. Find the exact steps from
+   Resend's domain documentation.
+8. **Google Cloud.** Create an OAuth client of type Web application with redirect URI
+   `https://chugalug.app/auth/google`; its ID and secret are `GOOGLE_CLIENT_ID` and
+   `GOOGLE_CLIENT_SECRET`. Find the exact steps from Google's OAuth client documentation.
 
 ## Deploy a change
     git pull
@@ -153,11 +248,15 @@ Migrations apply automatically when the `pocketbase` container starts. Environme
 3. About 15 minutes; rehearse once before December.
 
 ## Rotate a secret
-Edit `.env`, then `docker compose up -d --force-recreate <service>`. The hooks read `CREW_PASSWORD`,
-`ADMIN_PASSWORD`, and the Metra token at request time from the container environment; the Cloudflare
-token is read by the `cloudflared` container at start (`docker compose up -d --force-recreate cloudflared`).
-`INTERNAL_SECRET` is read by both containers (the PocketBase hook sends it, the SvelteKit server checks
-it), so rotate it with `docker compose up -d --force-recreate pocketbase web`.
+Edit `.env`, then `docker compose up -d --force-recreate <service>`. PocketBase reads `SMTP_PASSWORD`,
+`GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET`, `TURNSTILE_SECRET` and the Metra token from its environment
+(the SMTP and Google settings are re-applied at start), so rotate those with
+`docker compose up -d --force-recreate pocketbase`. `PUBLIC_*` values (`PUBLIC_PB_URL`,
+`PUBLIC_TURNSTILE_SITE_KEY`, `PUBLIC_GOOGLE_ENABLED`) are baked into the web image, so changing one needs
+`just up`, a rebuild. The Cloudflare token is read by the `cloudflared` container at start
+(`docker compose up -d --force-recreate cloudflared`). `INTERNAL_SECRET` is read by both containers (the
+PocketBase hook sends it, the SvelteKit server checks it), so rotate it with
+`docker compose up -d --force-recreate pocketbase web`.
 
 
 ## Shakedown Run (M4)
@@ -190,7 +289,7 @@ headers to pretend the recording is from another Saturday.
 After upgrading to crew access, delete existing `.simulations/<run>` folders and start fresh runs: the
 migration wipes their users while their marker still says ready.
 
-Sign in with the usual shared password, then choose Shakedown Run from the Conductor
+Sign in (rehearsal stacks keep the shared passwords), then choose Shakedown Run from the Conductor
 menu. All signed-in users see Railroad Time and synchronization status. Only the Conductor sees
 controls. Pause before seeking forward; the seek input is Chicago time on the source service date.
 Rates are 1×, 5×, 10×, 30× and 60×. A paused rate selection changes the resume rate without starting.
