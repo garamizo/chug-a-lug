@@ -12,7 +12,7 @@
 {#each items as r (r.id)}
   <div class="req" data-testid="boarding-request">
     <strong>{r.name}</strong> <span class="email">{r.email}</span>
-    <small>{r.user_agent.slice(0, 40)} · {r.country || '—'} · {fmtDateTime(r.created.replace(' ', 'T'))}</small>
+    <small>{r.user_agent.slice(0, 40)} · {r.country || copy.none} · {fmtDateTime(r.created.replace(' ', 'T'))}</small>
     <div class="actions">
       <button type="button" onclick={() => void act(r.id, 'let-aboard')} data-testid="let-aboard">{copy.letAboard}</button>
       <button type="button" class="secondary" onclick={() => void act(r.id, 'turn-away')} data-testid="turn-away">{copy.turnAway}</button>

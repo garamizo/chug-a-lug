@@ -65,6 +65,14 @@ export const copy = {
   accessLog: 'Access log',
   recentRequests: 'Recent boarding requests',
   allEvents: 'All events',
+  /** Shown where a value is missing (no approver, no country). */
+  none: '—',
+  /** "· by <Conductor>" after a decision or an access-log entry. */
+  byWhom: 'by',
+  personStatus: 'Status',
+  personAboard: 'Aboard',
+  personPutOff: 'Put off',
+  personSince: 'Aboard since',
   yourName: 'Your name',
   conductorOnly: 'Only the Conductor can see this.',
   rehearsalTitle: 'Rehearsal — practice only',
@@ -97,6 +105,7 @@ export const copy = {
   appSubtitle: 'Your next stop starts here.',
   loginTitle: 'Welcome aboard',
   loginIntro: 'Sign in with Google or with a code we email you.',
+  loginIntroNoGoogle: 'Sign in with a code we email you.',
   rehearsalIntro: 'Shakedown Run: your name and the rehearsal password.',
   continueGoogle: 'Continue with Google',
   emailLabel: 'Email',
@@ -105,6 +114,10 @@ export const copy = {
   codeLabel: '6-digit code',
   codeSentTo: 'We sent a code to',
   noCodeHint: 'No code after a minute? Send it again, or use Google.',
+  /** noCodeHint when Google sign-in is off (PUBLIC_GOOGLE_ENABLED != '1'). */
+  noCodeHintNoGoogle: 'No code after a minute? Send it again.',
+  /** The boarding page's code step: confirming the code files the request; it does not sign in. */
+  confirmCode: 'Confirm my code',
   sendAgain: 'Send it again',
   signIn: 'Sign in',
   newHereBoard: 'New here? Board the Chug-a-Lug',
@@ -467,3 +480,33 @@ export const recordingCopy = {
 /** Route strip marks by venue kind; an `other` stop gets a plain dot. */
 export const venueIcons: Record<string, string> = { bar: '🍺', restaurant: '🍽️' };
 export const drinkIcons: Record<string, string> = { shot: '🥃', cocktail: '🍸', beer: '🍺', water: '🧃', food: '🍽️' };
+
+// The Manifest's display names for stored values (boarding_requests.status, access_log.method and
+// access_log.event, crew-access migration). A value missing here shows as stored.
+export const requestStatusLabels: Record<string, string> = {
+  unverified: 'Code not confirmed',
+  waiting: 'Waiting to board',
+  aboard: 'Let aboard',
+  turned_away: 'Turned away',
+  expired: 'Expired'
+};
+export const signInMethodLabels: Record<string, string> = {
+  email: 'Email code',
+  google: 'Google',
+  rehearsal: 'Rehearsal password'
+};
+export const accessEventLabels: Record<string, string> = {
+  boarding_requested: 'Asked to board',
+  boarding_verified: 'Confirmed their boarding code',
+  let_aboard: 'Let aboard',
+  turned_away: 'Turned away',
+  signed_in: 'Signed in',
+  sign_in_refused: 'Sign-in refused',
+  code_sent: 'Sign-in code sent',
+  mail_failed: 'Email failed',
+  rate_limited: 'Too many attempts',
+  turnstile_failed: 'Failed the human check',
+  put_off: 'Put off',
+  let_back_on: 'Let back on',
+  name_changed: 'Changed name'
+};

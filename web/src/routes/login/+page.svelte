@@ -50,7 +50,7 @@
     <button type="submit" disabled={busy} data-testid="login">{busy ? copy.working : copy.login}</button>
   </form>
 {:else}
-  <p>{copy.loginIntro}</p>
+  <p>{google ? copy.loginIntro : copy.loginIntroNoGoogle}</p>
   {#if google}<button type="button" onclick={withGoogle} disabled={busy} data-testid="google">{copy.continueGoogle}</button>{/if}
   {#if !otpId}
     <form onsubmit={sendCode} aria-busy={busy}>
@@ -64,7 +64,7 @@
       <label for="code">{copy.codeLabel}</label>
       <input id="code" inputmode="numeric" autocomplete="one-time-code" maxlength="6" bind:value={code} data-testid="code-input" disabled={busy} />
       <button type="submit" disabled={busy} data-testid="sign-in">{busy ? copy.working : copy.signIn}</button>
-      <p class="hint">{copy.noCodeHint} <button type="button" class="link" onclick={() => { otpId = ''; code = ''; }}>{copy.sendAgain}</button></p>
+      <p class="hint">{google ? copy.noCodeHint : copy.noCodeHintNoGoogle} <button type="button" class="link" onclick={() => { otpId = ''; code = ''; }}>{copy.sendAgain}</button></p>
     </form>
   {/if}
   <p><a href="/join" data-testid="to-join">{copy.newHereBoard}</a></p>

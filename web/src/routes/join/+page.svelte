@@ -32,18 +32,24 @@
     const timer = setInterval(() => { if (document.visibilityState === 'visible') void check(); }, 5000);
     return () => clearInterval(timer);
   });
+  // Bumped whenever this page itself moves the request on (start, verify, restart): a status poll
+  // asked before that answers for an older state, so a late 'unverified' cannot put a request that
+  // was just verified back on the code step.
+  let epoch = 0;
   // A 404 is definitive (unknown request or wrong secret); anything else is "try again later", and
   // the stored request is kept so a dead zone never costs someone their place in line.
   async function check() {
-    const mine = current;
+    const mine = current, asked = epoch;
     if (!mine) return;
+    const stale = () => current !== mine || asked !== epoch;
     try {
       const next = stepFor((await joinStatus(mine.requestId, mine.secret)).status);
-      if (current !== mine) return;
+      if (stale()) return;
       offline = false;
       step = next;
       if (next !== 'code' && next !== 'waiting') clearBoarding(localStorage);
     } catch (e) {
+      if (stale()) return;
       if ((e as { status?: number }).status === 404) { step = 'expired'; clearBoarding(localStorage); }
       else offline = true;
     }
@@ -58,13 +64,14 @@
     void run(async () => {
       try {
         const r = await joinCrew(cleanName(), email.trim(), token);
+        epoch++;
         current = { requestId: r.request_id, secret: r.secret, name: cleanName(), email: email.trim().toLowerCase(), savedAt: Date.now() };
         saveBoarding(localStorage, current); step = 'code';
       } finally { turnstile?.reset(); } // the token is spent either way
     }); };
   const verify = (ev: SubmitEvent) => { ev.preventDefault();
     if (!/^\d{6}$/.test(code.trim())) { error = copy.codeError; return; }
-    void run(async () => { await verifyJoin(current!.requestId, current!.secret, code.trim()); step = 'waiting'; }); };
+    void run(async () => { await verifyJoin(current!.requestId, current!.secret, code.trim()); epoch++; step = 'waiting'; }); };
   const again = () => void run(() => resendJoin(current!.requestId, current!.secret).then(() => {}));
   const withGoogle = () => {
     if (cleanName().length < 2 || cleanName().length > 32) { error = copy.nameError; return; }
@@ -77,7 +84,7 @@
       location.href = buildAuthUrl(p.authURL, redirectUrl);
     });
   };
-  const restart = () => { clearBoarding(localStorage); current = null; step = 'start'; code = ''; };
+  const restart = () => { epoch++; clearBoarding(localStorage); current = null; step = 'start'; code = ''; };
 </script>
 
 <h1>{copy.boardTitle}</h1>
@@ -98,8 +105,8 @@
     <p>{copy.codeSentTo} {current?.email}</p>
     <label for="code">{copy.codeLabel}</label>
     <input id="code" inputmode="numeric" autocomplete="one-time-code" maxlength="6" bind:value={code} data-testid="code-input" disabled={busy} />
-    <button type="submit" disabled={busy} data-testid="verify">{busy ? copy.working : copy.signIn}</button>
-    <p class="hint">{copy.noCodeHint} <button type="button" class="link" onclick={again}>{copy.sendAgain}</button></p>
+    <button type="submit" disabled={busy} data-testid="verify">{busy ? copy.working : copy.confirmCode}</button>
+    <p class="hint">{google ? copy.noCodeHint : copy.noCodeHintNoGoogle} <button type="button" class="link" onclick={again}>{copy.sendAgain}</button></p>
   </form>
 {:else if step === 'waiting'}
   <p data-testid="waiting">{copy.requestSent}</p><p class="hint">{copy.requestSentHint}</p>

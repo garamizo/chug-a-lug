@@ -105,7 +105,8 @@ test('three sessions rehearse clock, replay, route edits, Tab, Freight and recon
     page.on('dialog', dialog => dialog.accept());
     await page.getByTestId('remove-1').click();
     // The real staged venue picker, using its manual option and isolated disabled Places source.
-    await page.getByRole('button', { name: 'Add a stop at La Grange Road' }).click();
+    // The outbound line's dot; the return leg's carries the same accessible name.
+    await page.getByTestId('station-dot-LAGRANGE').click();
     await page.getByTestId('manual-name').fill('Rehearsal Added Venue');
     await page.getByTestId('manual-add').click();
     await expect(page.getByText('Rehearsal Added Venue', { exact: true })).toBeVisible();
