@@ -1,5 +1,5 @@
-import { test, expect, type Page } from '@playwright/test';
-import { clearLockedCrawls, seedLockedCrawl } from './helpers';
+import { test, expect } from '@playwright/test';
+import { clearLockedCrawls, login, seedLockedCrawl } from './helpers';
 import { copy } from '../../src/lib/labels';
 
 const ADMIN = process.env.ADMIN_PASSWORD ?? 'admin-test-password';
@@ -16,14 +16,6 @@ const venuesFor: Record<string, unknown[]> = {
     { source: 'google', id: 'o9', name: 'Union Arcade', kind: 'other', lat: 41.8789, lon: -87.6389, distanceM: 90 }
   ]
 };
-
-async function login(page: Page, name: string, password: string) {
-  await page.goto('/login');
-  await page.getByTestId('name-input').fill(name);
-  await page.getByTestId('password').fill(password);
-  await page.getByTestId('login').click();
-  await expect(page.getByTestId('name')).toHaveText(name);
-}
 
 test.beforeEach(async ({ page }) => {
   await page.route('**/api/places/nearby**', (route) => {

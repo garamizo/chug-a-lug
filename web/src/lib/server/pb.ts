@@ -31,7 +31,7 @@ export async function requireUser(request: Request): Promise<UserRecord> {
   if (!token) throw error(401, 'Log in first.');
   const hit = cache.get(token);
   if (hit && hit.until > Date.now()) return hit.user;
-  const res = await fetch(`${serverEnv.pbUrl}/api/collections/users/auth-refresh`, { method: 'POST', headers: { Authorization: token } });
+  const res = await fetch(`${serverEnv.pbUrl}/api/crawl/me`, { headers: { Authorization: token } });
   if (!res.ok) throw error(401, 'Your session expired. Log in again.');
   const user = (await res.json()).record as UserRecord;
   if (cache.size > 200) cache.clear();

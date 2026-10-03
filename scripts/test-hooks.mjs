@@ -39,7 +39,7 @@ for (const sim of [false, true]) {
       await setTimeout(200);
     }
     if (!healthy) throw new Error('Test PocketBase did not become healthy');
-    test = spawn('npm', sim ? ['exec', '--', 'vitest', 'run', 'tests/hooks/simulationEvents.test.ts'] : ['run', 'test:hooks'], {
+    test = spawn('npm', sim ? ['exec', '--', 'vitest', 'run', 'tests/hooks/simulationEvents.test.ts', 'tests/hooks/rehearsalLogin.test.ts'] : ['run', 'test:hooks'], {
       cwd: 'web', stdio: 'inherit', env: {
         ...process.env, PB_URL: 'http://127.0.0.1:18090', PB_ADMIN_EMAIL: 'tests@chugalug.invalid',
         PB_ADMIN_PASSWORD: 'local-test-password-only', CREW_PASSWORD: 'crew-test-password', ADMIN_PASSWORD: 'admin-test-password',

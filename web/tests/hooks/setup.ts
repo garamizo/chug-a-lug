@@ -12,8 +12,6 @@ export function post(path: string, body: unknown, token?: string) {
   });
 }
 
-export const login = (name: string, password: string = CREW_PASSWORD) => post('/api/crawl/login', { name, password });
-
 export async function superuserToken(): Promise<string> {
   const response = await post('/api/collections/_superusers/auth-with-password', {
     identity: ADMIN_EMAIL, password: ADMIN_PASSWORD
@@ -35,37 +33,32 @@ export async function deleteUserByName(name: string): Promise<void> {
   }
 }
 
-// Hook test files share one PocketBase and one client IP (see login.test.ts's rate-limit test,
-// which intentionally exhausts the shared 20-per-15-min login budget). If that file's tests run
-// before this one's setup, /api/crawl/login can 429 here through no fault of the caller; fall
-// back to creating the identity directly and minting a token via impersonation, which does not
-// touch the login rate limiter.
-async function seedUserToken(name: string, opts: { admin?: boolean } = {}): Promise<{ token: string; id: string }> {
-  const token = await superuserToken();
-  const create = await fetch(`${PB}/api/collections/users/records`, {
-    method: 'POST',
-    headers: { 'content-type': 'application/json', Authorization: token },
-    body: JSON.stringify({
-      name, name_key: name.trim().toLowerCase(),
-      password: 'seed-test-password-1', passwordConfirm: 'seed-test-password-1',
-      verified: true, is_admin: !!opts.admin
-    })
-  });
-  if (!create.ok) throw new Error(`Seed user failed: ${create.status}`);
-  const record = await create.json();
-  const impersonate = await fetch(`${PB}/api/collections/users/impersonate/${record.id}`, {
-    method: 'POST', headers: { Authorization: token }
-  });
-  if (!impersonate.ok) throw new Error(`Impersonate failed: ${impersonate.status}`);
-  return { token: (await impersonate.json()).token, id: record.id };
-}
+const hexEmail = (key: string) => `${Buffer.from(key).toString('hex')}@test.invalid`;
 
+/** A session for `name`, created on first use: superuser find-or-create, then impersonation. */
 export async function loginToken(name: string, password: string = CREW_PASSWORD): Promise<{ token: string; id: string }> {
-  const response = await login(name, password);
-  if (response.status === 429) return seedUserToken(name, { admin: password === ADMIN_LOGIN_PASSWORD });
-  if (!response.ok) throw new Error(`Login failed: ${response.status}`);
-  const json = await response.json();
-  return { token: json.token, id: json.record.id };
+  const su = await superuserToken();
+  const display = name.trim().replace(/\s+/g, ' '), key = display.toLowerCase();
+  const admin = password === ADMIN_LOGIN_PASSWORD;
+  const query = new URLSearchParams({ filter: `name_key=${JSON.stringify(key)}` });
+  const found = await (await fetch(`${PB}/api/collections/users/records?${query}`, { headers: { Authorization: su } })).json();
+  let user = found.items?.[0];
+  if (!user) {
+    const create = await fetch(`${PB}/api/collections/users/records`, {
+      method: 'POST', headers: { 'content-type': 'application/json', Authorization: su },
+      body: JSON.stringify({ name: display, name_key: key, email: hexEmail(key), verified: true, is_admin: admin,
+        password: 'seed-test-password-1', passwordConfirm: 'seed-test-password-1' })
+    });
+    if (!create.ok) throw new Error(`Seed user failed: ${create.status} ${await create.text()}`);
+    user = await create.json();
+  } else if (admin && !user.is_admin) {
+    await fetch(`${PB}/api/collections/users/records/${user.id}`, { method: 'PATCH', headers: { 'content-type': 'application/json', Authorization: su }, body: JSON.stringify({ is_admin: true }) });
+  }
+  // Explicit and long: some suites move the clock months ahead. These tokens are not refreshable.
+  const impersonate = await fetch(`${PB}/api/collections/users/impersonate/${user.id}`, {
+    method: 'POST', headers: { Authorization: su, 'content-type': 'application/json' }, body: JSON.stringify({ duration: 400 * 86400 }) });
+  if (!impersonate.ok) throw new Error(`Impersonate failed: ${impersonate.status}`);
+  return { token: (await impersonate.json()).token, id: user.id };
 }
 
 export function get(path: string, token?: string) {

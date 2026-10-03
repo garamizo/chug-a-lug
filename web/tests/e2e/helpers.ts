@@ -9,11 +9,31 @@ function exactly(text: string): RegExp {
   return new RegExp(`^${text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`);
 }
 
+const ADMIN = process.env.ADMIN_PASSWORD ?? 'admin-test-password';
+const BASE = 'http://127.0.0.1:15173';
+const COOKIE = process.env.PUBLIC_SIM === '1' ? 'pb_auth_rehearsal' : 'pb_auth';
+
+/** Superuser find-or-create plus impersonation: a real session without the sign-in UI. */
+export async function sessionFor(name: string, admin = false): Promise<{ token: string; record: Record<string, unknown> }> {
+  const su = await superuserToken();
+  const display = name.trim().replace(/\s+/g, ' '), key = display.toLowerCase();
+  const query = new URLSearchParams({ filter: `name_key=${JSON.stringify(key)}` });
+  let user = (await (await fetch(`${PB}/api/collections/users/records?${query}`, { headers: { Authorization: su } })).json()).items?.[0];
+  if (!user) user = await create('users', { name: display, name_key: key, email: `${Buffer.from(key).toString('hex')}@test.invalid`,
+    verified: true, is_admin: admin, password: 'seed-test-password-1', passwordConfirm: 'seed-test-password-1' }, su);
+  else if (admin && !user.is_admin) await fetch(`${PB}/api/collections/users/records/${user.id}`, {
+    method: 'PATCH', headers: { 'content-type': 'application/json', Authorization: su }, body: JSON.stringify({ is_admin: true }) });
+  // 400 days: several specs move the browser clock to December 2026, past a 30-day token.
+  const res = await fetch(`${PB}/api/collections/users/impersonate/${user.id}`, {
+    method: 'POST', headers: { Authorization: su, 'content-type': 'application/json' }, body: JSON.stringify({ duration: 400 * 86400 }) });
+  if (!res.ok) throw new Error(`Impersonate failed: ${res.status}`);
+  return res.json();
+}
+
 export async function login(page: Page, name: string, password: string) {
-  await page.goto('/login');
-  await page.getByTestId('name-input').fill(name);
-  await page.getByTestId('password').fill(password);
-  await page.getByTestId('login').click();
+  const { token, record } = await sessionFor(name, password === ADMIN);
+  await page.context().addCookies([{ name: COOKIE, value: encodeURIComponent(JSON.stringify({ token, record })), url: BASE }]);
+  await page.goto('/');
   // The tab bar mounts off `liveDay.isToday` alone, so on the event day it can render on `/` for
   // the instant before the home page's own effect redirects to `/live`. A check-then-assert (see
   // if the name shows, then assert its text) loses that race: the name can vanish between the two
@@ -43,14 +63,14 @@ export async function superuserToken(): Promise<string> {
   return (await res.json()).token;
 }
 
-const create = async (collection: string, body: unknown, token: string) => {
+async function create(collection: string, body: unknown, token: string) {
   const res = await fetch(`${PB}/api/collections/${collection}/records`, {
     method: 'POST', headers: { 'content-type': 'application/json', Authorization: token },
     body: JSON.stringify(body)
   });
   if (!res.ok) throw new Error(`Create ${collection} failed: ${res.status} ${await res.text()}`);
   return res.json();
-};
+}
 
 /** Removes every locked itinerary so one test's crawl cannot become another's. */
 export async function clearLockedCrawls(): Promise<void> {
