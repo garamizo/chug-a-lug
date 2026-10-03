@@ -1,5 +1,5 @@
 import { expect, test, devices, type Page } from '@playwright/test';
-import { login } from '../e2e/helpers';
+import { login, openTab } from '../e2e/helpers';
 import { admin } from './setup';
 import { copy } from '../../src/lib/labels';
 async function token(page: Page) {
@@ -133,6 +133,7 @@ test('three sessions rehearse clock, replay, route edits, Tab, Freight and recon
     await expect(other.getByTestId('pinned-bulletin')).toBeHidden();
     await crew.goto('/live');
     await expect(crew.getByTestId('departure-board')).toBeVisible();
+    await openTab(crew); // the Tab is a sheet over Live, opened from the tab bar
     await crew.getByTestId('drink-beer').click();
     await expect(crew.getByTestId('tab-undo')).toBeVisible();
     await crew.getByTestId('drink-water').click();
@@ -165,6 +166,7 @@ test('three sessions rehearse clock, replay, route edits, Tab, Freight and recon
     await crew.screenshot({ path: info.outputPath('board.png'), fullPage: true });
     await crewContext.setOffline(true);
     await expect(crew.getByTestId('simulation-status')).toHaveAttribute('data-status', /Not synchronized/);
+    await openTab(crew);
     await crew.getByTestId('drink-beer').click();
     await expect(crew.getByRole('alert')).toHaveText(copy.noSignal);
     expect((await pb.collection('drink_entries').getFullList()).length).toBe(1);
