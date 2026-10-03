@@ -20,7 +20,7 @@ export const GET: RequestHandler = async ({ request }) => {
 };
 export const POST: RequestHandler = async ({ request }) => {
   try {
-    const user = await requireUser(request);
+    const user = await requireUser(request, { fresh: true });
     if (!user.is_admin) throw error(403, copy.simAdminOnly);
   } catch (err) { return failure(err); }
   let body: Record<string, unknown>;

@@ -68,22 +68,56 @@ export const joinStatus = (request_id: string, secret: string) =>
   pb.send<{ status: string }>('/api/crawl/join/status', { method: 'POST', body: { request_id, secret } });
 export const resendJoin = (request_id: string, secret: string) =>
   pb.send('/api/crawl/join/resend', { method: 'POST', body: { request_id, secret } });
+const DAY_MS = 86400e3;
+/** users.authToken.duration, set by the crew-access migration. */
+const TOKEN_SECONDS = 90 * 86400;
+
+/** PocketBase itself said no: a JSON error with a message. A challenge page from the edge (Cloudflare
+ *  Bot Fight Mode answers 403 with HTML) or a dead network is no reason to end a session. */
+function refusedByPocketBase(e: unknown): boolean {
+  const err = e as { status?: number; response?: { message?: unknown } };
+  return (err?.status === 401 || err?.status === 403) && typeof err.response?.message === 'string' && err.response.message !== '';
+}
+
+/** When the token was minted: `iat` if it carries one, else its expiry minus the lifetime. */
+function issuedAt(token: string): number {
+  const p = getTokenPayload(token);
+  return typeof p.iat === 'number' ? p.iat * 1000 : (Number(p.exp ?? 0) - TOKEN_SECONDS) * 1000;
+}
+
 /**
- * Spec §5, on every app open: ask who we are (GET /api/crawl/me, which mints nothing), and renew
- * the token only in its last week. Only a 401/403 ends the session; no signal keeps it (offline
- * event day). Impersonated test sessions are long-lived and never reach the renewal branch.
+ * Spec §5, on every app open: ask who we are (GET /api/crawl/me, which mints nothing), apply the
+ * record it returns (a promotion or a rename shows without signing in again), and renew a token
+ * issued more than a day ago, so anyone who opens the app now and then stays aboard for the event.
+ *
+ * Only PocketBase's own 401/403 from /me ends the session; no signal keeps it (offline event day),
+ * and a failed renewal never does (impersonated test sessions cannot be refreshed). Every answer is
+ * applied only while the store still holds the token it was asked about: a logout or a switch of
+ * account in the meantime is never undone, and its outcome is then 'ok' (nothing to do).
  */
 export async function refreshSession(): Promise<'ok' | 'signed_out' | 'offline'> {
   if (!pb.authStore.isValid) return 'signed_out';
+  const token = pb.authStore.token;
+  const current = () => pb.authStore.token === token;
+  let me: { record?: AuthRecord } | undefined;
   try {
-    await pb.send('/api/crawl/me', { method: 'GET' });
-    const exp = Number(getTokenPayload(pb.authStore.token).exp ?? 0) * 1000;
-    if (exp - Date.now() < 7 * 86400e3) await pb.collection('users').authRefresh();
-    return 'ok';
+    me = await pb.send('/api/crawl/me', { method: 'GET', headers: { Authorization: token } });
   } catch (e) {
-    const status = (e as { status?: number }).status ?? 0;
-    return status === 401 || status === 403 ? 'signed_out' : 'offline';
+    if (!current()) return 'ok';
+    return refusedByPocketBase(e) ? 'signed_out' : 'offline';
   }
+  if (!current()) return 'ok';
+  if (me?.record) pb.authStore.save(token, me.record);
+  if (getTokenPayload(token).refreshable !== false && Date.now() - issuedAt(token) > DAY_MS) {
+    try {
+      // A raw call, not authRefresh(): the SDK would save its answer into the shared store whatever
+      // happened to the session meanwhile.
+      const fresh = await pb.send<{ token?: string; record?: AuthRecord }>('/api/collections/users/auth-refresh',
+        { method: 'POST', headers: { Authorization: token } });
+      if (current() && fresh?.token) pb.authStore.save(fresh.token, fresh.record ?? pb.authStore.record);
+    } catch { /* keep the current token; the next open tries again */ }
+  }
+  return 'ok';
 }
 
 export function logout(): void {

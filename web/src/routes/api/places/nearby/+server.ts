@@ -5,10 +5,12 @@ import { nearbyForStation } from '$lib/server/places/nearby';
 import { describePbError } from '$lib/server/places/store';
 
 export const GET: RequestHandler = async ({ request, url }) => {
-  const user = await requireUser(request);
+  // A refresh spends the Places budget and is the Conductor's alone: check the session afresh.
+  const wantsRefresh = url.searchParams.get('refresh') === '1';
+  const user = await requireUser(request, { fresh: wantsRefresh });
   const station = url.searchParams.get('station') ?? '';
   if (!/^[A-Z0-9_-]{1,32}$/i.test(station)) throw error(400, 'station is required.');
-  const refresh = url.searchParams.get('refresh') === '1' && user.is_admin;
+  const refresh = wantsRefresh && user.is_admin;
   try {
     return json(await nearbyForStation(station, refresh));
   } catch (err) {

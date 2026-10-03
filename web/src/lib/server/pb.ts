@@ -24,18 +24,26 @@ export function userPb(request: Request): PocketBase {
 }
 
 const cache = new Map<string, { user: UserRecord; until: number }>();
+const TTL = 60_000;
 
-/** Validates the browser's PocketBase token against PocketBase; cached five minutes per token. */
-export async function requireUser(request: Request): Promise<UserRecord> {
+/**
+ * Validates the browser's PocketBase token against PocketBase (`GET /api/crawl/me`), cached a minute
+ * per token. `fresh` skips the cache: every admin-gated or write endpoint passes it, so a put-off or
+ * demoted Conductor loses them at once rather than a minute later.
+ */
+export async function requireUser(request: Request, opts: { fresh?: boolean } = {}): Promise<UserRecord> {
   const token = request.headers.get('authorization') ?? '';
   if (!token) throw error(401, 'Log in first.');
   const hit = cache.get(token);
-  if (hit && hit.until > Date.now()) return hit.user;
+  if (!opts.fresh && hit && hit.until > Date.now()) return hit.user;
   const res = await fetch(`${serverEnv.pbUrl}/api/crawl/me`, { headers: { Authorization: token } });
-  if (!res.ok) throw error(401, 'Your session expired. Log in again.');
+  if (!res.ok) {
+    cache.delete(token);
+    throw error(401, 'Your session expired. Log in again.');
+  }
   const user = (await res.json()).record as UserRecord;
   if (cache.size > 200) cache.clear();
-  cache.set(token, { user, until: Date.now() + 5 * 60_000 });
+  cache.set(token, { user, until: Date.now() + TTL });
   return user;
 }
 

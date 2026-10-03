@@ -58,7 +58,7 @@ const fields = (s: CommitStop) => ({
 // entry. When the clock is paused, action_order breaks timestamp ties so the latest accepted anchor
 // still wins.)
 export const POST: RequestHandler = async ({ request }) => {
-  const user = await requireUser(request);
+  const user = await requireUser(request, { fresh: true });
   if (!user.is_admin) throw error(403, 'Only the Conductor can change The Route.');
 
   const body = (await request.json()) as CommitBody;
