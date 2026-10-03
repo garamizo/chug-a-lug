@@ -291,6 +291,35 @@ test('another crew member can read and cheer a draft but not change it, even by 
   await other.close();
 });
 
+test('a slow first comments load does not wipe a newer one', async ({ page }) => {
+  await login(page, 'E2E Latecomer', process.env.CREW_PASSWORD ?? 'crew-test-password');
+  await page.getByTestId('nav-plan').click();
+  await page.getByTestId('draft-title').fill('E2E Slow Chat');
+  await page.getByTestId('create-draft').click();
+  await expect(page).toHaveURL(/\/plan\/[a-z0-9]{15}\/edit$/);
+  const draftUrl = page.url().replace(/\/edit$/, '');
+  // The view screen's first comments load answers (empty) at once but reaches the page late, after
+  // the comment posted meanwhile has already been shown.
+  let stale: (() => void) | undefined;
+  const staleLanded = new Promise<void>((resolve) => { stale = resolve; });
+  let first = true;
+  await page.route(/\/api\/collections\/comments\/records\?.*itineraries/, async (route) => {
+    if (!first) return route.continue();
+    first = false;
+    const response = await route.fetch();
+    await new Promise((r) => setTimeout(r, 1500));
+    await route.fulfill({ response }).catch(() => {});
+    stale!();
+  });
+  await page.goto(draftUrl);
+  await page.getByTestId('comment-input').fill('Right on time');
+  await page.getByTestId('comment-post').click();
+  await expect(page.getByTestId('comments')).toContainText('Right on time');
+  await staleLanded;
+  await page.waitForTimeout(300);
+  await expect(page.getByTestId('comments')).toContainText('Right on time');
+});
+
 test('the builder deletes their draft from the board with the trash icon', async ({ page }) => {
   await login(page, 'E2E Tidy', process.env.CREW_PASSWORD ?? 'crew-test-password');
   await page.getByTestId('nav-plan').click();

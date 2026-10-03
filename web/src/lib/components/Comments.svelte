@@ -19,8 +19,15 @@
   const menu = new HoldMenu();
   const filter = $derived(pb.filter('target_collection = {:c} && target_id = {:t}', { c: targetCollection, t: targetId }));
 
+  // Loads overlap (mount, realtime pings, the send's own refresh) and may finish out of order: a slow
+  // early answer, often the empty first page, must not overwrite a newer one.
+  let started = 0, applied = 0;
   async function load() {
-    try { comments = await pb.collection('comments').getFullList<Comment>({ filter, sort: 'created', expand: 'user' }); } catch { /* keep last */ }
+    const mine = ++started;
+    try {
+      const list = await pb.collection('comments').getFullList<Comment>({ filter, sort: 'created', expand: 'user' });
+      if (mine > applied) { applied = mine; comments = list; }
+    } catch { /* keep last */ }
   }
   onMount(() => { void load(); return subscribe('comments', filter, load); });
 
