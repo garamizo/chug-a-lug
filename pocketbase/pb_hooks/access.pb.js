@@ -1,0 +1,26 @@
+// Sign-in guards (spec §2.8). A refresh also fires onRecordAuthRequest with an empty authMethod,
+// so only real sign-ins are guarded and logged here; refreshes have their own hook.
+onRecordAuthRequest((e) => {
+  const crew = require(`${__hooks}/crew.js`)
+  const method = crew.METHODS[e.authMethod]
+  if (method) {
+    const refused = crew.signInGuard($app, e.record, method, crew.clientInfo(e))
+    if (refused) return e.json(refused.status, { message: refused.message })
+  }
+  e.next()
+}, 'users')
+
+onRecordAuthRefreshRequest((e) => {
+  if (e.record.getBool('blocked')) return e.json(403, { message: 'Your seat was taken away. Ask the Conductor.' })
+  const seen = e.record.getDateTime('last_seen')
+  if (seen.isZero() || Date.now() / 1000 - seen.unix() > 600) {
+    $app.db().newQuery('UPDATE users SET last_seen = {:t} WHERE id = {:id}').bind({ t: new Date().toISOString().replace('T', ' '), id: e.record.id }).execute()
+  }
+  e.next()
+}, 'users')
+
+// PocketBase sends OTP mail after replying, so success is logged only once the send returns.
+onMailerRecordOTPSend((e) => {
+  e.next()
+  require(`${__hooks}/crew.js`).logEvent($app, { event: 'code_sent', method: 'email', user: e.record.id, email: e.record.email() })
+}, 'users')

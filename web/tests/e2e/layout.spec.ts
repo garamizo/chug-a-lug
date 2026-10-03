@@ -98,3 +98,10 @@ test('off the event day there is no tab bar and home stays home', async ({ page 
   await expect(page.getByTestId('nav-route')).toHaveAttribute('href', '/route');
   await expect(page.getByTestId('nav-live')).toHaveAttribute('href', '/live');
 });
+
+test('every page carries the security headers', async ({ request }) => {
+  const res = await request.get('/login');
+  expect(res.headers()['x-content-type-options']).toBe('nosniff');
+  expect(res.headers()['referrer-policy']).toBe('strict-origin-when-cross-origin');
+  expect(res.headers()['content-security-policy']).toBe("frame-ancestors 'none'");
+});
