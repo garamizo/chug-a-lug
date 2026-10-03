@@ -24,3 +24,21 @@ onMailerRecordOTPSend((e) => {
   e.next()
   require(`${__hooks}/crew.js`).logEvent($app, { event: 'code_sent', method: 'email', user: e.record.id, email: e.record.email() })
 }, 'users')
+
+routerAdd('POST', '/api/crawl/users/{id}/put-off', (e) => require(`${__hooks}/access.js`).setBlocked(e, true))
+routerAdd('POST', '/api/crawl/users/{id}/let-back-on', (e) => require(`${__hooks}/access.js`).setBlocked(e, false))
+routerAdd('GET', '/api/crawl/manifest', (e) => require(`${__hooks}/access.js`).manifest(e))
+
+// Names (spec §2.11): normalised and kept unique for every editor, the admin UI included.
+onRecordUpdateRequest((e) => {
+  const before = e.record.original().getString('name')
+  if (e.record.getString('name') === before) return e.next()
+  const n = require(`${__hooks}/names.js`)(e.record.getString('name'))
+  if (!n) return e.json(400, { message: "Enter a name: 2 to 32 letters, numbers, spaces, or . ' -" })
+  try { if ($app.findFirstRecordByData('users', 'name_key', n.key).id !== e.record.id) return e.json(409, { message: 'That name is taken.' }) } catch (_) {}
+  e.record.set('name', n.display)
+  e.record.set('name_key', n.key)
+  e.next()
+  const crew = require(`${__hooks}/crew.js`)
+  crew.logEvent($app, { event: 'name_changed', user: e.record.id, actor: e.auth ? e.auth.id : '', name: n.display, detail: 'was ' + before }, crew.clientInfo(e))
+}, 'users')

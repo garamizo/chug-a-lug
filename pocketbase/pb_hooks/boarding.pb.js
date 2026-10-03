@@ -13,3 +13,6 @@ onRecordAuthWithOAuth2Request((e) => {
 
 cronAdd('boarding_sweep', '*/5 * * * *', () => require(`${__hooks}/boarding.js`).sweep($app))
 cronAdd('crew_access_daily', '17 3 * * *', () => require(`${__hooks}/boarding.js`).daily($app))
+
+routerAdd('POST', '/api/crawl/boarding/{id}/let-aboard', (e) => require(`${__hooks}/boarding.js`).decide(e, 'aboard'))
+routerAdd('POST', '/api/crawl/boarding/{id}/turn-away', (e) => require(`${__hooks}/boarding.js`).decide(e, 'away'))

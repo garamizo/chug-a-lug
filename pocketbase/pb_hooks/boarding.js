@@ -259,5 +259,63 @@ exports.daily = function (app) {
   app.db().newQuery('DELETE FROM access_log WHERE id NOT IN (SELECT id FROM access_log ORDER BY created DESC LIMIT 10000)').execute()
 }
 
-// Task 6 replaces this stub with the real batched mail.
-exports.notifyConductors = function (app) {}
+exports.notifyConductors = function (app) {
+  const crew = require(`${__hooks}/crew.js`)
+  const limits = require(`${__hooks}/limits.js`)
+  const pending = app.findRecordsByFilter('boarding_requests', "status = 'waiting' && decoy = false && notified_at = ''", 'created', 50, 0)
+  if (!pending.length) return
+  const to = app.findRecordsByFilter('users', 'is_admin = true && verified = true && blocked = false', '', 20, 0).map((u) => u.email()).filter(Boolean)
+  const interval = parseInt($os.getenv('NOTIFY_INTERVAL_SECONDS'), 10)
+  if (!to.length || !limits.consume('notify', 1, isNaN(interval) ? 600 : interval)) return
+  const lines = pending.map((r) => `• ${r.getString('name')} <${r.getString('email')}> — ${r.getString('user_agent').slice(0, 60)} · ${r.getString('country') || '??'} · ${r.getString('created')}`)
+  try {
+    crew.sendMail(app, { to, subject: `${pending.length} waiting to board the Chug-a-Lug`, text: `${lines.join('\n')}\n\nOpen the Crew Board to let them aboard: ${app.settings().meta.appURL}/crew` })
+  } catch (err) {
+    crew.logEvent(app, { event: 'mail_failed', detail: 'conductor notice: ' + String(err).slice(0, 180) })
+    app.db().newQuery("DELETE FROM _crawl_limits WHERE key = 'notify'").execute() // let the sweep retry now
+    return
+  }
+  // One column, by SQL: a decision landing during the send is not overwritten by a stale save.
+  const now = new Date().toISOString().replace('T', ' ')
+  for (const r of pending) app.db().newQuery('UPDATE boarding_requests SET notified_at = {:t} WHERE id = {:id}').bind({ t: now, id: r.id }).execute()
+}
+
+exports.decide = function (e, verdict) {
+  const crew = require(`${__hooks}/crew.js`)
+  const auth = e.auth
+  if (!auth || auth.collection().name !== 'users' || auth.getBool('blocked')) return e.json(401, { message: 'Sign in first.' })
+  const id = e.request.pathValue('id')
+  let result = null, user = null, request = null
+  $app.runInTransaction((tx) => {
+    try { request = tx.findRecordById('boarding_requests', id) } catch (_) { result = [404, 'Request not found.']; return }
+    if (request.getBool('decoy') || request.getString('status') !== 'waiting') { result = [409, 'Someone already answered this one.']; return }
+    if (verdict === 'aboard') {
+      let clash = false
+      try { tx.findFirstRecordByData('users', 'name_key', request.getString('name_key')); clash = true } catch (_) {}
+      try { tx.findAuthRecordByEmail('users', request.getString('email')); clash = true } catch (_) {}
+      if (clash) { result = [409, 'That name or email now belongs to someone aboard. Turn this one away.']; return }
+      user = new Record(tx.findCollectionByNameOrId('users'))
+      user.set('name', request.getString('name'))
+      user.set('name_key', request.getString('name_key'))
+      user.setEmail(request.getString('email'))
+      user.setVerified(true)
+      user.setPassword($security.randomString(40))
+      user.set('approved_by', auth.id)
+      tx.save(user)
+      request.set('user', user.id)
+    }
+    request.set('status', verdict === 'aboard' ? 'aboard' : 'turned_away')
+    request.set('status_at', new Date().toISOString())
+    request.set('decided_by', auth.id)
+    request.set('decided_at', new Date().toISOString())
+    tx.save(request)
+    crew.logEvent(tx, { event: verdict === 'aboard' ? 'let_aboard' : 'turned_away', actor: auth.id, user: user ? user.id : '', name: request.getString('name'), email: request.getString('email'), request: request.id }, crew.clientInfo(e))
+  })
+  if (result) return e.json(result[0], { message: result[1] })
+  if (user) {
+    try { crew.sendMail($app, { to: [user.email()], subject: "You're aboard the Chug-a-Lug", text: `You're aboard! Sign in at ${$app.settings().meta.appURL}/login with this email address or Google.` }) }
+    catch (err) { crew.logEvent($app, { event: 'mail_failed', user: user.id, detail: 'aboard notice: ' + String(err).slice(0, 180) }) }
+    return e.json(200, { user_id: user.id })
+  }
+  return e.json(200, {})
+}
