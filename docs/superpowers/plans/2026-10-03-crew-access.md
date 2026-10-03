@@ -35,7 +35,7 @@ numbers below (§) refer to it.
 - **Ports.**
   - Never touch ports 8090 or 3000, the live stack.
   - Test ports are 15173, 18093 and 18090, plus the new **12525** (SMTP sink), **12526** (sink
-    control) and **12527** (Turnstile fake).
+    control), **12527** (Turnstile fake) and **12528** (fake OIDC provider).
   - One test run at a time across all worktrees.
 - **Copy.** Every user-visible client string goes in `web/src/lib/labels.ts`. Hook error messages
   stay inline, as in today's hooks.
@@ -43,6 +43,13 @@ numbers below (§) refer to it.
   modules *inside* each callback, as `live.pb.js` does.
 - **Transactions.** Never call `limits.consume` (or `logEvent` for a denial event) inside a
   `runInTransaction`, because nested write transactions deadlock SQLite.
+- **No stale saves.** Never `save()` a record you loaded before an `await`, a mail send or another
+  request's chance to run. Either refetch it inside `runInTransaction` and re-check its state, or
+  write one column with SQL (`last_seen`). This is what keeps a put-off or a decision from being
+  undone (Codex plan review #4).
+- **Static test sessions.** Test sessions are impersonation tokens: long-lived and not refreshable.
+  Nothing in the app may call `auth-refresh` just to check a session; use `GET /api/crawl/me`
+  (Task 2).
 - **Times.** UTC everywhere. A PocketBase date filter takes `'YYYY-MM-DD HH:MM:SS.sssZ'`, i.e.
   `new Date(x).toISOString().replace('T', ' ')`.
 - **Production env:** `CONDUCTOR_EMAIL=garamizor@pm.me` goes into `.env` only, never into a
@@ -136,7 +143,12 @@ These are inputs the spec implies but no test exercised, each pinned to a test i
   - `codeFor(to: string): Promise<string>`, the last 6-digit code mailed to `to`;
   - `randomIp(): string`;
   - `postFrom(ip, path, body, token?)`, a POST with `CF-Connecting-IP: ip`;
-  - `runCron(id: string): Promise<void>`.
+  - `turnstileToken(): string`, a fresh single-use `ok-…` token;
+  - `runCron(id: string): Promise<void>`, which only *schedules* the job;
+  - `waitFor<T>(probe: () => Promise<T | null | undefined | false>, ms?: number): Promise<T>`, which
+    polls until truthy;
+  - `oidcCode(identity: {sub: string; email: string; email_verified?: boolean; name?: string}): string`,
+    a code the fake OIDC provider (port 12528) turns into that identity.
 - **Produces:** the test PocketBase environment `CONDUCTOR_EMAIL=conductor@test.invalid`,
   `APP_URL=http://127.0.0.1:15173`, `MAIL_FROM=crew@test.invalid`, `SMTP_HOST=127.0.0.1`,
   `SMTP_PORT=12525`, `TURNSTILE_SECRET=test-turnstile-secret`,
@@ -153,8 +165,9 @@ Expected: `package.json` and `package-lock.json` gain both packages.
 `web/scripts/test-fakes.mjs`:
 
 ```js
-// Disposable stand-ins for Resend (SMTP) and Cloudflare Turnstile, for the test harnesses only.
-// SMTP sink :12525 · control :12526 (GET/DELETE /messages, POST /mode {mode}) · Turnstile :12527.
+// Disposable stand-ins for the harnesses only: Resend (SMTP), Cloudflare Turnstile and an OIDC
+// provider that plays Google. SMTP sink :12525 · control :12526 (GET/DELETE /messages, POST /mode)
+// · Turnstile :12527 (single-use tokens starting "ok") · OIDC :12528 (code = base64url identity JSON).
 import { SMTPServer } from 'smtp-server';
 import { simpleParser } from 'mailparser';
 import { createServer } from 'node:http';
@@ -183,15 +196,34 @@ const control = createServer(async (req, res) => {
   if (req.url === '/mode' && req.method === 'POST') { mode = JSON.parse(await readBody(req)).mode; return send(200, { mode }); }
   send(404, {});
 });
+// Like Cloudflare, a token passes once: a client that resubmits a used token must fail.
+const usedTokens = new Set();
 const turnstile = createServer(async (req, res) => {
   const form = new URLSearchParams(await readBody(req));
+  const token = form.get('response') ?? '';
+  const success = token.startsWith('ok') && !usedTokens.has(token) && form.get('secret') === 'test-turnstile-secret';
+  usedTokens.add(token);
   res.writeHead(200, { 'content-type': 'application/json' });
-  res.end(JSON.stringify({ success: form.get('response') === 'ok' && form.get('secret') === 'test-turnstile-secret' }));
+  res.end(JSON.stringify({ success }));
+});
+// The token endpoint hands the code back as the access token; userinfo decodes it.
+const oidc = createServer(async (req, res) => {
+  const send = (status, body) => { res.writeHead(status, { 'content-type': 'application/json' }); res.end(JSON.stringify(body)); };
+  if (req.url?.startsWith('/token')) {
+    const code = new URLSearchParams(await readBody(req)).get('code') ?? '';
+    return send(200, { access_token: code, token_type: 'Bearer', expires_in: 3600 });
+  }
+  if (req.url?.startsWith('/userinfo')) {
+    try { return send(200, JSON.parse(Buffer.from((req.headers.authorization ?? '').replace(/^Bearer /, ''), 'base64url').toString('utf8'))); }
+    catch { return send(401, {}); }
+  }
+  send(404, {});
 });
 smtp.listen(12525, '127.0.0.1');
 control.listen(12526, '127.0.0.1');
 turnstile.listen(12527, '127.0.0.1');
-for (const signal of ['SIGTERM', 'SIGINT']) process.on(signal, () => { smtp.close(); control.close(); turnstile.close(); process.exit(0); });
+oidc.listen(12528, '127.0.0.1');
+for (const signal of ['SIGTERM', 'SIGINT']) process.on(signal, () => { smtp.close(); control.close(); turnstile.close(); oidc.close(); process.exit(0); });
 ```
 
 - [ ] **Step 3: Pass the environment to every test PocketBase**
@@ -280,11 +312,27 @@ export function postFrom(ip: string, path: string, body: unknown, token?: string
     body: JSON.stringify(body)
   });
 }
-/** Runs a registered cron job now (superuser API). */
+/** Schedules a registered cron job now (superuser API). It returns before the job finishes: follow with waitFor. */
 export async function runCron(id: string): Promise<void> {
   const res = await fetch(`${PB}/api/crons/${id}`, { method: 'POST', headers: { Authorization: await superuserToken() } });
   if (!res.ok) throw new Error(`Cron ${id} failed: ${res.status}`);
 }
+/** Polls until `probe` returns something truthy, or fails after `ms`. */
+export async function waitFor<T>(probe: () => Promise<T | null | undefined | false>, ms = 5000): Promise<T> {
+  const until = Date.now() + ms;
+  for (;;) {
+    const v = await probe();
+    if (v) return v;
+    if (Date.now() > until) throw new Error('waitFor timed out');
+    await new Promise((r) => setTimeout(r, 100));
+  }
+}
+let tokens = 0;
+/** A Turnstile token the fake accepts exactly once. */
+export const turnstileToken = () => `ok-${process.pid}-${++tokens}-${Math.random().toString(36).slice(2)}`;
+/** A code the fake OIDC provider exchanges for this identity. */
+export const oidcCode = (identity: { sub: string; email: string; email_verified?: boolean; name?: string }) =>
+  Buffer.from(JSON.stringify({ email_verified: true, name: 'Fake Person', ...identity })).toString('base64url');
 ```
 
 - [ ] **Step 7: Write the fakes' smoke test**
@@ -293,15 +341,20 @@ export async function runCron(id: string): Promise<void> {
 
 ```ts
 import { expect, it } from 'vitest';
-import { clearMails, mails } from './setup';
+import { clearMails, mails, oidcCode, turnstileToken } from './setup';
 
-it('the SMTP sink and Turnstile fake are reachable', async () => {
+it('the SMTP sink, the single-use Turnstile fake and the OIDC fake are reachable', async () => {
   await clearMails();
   expect(await mails()).toEqual([]);
-  const ok = await fetch('http://127.0.0.1:12527/siteverify', { method: 'POST', body: new URLSearchParams({ secret: 'test-turnstile-secret', response: 'ok' }) });
-  expect((await ok.json()).success).toBe(true);
-  const bad = await fetch('http://127.0.0.1:12527/siteverify', { method: 'POST', body: new URLSearchParams({ secret: 'test-turnstile-secret', response: 'nope' }) });
-  expect((await bad.json()).success).toBe(false);
+  const verify = (response: string) => fetch('http://127.0.0.1:12527/siteverify', { method: 'POST', body: new URLSearchParams({ secret: 'test-turnstile-secret', response }) }).then((r) => r.json());
+  const token = turnstileToken();
+  expect((await verify(token)).success).toBe(true);
+  expect((await verify(token)).success).toBe(false); // used once already
+  expect((await verify('nope')).success).toBe(false);
+  const code = oidcCode({ sub: 's1', email: 'a@test.invalid' });
+  const { access_token } = await (await fetch('http://127.0.0.1:12528/token', { method: 'POST', body: new URLSearchParams({ code }) })).json();
+  const me = await (await fetch('http://127.0.0.1:12528/userinfo', { headers: { Authorization: `Bearer ${access_token}` } })).json();
+  expect(me).toMatchObject({ sub: 's1', email: 'a@test.invalid', email_verified: true });
 });
 ```
 
@@ -312,7 +365,9 @@ Expected: PASS, including `fakes.test.ts`.
 
 - [ ] **Step 9: Spike the PocketBase JSVM APIs (throwaway)**
 
-Prove the names this plan relies on before Task 2 builds on them.
+This step confirms **names and shapes only**. Behaviour is proven by the tests in Tasks 2–6,
+including the runtime OAuth2 interception in `oauth.test.ts`. Do not count the spike as
+verification of anything else.
 1. Create `$SCRATCH/spike/hooks/spike.pb.js`, with `$SCRATCH` the session scratchpad directory, never
    the repo:
 
@@ -361,10 +416,10 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 ### Task 2: The crew-access migration, rehearsal-only login and test session helpers
 
 **Files:**
-- Create: `pocketbase/pb_migrations/1758900000_crew_access.js`,
-  `web/tests/hooks/rehearsalLogin.test.ts`
+- Create: `pocketbase/pb_migrations/1758900000_crew_access.js`, `pocketbase/pb_hooks/session.pb.js`,
+  `web/tests/hooks/rehearsalLogin.test.ts`, `web/tests/hooks/session.test.ts`
 - Modify:
-  - `pocketbase/pb_hooks/login.pb.js`;
+  - `pocketbase/pb_hooks/login.pb.js`, `web/src/lib/server/pb.ts` (`requireUser`);
   - `web/tests/hooks/setup.ts` (`loginToken`), `web/tests/hooks/migrations.test.ts`;
   - `web/tests/e2e/helpers.ts`, `web/tests/e2e/login.spec.ts`,
     `web/tests/e2e/layout.spec.ts:6-11`, `web/tests/e2e/planning.spec.ts:20-25`;
@@ -382,7 +437,11 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
   find-or-create + impersonate. An admin password means `is_admin`. Each user's email is
   `hex(name_key)@test.invalid`.
 - **Produces, e2e:** `sessionFor(name, admin)` returns `{token, record}`; `login(page, name,
-  password)` keeps its signature.
+  password)` keeps its signature. Both mint impersonation tokens with an explicit 400-day duration,
+  because several e2e specs move the browser clock to December 2026.
+- **Produces:** `GET /api/crawl/me` returns 200 `{record}`, 401 for no or invalid token, 403 for a
+  blocked user. It updates `last_seen` at most every 10 min with SQL and **mints no token**.
+  `requireUser` (web) uses it instead of `auth-refresh`.
 
 - [ ] **Step 1: Write the failing migration test**
 
@@ -421,6 +480,7 @@ it('crew access keeps routes for the Conductor and wipes every other user and th
       if (c.getString('name') !== 'Conductor') throw new Error('conductor name: ' + c.getString('name'));
       if (app.findRecordById('itineraries', 'routeroute00001').getString('created_by') !== c.id) throw new Error('route owner');
       app.findRecordById('stops', 'stopstopstop001');
+      app.findRecordById('crawl_settings', 'crawlsettings');
       for (const name of ['comments', 'drink_entries', 'broadcasts', 'event_log', 'votes', 'checkins', 'chat_messages', 'reactions', 'media', 'broadcast_acks', 'approval_votes']) {
         if (app.countRecords(name) !== 0) throw new Error(name + ' not wiped');
       }
@@ -434,6 +494,48 @@ it('crew access keeps routes for the Conductor and wipes every other user and th
     const output = execFileSync(resolve('../pocketbase/pocketbase'), ['migrate', 'up', '--dir', join(dir, 'data'),
       '--migrationsDir', migrations, '--hooksDir', hooks], { encoding: 'utf8', timeout: 15000, env: { ...process.env, CONDUCTOR_EMAIL: 'conductor@test.invalid' } });
     expect(output).toContain('1758905000_verify_crew');
+  } finally { await rm(dir, { recursive: true, force: true }); }
+});
+
+it('crew access reuses an account that already has the Conductor email, but kills its sessions and activity', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'chugalug-crew-reuse-'));
+  try {
+    const migrations = join(dir, 'migrations'), hooks = join(dir, 'hooks');
+    await mkdir(migrations); await mkdir(hooks);
+    for (const name of await readdir('../pocketbase/pb_migrations')) await copyFile(`../pocketbase/pb_migrations/${name}`, join(migrations, name));
+    await writeFile(join(migrations, '1758895000_reuse_fixture.js'), `migrate(app => {
+      const u = new Record(app.findCollectionByNameOrId('users'));
+      u.set('id', 'legacyconductr1'); u.set('name', 'Gui'); u.set('name_key', 'gui'); u.setEmail('conductor@test.invalid');
+      u.setPassword('legacy-password-only'); u.set('tokenKey', 'legacy-token-key-legacy-token-key'); app.save(u);
+      const it = new Record(app.findCollectionByNameOrId('itineraries'));
+      it.set('title', 'Mine'); it.set('status', 'draft'); it.set('event_date', '2026-12-26'); it.set('start_time', '11:00'); it.set('created_by', u.id); app.save(it);
+      const stop = new Record(app.findCollectionByNameOrId('stops'));
+      stop.set('itinerary', it.id); stop.set('name', 'S'); stop.set('station_id', 'CUS'); app.save(stop);
+      const d = new Record(app.findCollectionByNameOrId('drink_entries'));
+      d.set('user', u.id); d.set('stop', stop.id); d.set('kind', 'beer'); d.set('at', '2026-12-26T18:00:00Z'); app.save(d);
+    }, app => {})`);
+    await writeFile(join(migrations, '1758905000_verify_reuse.js'), `migrate(app => {
+      const c = app.findRecordById('users', 'legacyconductr1');
+      if (!c.getBool('is_admin') || !c.verified()) throw new Error('not promoted');
+      if (c.tokenKey() === 'legacy-token-key-legacy-token-key') throw new Error('legacy sessions survive');
+      if (app.countRecords('drink_entries') !== 0) throw new Error('conductor activity survived');
+    }, app => {})`);
+    const output = execFileSync(resolve('../pocketbase/pocketbase'), ['migrate', 'up', '--dir', join(dir, 'data'),
+      '--migrationsDir', migrations, '--hooksDir', hooks], { encoding: 'utf8', timeout: 15000, env: { ...process.env, CONDUCTOR_EMAIL: 'conductor@test.invalid' } });
+    expect(output).toContain('1758905000_verify_reuse');
+  } finally { await rm(dir, { recursive: true, force: true }); }
+});
+
+it('crew access can be rolled back and applied again', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'chugalug-crew-redo-'));
+  try {
+    const migrations = join(dir, 'migrations'), hooks = join(dir, 'hooks');
+    await mkdir(migrations); await mkdir(hooks);
+    for (const name of await readdir('../pocketbase/pb_migrations')) await copyFile(`../pocketbase/pb_migrations/${name}`, join(migrations, name));
+    const run = (...args: string[]) => execFileSync(resolve('../pocketbase/pocketbase'), ['migrate', ...args, '--dir', join(dir, 'data'),
+      '--migrationsDir', migrations, '--hooksDir', hooks], { encoding: 'utf8', timeout: 15000, env: { ...process.env, CONDUCTOR_EMAIL: 'conductor@test.invalid' } });
+    run('up'); run('down', '1');
+    expect(run('up')).toContain('1758900000_crew_access');
   } finally { await rm(dir, { recursive: true, force: true }); }
 });
 
@@ -556,12 +658,18 @@ migrate((app) => {
   // 4. Routes belong to the Conductor. Raw SQL: no planner hooks, no recompute.
   app.db().newQuery('UPDATE itineraries SET created_by = {:id}').bind({ id: conductor.id }).execute()
 
-  // 5. Bulletins block user deletion (required, not cascading) and the Train Sheet copies their
-  // bodies, so both go first. Then everyone else; PocketBase cascades their activity and files.
-  app.db().newQuery('DELETE FROM broadcast_acks').execute()
-  app.db().newQuery('DELETE FROM broadcasts').execute()
-  app.db().newQuery('DELETE FROM event_log').execute()
+  // 5. Every personal row goes, the Conductor's included (an email-matched legacy account keeps
+  // nothing but its routes). app.delete removes Freight and comment files with their rows; none of
+  // these collections has a delete hook. Bulletins go too: they block user deletion and the Train
+  // Sheet copies their bodies. Then everyone else, and the Conductor's old sessions die.
+  for (const name of ['reactions', 'chat_messages', 'media', 'drink_entries', 'checkins', 'broadcast_acks', 'broadcasts',
+    'event_log', 'approval_votes', 'votes', 'comments']) {
+    for (const r of app.findAllRecords(name)) app.delete(r)
+  }
   for (const u of app.findAllRecords('users')) if (u.id !== conductor.id) app.delete(u)
+  const kept = app.findRecordById('users', conductor.id)
+  kept.refreshTokenKey()
+  app.save(kept)
 
   // 6. Email becomes the identity; options and rules for the new sign-in paths.
   const fresh = app.findCollectionByNameOrId('users')
@@ -581,17 +689,24 @@ migrate((app) => {
     if (!taken) { const c = app.findRecordById('users', conductor.id); c.set('name', 'Conductor'); c.set('name_key', 'conductor'); app.save(c) }
   }
 
+  // PB_RATE_LIMITS=off exists for the test harnesses only, which drive everything from one IP;
+  // config.pb.js applies the same switch on every start. Rules are added idempotently.
   const s = app.settings()
   s.trustedProxy.headers = ['CF-Connecting-IP']
   s.trustedProxy.useLeftmostIP = false
-  s.rateLimits.enabled = true
-  s.rateLimits.rules = s.rateLimits.rules.concat([
+  s.rateLimits.enabled = $os.getenv('PB_RATE_LIMITS') !== 'off'
+  const ours = [
     { label: 'users:requestOTP', maxRequests: 5, duration: 600, audience: '' },
     { label: 'users:authWithOTP', maxRequests: 10, duration: 600, audience: '' },
     { label: 'users:authWithOAuth2', maxRequests: 10, duration: 600, audience: '' }
-  ])
+  ]
+  s.rateLimits.rules = s.rateLimits.rules.filter((r) => !ours.some((o) => o.label === r.label)).concat(ours)
   app.save(s)
 }, (app) => {
+  const s = app.settings()
+  s.trustedProxy.headers = []
+  s.rateLimits.rules = s.rateLimits.rules.filter((r) => ['users:requestOTP', 'users:authWithOTP', 'users:authWithOAuth2'].indexOf(r.label) < 0)
+  app.save(s)
   // Schema only: the wiped data is gone. Restore a backup (OPERATIONS.md) to get it back.
   for (const name of ['access_log', 'boarding_requests']) app.delete(app.findCollectionByNameOrId(name))
   const users = app.findCollectionByNameOrId('users')
@@ -683,7 +798,9 @@ export async function loginToken(name: string, password: string = CREW_PASSWORD)
   } else if (admin && !user.is_admin) {
     await fetch(`${PB}/api/collections/users/records/${user.id}`, { method: 'PATCH', headers: { 'content-type': 'application/json', Authorization: su }, body: JSON.stringify({ is_admin: true }) });
   }
-  const impersonate = await fetch(`${PB}/api/collections/users/impersonate/${user.id}`, { method: 'POST', headers: { Authorization: su } });
+  // Explicit and long: some suites move the clock months ahead. These tokens are not refreshable.
+  const impersonate = await fetch(`${PB}/api/collections/users/impersonate/${user.id}`, {
+    method: 'POST', headers: { Authorization: su, 'content-type': 'application/json' }, body: JSON.stringify({ duration: 400 * 86400 }) });
   if (!impersonate.ok) throw new Error(`Impersonate failed: ${impersonate.status}`);
   return { token: (await impersonate.json()).token, id: user.id };
 }
@@ -702,7 +819,7 @@ const names: string[] = [];
 const name = (prefix: string) => { const v = `${prefix} ${Math.floor(Math.random() * 1e6)}`; names.push(v); return v; };
 const login = (n: string, password = CREW_PASSWORD) => post('/api/crawl/login', { name: n, password });
 
-describe('rehearsal login (SIM=1 only)', () => {
+describe.skipIf(process.env.SIM !== '1')('rehearsal login (SIM=1 only)', () => {
   afterAll(async () => { for (const n of names) await deleteUserByName(n); });
 
   it('creates the identity with a rehearsal email and reuses it case-insensitively', async () => {
@@ -730,6 +847,55 @@ describe('rehearsal login (SIM=1 only)', () => {
 3. In `scripts/test-hooks.mjs`, change the SIM pass's vitest args to
    `['exec', '--', 'vitest', 'run', 'tests/hooks/simulationEvents.test.ts', 'tests/hooks/rehearsalLogin.test.ts']`.
 
+- [ ] **Step 7b: `GET /api/crawl/me`, and `requireUser` stops refreshing tokens**
+
+Impersonation tokens cannot be refreshed, and nothing needs a new token just to learn who is
+calling. Write the test first, `web/tests/hooks/session.test.ts`:
+
+```ts
+import { expect, it } from 'vitest';
+import { PB, get, loginToken, superuserToken } from './setup';
+
+it('names the caller without minting a token, and refuses blocked or missing sessions', async () => {
+  const { token, id } = await loginToken(`Me ${Math.floor(Math.random() * 1e6)}`);
+  const me = await get('/api/crawl/me', token);
+  expect(me.status).toBe(200);
+  const body = await me.json();
+  expect(body.record.id).toBe(id);
+  expect(body.token).toBeUndefined();
+  expect((await get('/api/crawl/me')).status).toBe(401);
+  await fetch(`${PB}/api/collections/users/records/${id}`, { method: 'PATCH',
+    headers: { Authorization: await superuserToken(), 'content-type': 'application/json' }, body: JSON.stringify({ blocked: true }) });
+  expect((await get('/api/crawl/me', token)).status).toBe(403);
+});
+```
+
+`pocketbase/pb_hooks/session.pb.js`:
+
+```js
+// GET /api/crawl/me — who this token belongs to, without minting a token. The app checks it on
+// every open and the web server's requireUser uses it: impersonated test sessions are not
+// refreshable, and a check must never write anything but last_seen (one column, no stale save).
+routerAdd('GET', '/api/crawl/me', (e) => {
+  const u = e.auth
+  if (!u || u.collection().name !== 'users') return e.json(401, { message: 'Sign in first.' })
+  if (u.getBool('blocked')) return e.json(403, { message: 'Your seat was taken away. Ask the Conductor.' })
+  const seen = u.getDateTime('last_seen')
+  if (seen.isZero() || Date.now() / 1000 - seen.unix() > 600) {
+    $app.db().newQuery('UPDATE users SET last_seen = {:t} WHERE id = {:id}').bind({ t: new Date().toISOString().replace('T', ' '), id: u.id }).execute()
+  }
+  return e.json(200, { record: u })
+})
+```
+
+In `web/src/lib/server/pb.ts`, `requireUser` changes its fetch to:
+
+```ts
+  const res = await fetch(`${serverEnv.pbUrl}/api/crawl/me`, { headers: { Authorization: token } });
+```
+
+Its error message, cache and the `record` read stay the same.
+
 - [ ] **Step 8: Switch the e2e helper to minted sessions**
 
 In `web/tests/e2e/helpers.ts`, replace the body of `login` and add `sessionFor`. Everything after
@@ -750,7 +916,9 @@ export async function sessionFor(name: string, admin = false): Promise<{ token: 
     verified: true, is_admin: admin, password: 'seed-test-password-1', passwordConfirm: 'seed-test-password-1' }, su);
   else if (admin && !user.is_admin) await fetch(`${PB}/api/collections/users/records/${user.id}`, {
     method: 'PATCH', headers: { 'content-type': 'application/json', Authorization: su }, body: JSON.stringify({ is_admin: true }) });
-  const res = await fetch(`${PB}/api/collections/users/impersonate/${user.id}`, { method: 'POST', headers: { Authorization: su } });
+  // 400 days: several specs move the browser clock to December 2026, past a 30-day token.
+  const res = await fetch(`${PB}/api/collections/users/impersonate/${user.id}`, {
+    method: 'POST', headers: { Authorization: su, 'content-type': 'application/json' }, body: JSON.stringify({ duration: 400 * 86400 }) });
   if (!res.ok) throw new Error(`Impersonate failed: ${res.status}`);
   return res.json();
 }
@@ -803,7 +971,7 @@ Expected: PASS. `npm run check` will flag any import of the removed `login` expo
 - [ ] **Step 11: Commit**
 
 ```bash
-git add pocketbase/pb_migrations/1758900000_crew_access.js pocketbase/pb_hooks/login.pb.js web/tests/hooks/setup.ts web/tests/hooks/migrations.test.ts web/tests/hooks/rehearsalLogin.test.ts web/tests/e2e/helpers.ts web/tests/e2e/login.spec.ts web/tests/e2e/layout.spec.ts web/tests/e2e/planning.spec.ts scripts/test-hooks.mjs
+git add pocketbase/pb_migrations/1758900000_crew_access.js pocketbase/pb_hooks/login.pb.js pocketbase/pb_hooks/session.pb.js web/src/lib/server/pb.ts web/tests/hooks/session.test.ts web/tests/hooks/setup.ts web/tests/hooks/migrations.test.ts web/tests/hooks/rehearsalLogin.test.ts web/tests/e2e/helpers.ts web/tests/e2e/login.spec.ts web/tests/e2e/layout.spec.ts web/tests/e2e/planning.spec.ts scripts/test-hooks.mjs
 git rm web/tests/hooks/login.test.ts
 git status --short
 git commit -m "feat(access): crew-access migration — email identity, Conductor from env, wipe; rehearsal-only password login
@@ -1046,8 +1214,8 @@ exports.signInGuard = function (app, record, method, info) {
     exports.logEvent(app, { event: 'sign_in_refused', method, user: record.id, email: record.email(), detail: 'blocked' }, info)
     return { status: 403, message: 'Your seat was taken away. Ask the Conductor.' }
   }
-  record.set('last_seen', new Date().toISOString())
-  app.save(record)
+  // One column by SQL: saving the loaded record could write back a stale blocked flag or token key.
+  app.db().newQuery('UPDATE users SET last_seen = {:t} WHERE id = {:id}').bind({ t: new Date().toISOString().replace('T', ' '), id: record.id }).execute()
   exports.logEvent(app, { event: 'signed_in', method, user: record.id, name: record.getString('name'), email: record.email() }, info)
   return null
 }
@@ -1094,14 +1262,21 @@ describe('sign-in by email code and the guards', () => {
   });
 
   it('a blocked member cannot sign in or refresh, and a refresh never logs a sign-in', async () => {
+    // A real OTP session: impersonation tokens (loginToken) are not refreshable at all.
     const name = `Blocked ${Math.floor(Math.random() * 1e6)}`;
-    const { id, token } = await loginToken(name);
+    const { id } = await loginToken(name);
+    const email = emailOf(name.toLowerCase());
+    const otp = async () => {
+      await clearMails();
+      const { otpId } = await (await post('/api/collections/users/request-otp', { email })).json();
+      return post('/api/collections/users/auth-with-otp', { otpId, password: await codeFor(email) });
+    };
+    const { token } = await (await otp()).json();
     expect((await post('/api/collections/users/auth-refresh', {}, token)).status).toBe(200);
-    expect((await logRows(`user = "${id}" && event = "signed_in"`)).length).toBe(0);
+    expect((await logRows(`user = "${id}" && event = "signed_in"`)).length).toBe(1); // the OTP sign-in only
     await fetch(`${PB}/api/collections/users/records/${id}`, { method: 'PATCH', headers: await su(), body: JSON.stringify({ blocked: true }) });
     expect((await post('/api/collections/users/auth-refresh', {}, token)).status).toBe(403);
-    const { otpId } = await (await post('/api/collections/users/request-otp', { email: emailOf(name.toLowerCase()) })).json();
-    expect((await post('/api/collections/users/auth-with-otp', { otpId, password: await codeFor(emailOf(name.toLowerCase())) })).status).toBe(403);
+    expect((await otp()).status).toBe(403);
   });
 
   it('the Conductor exists from CONDUCTOR_EMAIL with is_admin', async () => {
@@ -1207,8 +1382,7 @@ onRecordAuthRefreshRequest((e) => {
   if (e.record.getBool('blocked')) return e.json(403, { message: 'Your seat was taken away. Ask the Conductor.' })
   const seen = e.record.getDateTime('last_seen')
   if (seen.isZero() || Date.now() / 1000 - seen.unix() > 600) {
-    e.record.set('last_seen', new Date().toISOString())
-    $app.save(e.record)
+    $app.db().newQuery('UPDATE users SET last_seen = {:t} WHERE id = {:id}').bind({ t: new Date().toISOString().replace('T', ' '), id: e.record.id }).execute()
   }
   e.next()
 }, 'users')
@@ -1290,7 +1464,8 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 
 **Files:**
 - Create: `pocketbase/pb_hooks/boarding.js`, `pocketbase/pb_hooks/boarding.pb.js`
-- Test: `web/tests/hooks/boarding.test.ts`
+- Test: `web/tests/hooks/boarding.test.ts`, `web/tests/hooks/oauth.test.ts`. The latter drives the
+  real OAuth2 hook through PocketBase's generic `oidc` provider pointed at the fake on 12528.
 
 **Interfaces:**
 - **Consumes:** everything `crew.js` produces, plus `limits.consume` and `names.js`.
@@ -1309,11 +1484,22 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 
 ```ts
 import { beforeEach, describe, expect, it } from 'vitest';
-import { PB, clearMails, codeFor, loginToken, mailMode, mails, postFrom, randomIp, runCron, superuserToken, truncate } from './setup';
+import { PB, clearMails, codeFor, loginToken, mailMode, mails, postFrom, randomIp, runCron, superuserToken, truncate, turnstileToken, waitFor } from './setup';
 
 const uid = () => Math.floor(Math.random() * 1e6);
 const su = async () => ({ Authorization: await superuserToken(), 'content-type': 'application/json' });
-const join = (ip: string, body: Record<string, unknown>) => postFrom(ip, '/api/crawl/join', { turnstile: 'ok', ...body });
+const join = (ip: string, body: Record<string, unknown>) => postFrom(ip, '/api/crawl/join', { turnstile: turnstileToken(), ...body });
+/** Requests written directly by the superuser, to reach the global caps without 20 IPs of joins. */
+async function seedRequests(count: number, status: 'unverified' | 'waiting') {
+  for (let i = 0; i < count; i++) await fetch(`${PB}/api/collections/boarding_requests/records`, { method: 'POST', headers: await su(),
+    body: JSON.stringify({ name: `Seed ${uid()}`, name_key: `seed ${uid()}`, email: `seed${uid()}@test.invalid`, method: 'email', status,
+      ip: randomIp(), status_at: new Date().toISOString().replace('T', ' '), code_sent_at: new Date().toISOString().replace('T', ' ') }) });
+}
+async function verified(ip: string, name = `Waiter ${uid()}`) {
+  const email = `v${uid()}@test.invalid`;
+  const r = await (await join(ip, { name, email })).json();
+  return postFrom(ip, '/api/crawl/join/verify', { ...r, code: await codeFor(email) });
+}
 async function row(id: string) { return (await fetch(`${PB}/api/collections/boarding_requests/records/${id}`, { headers: await su() })).json(); }
 async function backdate(id: string, field: 'status_at' | 'code_sent_at', minutes: number) {
   await fetch(`${PB}/api/collections/boarding_requests/records/${id}`, { method: 'PATCH', headers: await su(),
@@ -1375,10 +1561,56 @@ describe('joining by email (spec §2.1–2.4)', () => {
     for (const path of ['status', 'verify', 'resend']) expect((await postFrom(ip, `/api/crawl/join/${path}`, { request_id, secret: 'x', code: '1' })).status).toBe(404);
   });
 
-  it('resend is throttled to once a minute', async () => {
-    const ip = randomIp();
-    const r = await (await join(ip, { name: `Again ${uid()}`, email: `a${uid()}@test.invalid` })).json();
+  it('resend is throttled to once a minute, then rotates the code', async () => {
+    const ip = randomIp(), email = `a${uid()}@test.invalid`;
+    const r = await (await join(ip, { name: `Again ${uid()}`, email })).json();
     expect((await postFrom(ip, '/api/crawl/join/resend', r)).status).toBe(429);
+    const old = await codeFor(email);
+    await backdate(r.request_id, 'code_sent_at', 2);
+    expect((await postFrom(ip, '/api/crawl/join/resend', r)).status).toBe(200);
+    const fresh = await waitFor(async () => { const c = await codeFor(email); return c !== old && c; });
+    expect((await postFrom(ip, '/api/crawl/join/verify', { ...r, code: old })).status).toBe(400);
+    expect((await postFrom(ip, '/api/crawl/join/verify', { ...r, code: fresh })).status).toBe(200);
+  });
+
+  it('concurrent joins from one IP cannot beat the unverified cap', async () => {
+    const ip = randomIp();
+    const statuses = await Promise.all([1, 2, 3, 4].map(() => join(ip, { name: `Race ${uid()}`, email: `race${uid()}@test.invalid` }).then((r) => r.status)));
+    expect(statuses.filter((x) => x === 200)).toHaveLength(2);
+  });
+
+  it('the global caps hold: 10 unverified at join, 20 waiting at verify', async () => {
+    await seedRequests(10, 'unverified');
+    expect((await join(randomIp(), { name: `Late ${uid()}`, email: `l${uid()}@test.invalid` })).status).toBe(429);
+    await truncate('boarding_requests');
+    await seedRequests(20, 'waiting');
+    expect((await verified(randomIp())).status).toBe(429);
+  });
+
+  it('one IP keeps at most 3 requests waiting', async () => {
+    const ip = randomIp();
+    for (let i = 0; i < 3; i++) expect((await verified(ip)).status).toBe(200);
+    expect((await verified(ip)).status).toBe(429);
+  });
+
+  it('an unverified request holds no name; the second to verify a shared name loses it', async () => {
+    const shared = `Twin ${uid()}`, ip1 = randomIp(), ip2 = randomIp(), e1 = `t1${uid()}@test.invalid`, e2 = `t2${uid()}@test.invalid`;
+    const a = await (await join(ip1, { name: shared, email: e1 })).json();
+    const b = await join(ip2, { name: shared, email: e2 });
+    expect(b.status).toBe(200);
+    expect((await postFrom(ip1, '/api/crawl/join/verify', { ...a, code: await codeFor(e1) })).status).toBe(200);
+    expect((await postFrom(ip2, '/api/crawl/join/verify', { ...(await b.json()), code: await codeFor(e2) })).status).toBe(409);
+  });
+
+  it('repeat sign-ups return the same request id, for a member address and a fresh one alike', async () => {
+    const n = uid();
+    await loginToken(`Repeat ${n}`);
+    const memberEmail = `${Buffer.from(`repeat ${n}`).toString('hex')}@test.invalid`, freshEmail = `fresh2${n}@test.invalid`;
+    for (const email of [memberEmail, freshEmail]) {
+      const one = await (await join(randomIp(), { name: `One ${uid()}`, email })).json();
+      const two = await (await join(randomIp(), { name: `Two ${uid()}`, email })).json();
+      expect(two.request_id, email).toBe(one.request_id);
+    }
   });
 
   it('a member email gets a decoy that behaves like a real request, and a "you have a seat" mail', async () => {
@@ -1386,7 +1618,7 @@ describe('joining by email (spec §2.1–2.4)', () => {
     await loginToken(`Member ${n}`);
     const memberEmail = `${Buffer.from(`member ${n}`).toString('hex')}@test.invalid`;
     const ip = randomIp();
-    const decoy = await join(ip, { name: `Other ${n}`, email: memberEmail });
+    const decoy = await join(ip, { name: `Other ${n}`, email: memberEmail }); // repeat-id parity is its own test above
     const fresh = await join(randomIp(), { name: `Fresh ${n}`, email: `fresh${n}@test.invalid` });
     expect(decoy.status).toBe(fresh.status);
     const d = await decoy.json(), f = await fresh.json();
@@ -1421,13 +1653,83 @@ describe('joining by email (spec §2.1–2.4)', () => {
     const r = await (await join(randomIp(), { name: `Stale ${uid()}`, email: `stale${uid()}@test.invalid` })).json();
     await backdate(r.request_id, 'status_at', 31);
     await runCron('boarding_sweep');
-    expect((await row(r.request_id)).status).toBe('expired');
+    await waitFor(async () => (await row(r.request_id)).status === 'expired');
+  });
+});
+```
+
+`web/tests/hooks/oauth.test.ts` exercises the real `onRecordAuthWithOAuth2Request` hook at runtime.
+PocketBase's generic `oidc` provider is pointed at the fake on 12528, so no Google is needed:
+
+```ts
+import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { PB, loginToken, oidcCode, post, superuserToken, truncate } from './setup';
+
+const uid = () => Math.floor(Math.random() * 1e6);
+const su = async () => ({ Authorization: await superuserToken(), 'content-type': 'application/json' });
+const hexEmail = (name: string) => `${Buffer.from(name.toLowerCase()).toString('hex')}@test.invalid`;
+const oauth = (code: string, extra: Record<string, unknown> = {}, token?: string) => post('/api/collections/users/auth-with-oauth2',
+  { provider: 'oidc', code, codeVerifier: 'v'.repeat(43), redirectURL: 'http://127.0.0.1:15173/auth/google', ...extra }, token);
+async function count(collection: string, filter: string) {
+  const q = new URLSearchParams({ filter, perPage: '1' });
+  return (await (await fetch(`${PB}/api/collections/${collection}/records?${q}`, { headers: await su() })).json()).totalItems as number;
+}
+
+describe('the OAuth2 hook (spec §2.5), at runtime', () => {
+  beforeAll(async () => {
+    const res = await fetch(`${PB}/api/collections/users`, { method: 'PATCH', headers: await su(), body: JSON.stringify({ oauth2: { enabled: true, providers: [{
+      name: 'oidc', clientId: 'fake', clientSecret: 'fake', displayName: 'Fake', authURL: 'http://127.0.0.1:12528/auth',
+      tokenURL: 'http://127.0.0.1:12528/token', userInfoURL: 'http://127.0.0.1:12528/userinfo' }] } }) });
+    expect(res.status).toBe(200);
+  });
+  afterAll(async () => {
+    await fetch(`${PB}/api/collections/users`, { method: 'PATCH', headers: await su(), body: JSON.stringify({ oauth2: { enabled: false, providers: [] } }) });
+  });
+  beforeEach(() => truncate('boarding_requests'));
+
+  it('a new identity from the join page becomes a waiting request: no user, no link', async () => {
+    const email = `g${uid()}@test.invalid`, sub = `s${uid()}`;
+    const res = await oauth(oidcCode({ sub, email }), { createData: { name: `Googler ${uid()}` } });
+    expect(res.status).toBe(202);
+    expect(await res.json()).toMatchObject({ pending: true });
+    expect(await count('users', `email = "${email}"`)).toBe(0);
+    expect(await count('_externalAuths', `providerId = "${sub}"`)).toBe(0);
+    expect(await count('boarding_requests', `email = "${email}" && status = "waiting" && method = "google"`)).toBe(1);
+  });
+
+  it('a new identity from the login page is refused', async () => {
+    const res = await oauth(oidcCode({ sub: `s${uid()}`, email: `nobody${uid()}@test.invalid` }));
+    expect(res.status).toBe(403);
+  });
+
+  it('a member signs in with the matching email', async () => {
+    const name = `Linked ${uid()}`;
+    const { id } = await loginToken(name);
+    const res = await oauth(oidcCode({ sub: `s${uid()}`, email: hexEmail(name) }));
+    expect(res.status).toBe(200);
+    expect((await res.json()).record.id).toBe(id);
+  });
+
+  it('a crew session cannot attach a Google identity with another email', async () => {
+    const name = `Hijack ${uid()}`;
+    const { id, token } = await loginToken(name);
+    const res = await oauth(oidcCode({ sub: `s${uid()}`, email: `other${uid()}@test.invalid` }), {}, token);
+    expect(res.status).toBe(403);
+    expect(await count('_externalAuths', `recordRef = "${id}"`)).toBe(0);
+  });
+
+  it('refuses blocked members and unverified emails', async () => {
+    const name = `Benched ${uid()}`;
+    const { id } = await loginToken(name);
+    await fetch(`${PB}/api/collections/users/records/${id}`, { method: 'PATCH', headers: await su(), body: JSON.stringify({ blocked: true }) });
+    expect((await oauth(oidcCode({ sub: `s${uid()}`, email: hexEmail(name) }))).status).toBe(403);
+    expect((await oauth(oidcCode({ sub: `s${uid()}`, email: `u${uid()}@test.invalid`, email_verified: false }), { createData: { name: `Unverified ${uid()}` } })).status).toBe(403);
   });
 });
 ```
 
 Run: `bash scripts/test-hooks.sh`
-Expected: FAIL: 404 on `/api/crawl/join`.
+Expected: FAIL: 404 on `/api/crawl/join`, and the OAuth tests fail.
 
 - [ ] **Step 2: Write `boarding.js` (guest half)**
 
@@ -1454,8 +1756,6 @@ exports.turnstileOk = function (secret, token, ip) {
   } catch (_) { return false }
 }
 
-const count = (filter, params) => $app.findRecordsByFilter('boarding_requests', filter, '', 0, 0, params).length
-
 exports.findRequest = function (body) {
   const crew = require(`${__hooks}/crew.js`)
   if (typeof body.request_id !== 'string' || typeof body.secret !== 'string') return null
@@ -1465,35 +1765,32 @@ exports.findRequest = function (body) {
 }
 
 // Shared by email sign-up (join) and Google sign-up (the OAuth2 hook). Returns [status, json].
+// Every check and the write share one transaction: PocketBase serialises write transactions, so
+// two concurrent joins cannot both pass a cap or both claim a name.
 exports.fileRequest = function (e, x) {
   const crew = require(`${__hooks}/crew.js`)
   const { name, email, method, info } = x
   const ip = info.ip
-  // Caps (spec §2.1 step 5). Google requests start waiting, so only the waiting caps apply to them.
-  if (method === 'email' && (count("status = 'unverified' && ip = {:ip}", { ip }) >= 2 || count("status = 'unverified'", {}) >= 10)
-    || count("status = 'waiting' && ip = {:ip}", { ip }) >= 3 || count("status = 'waiting'", {}) >= 20) {
-    crew.logEvent($app, { event: 'rate_limited', detail: 'boarding caps', name: name.display }, info)
-    return [429, { message: 'Too many people are waiting to board. Try again later.' }]
-  }
-  // Name taken depends on the name alone, never on the email (no membership oracle).
-  let taken = false
-  try { $app.findFirstRecordByData('users', 'name_key', name.key); taken = true } catch (_) {}
-  if (!taken) taken = $app.findRecordsByFilter('boarding_requests', "name_key = {:k} && decoy = false && (status = 'unverified' || status = 'waiting') && email != {:e}", '', 1, 0, { k: name.key, e: email }).length > 0
-  if (taken) return [409, { message: 'That name is taken. Add an initial?' }]
-
-  let member = false
-  try { $app.findAuthRecordByEmail('users', email); member = true } catch (_) {}
-  const waiting = $app.findRecordsByFilter('boarding_requests', "email = {:e} && status = 'waiting' && decoy = false", '', 1, 0, { e: email }).length > 0
-  const decoy = member || waiting
   const secret = $security.randomString(43)
   const code = $security.randomStringWithAlphabet(6, '0123456789')
-  let record
+  let outcome = '', record = null, member = false, decoy = false
   $app.runInTransaction((tx) => {
-    if (!decoy && method === 'email') {
-      const open = tx.findRecordsByFilter('boarding_requests', "email = {:e} && status = 'unverified' && decoy = false", '-created', 1, 0, { e: email })
-      if (open.length) record = open[0]
-    }
-    if (!record) record = new Record(tx.findCollectionByNameOrId('boarding_requests'))
+    const n = (filter, params) => tx.findRecordsByFilter('boarding_requests', filter, '', 0, 0, params || {}).length
+    const unverifiedFull = n("status = 'unverified' && ip = {:ip}", { ip }) >= 2 || n("status = 'unverified'") >= 10
+    const waitingFull = n("status = 'waiting' && ip = {:ip}", { ip }) >= 3 || n("status = 'waiting'") >= 20
+    if ((method === 'email' && unverifiedFull) || waitingFull) { outcome = 'full'; return }
+    // A name is held by users and waiting requests only, and is checked by name alone. Unverified
+    // requests hold nothing (verify re-checks), so no answer here depends on the email.
+    let taken = false
+    try { tx.findFirstRecordByData('users', 'name_key', name.key); taken = true } catch (_) {}
+    if (!taken) taken = n("name_key = {:k} && decoy = false && status = 'waiting'", { k: name.key }) > 0
+    if (taken) { outcome = 'taken'; return }
+    try { tx.findAuthRecordByEmail('users', email); member = true } catch (_) {}
+    decoy = member || n("email = {:e} && status = 'waiting' && decoy = false", { e: email }) > 0
+    // A repeat sign-up updates the open unverified request for this email in place, decoy or not,
+    // so every address answers a second sign-up with the same request id.
+    const open = tx.findRecordsByFilter('boarding_requests', "email = {:e} && status = 'unverified' && decoy = " + (decoy ? 'true' : 'false'), '-created', 1, 0, { e: email })
+    record = open.length ? open[0] : new Record(tx.findCollectionByNameOrId('boarding_requests'))
     record.set('name', name.display)
     record.set('name_key', name.key)
     record.set('email', email)
@@ -1507,14 +1804,24 @@ exports.fileRequest = function (e, x) {
     record.set('code_sent_at', nowIso())
     for (const k of ['ip', 'country', 'city', 'user_agent']) record.set(k, info[k])
     tx.save(record)
+    outcome = 'ok'
   })
+  if (outcome === 'full') {
+    crew.logEvent($app, { event: 'rate_limited', detail: 'boarding caps', name: name.display }, info)
+    return [429, { message: 'Too many people are waiting to board. Try again later.' }]
+  }
+  if (outcome === 'taken') return [409, { message: 'That name is taken. Add an initial?' }]
   try {
     if (decoy) crew.sendMail($app, member
       ? { to: [email], subject: 'You already have a seat', text: `Someone tried to board the Chug-a-Lug with this address. You already have a seat: sign in at ${$app.settings().meta.appURL}/login` }
       : { to: [email], subject: 'Your boarding request is already waiting', text: 'Your boarding request is already waiting for the crew. Nothing else to do: you will get an email when you are aboard.' })
     else if (method === 'email') crew.sendMail($app, { to: [email], subject: 'Your Chug-a-Lug boarding code', text: `Your Chug-a-Lug boarding code: ${code}\n\nIt works for 15 minutes.` })
   } catch (err) {
-    record.set('status', 'expired'); record.set('status_at', nowIso()); $app.save(record)
+    // Expire only the version written above: a concurrent re-signup may already have replaced it.
+    $app.runInTransaction((tx) => {
+      const r = tx.findRecordById('boarding_requests', record.id)
+      if (r.getString('secret_hash') === crew.hash(secret) && OPEN.indexOf(r.getString('status')) >= 0) { r.set('status', 'expired'); r.set('status_at', nowIso()); tx.save(r) }
+    })
     crew.logEvent($app, { event: 'mail_failed', email, request: record.id, detail: String(err).slice(0, 200) }, info)
     return [502, { message: "Couldn't send the email. Try Google or try later." }]
   }
@@ -1547,25 +1854,41 @@ exports.join = function (e) {
   return e.json(status, json)
 }
 
+// The secret, the state, the code and the transition are judged on one transactional read, so a
+// concurrent re-signup (new secret) or decision cannot slip between check and write. Promotion to
+// waiting re-checks the waiting caps and the name, which unverified requests never held.
 exports.verify = function (e) {
   const crew = require(`${__hooks}/crew.js`)
   const body = e.requestInfo().body
-  const found = exports.findRequest(body)
-  if (!found) return e.json(404, { message: 'Request not found.' })
-  let outcome = 'expired'
+  if (typeof body.request_id !== 'string' || typeof body.secret !== 'string') return e.json(404, { message: 'Request not found.' })
+  let outcome = 'missing', request = null
   $app.runInTransaction((tx) => {
-    const r = tx.findRecordById('boarding_requests', found.id)
+    let r
+    try { r = tx.findRecordById('boarding_requests', body.request_id) } catch (_) { return }
+    if (!$security.equal(r.getString('secret_hash'), crew.hash(body.secret))) return
+    request = r
     const age = Date.now() / 1000 - r.getDateTime('code_sent_at').unix()
-    if (r.getString('status') !== 'unverified' || r.getInt('code_attempts') >= 5 || age > 900) return
+    if (r.getString('status') !== 'unverified' || r.getInt('code_attempts') >= 5 || age > 900) { outcome = 'expired'; return }
     r.set('code_attempts', r.getInt('code_attempts') + 1)
     const good = !r.getBool('decoy') && r.getString('code_hash') !== '' && $security.equal(r.getString('code_hash'), crew.hash(String(body.code || '')))
-    if (good) { r.set('code_hash', ''); r.set('status', 'waiting'); r.set('status_at', nowIso()) }
+    const n = (filter, params) => tx.findRecordsByFilter('boarding_requests', filter, '', 0, 0, params || {}).length
+    if (!good) outcome = 'wrong'
+    else if (n("status = 'waiting' && ip = {:ip}", { ip: r.getString('ip') }) >= 3 || n("status = 'waiting'") >= 20) outcome = 'full'
+    else {
+      let taken = false
+      try { tx.findFirstRecordByData('users', 'name_key', r.getString('name_key')); taken = true } catch (_) {}
+      if (!taken) taken = n("name_key = {:k} && decoy = false && status = 'waiting'", { k: r.getString('name_key') }) > 0
+      if (taken) outcome = 'taken'
+      else { r.set('code_hash', ''); r.set('status', 'waiting'); r.set('status_at', nowIso()); outcome = 'ok' }
+    }
     tx.save(r)
-    outcome = good ? 'ok' : 'wrong'
   })
+  if (outcome === 'missing') return e.json(404, { message: 'Request not found.' })
   if (outcome === 'expired') return e.json(410, { message: 'That code expired. Start again.' })
   if (outcome === 'wrong') return e.json(400, { message: "That code isn't right." })
-  crew.logEvent($app, { event: 'boarding_verified', method: 'email', email: found.getString('email'), name: found.getString('name'), request: found.id }, crew.clientInfo(e))
+  if (outcome === 'full') return e.json(429, { message: 'Too many people are waiting to board. Try again later.' })
+  if (outcome === 'taken') return e.json(409, { message: 'That name was just taken. Board again with another.' })
+  crew.logEvent($app, { event: 'boarding_verified', method: 'email', email: request.getString('email'), name: request.getString('name'), request: request.id }, crew.clientInfo(e))
   try { exports.notifyConductors($app) } catch (_) { /* the sweep retries */ }
   return e.json(200, { status: 'waiting' })
 }
@@ -1576,21 +1899,34 @@ exports.status = function (e) {
   return e.json(200, { status: r.getString('status') })
 }
 
+// Transactional for the same reason as verify. The once-a-minute rule lives in code_sent_at, so
+// tests can backdate it.
 exports.resend = function (e) {
   const crew = require(`${__hooks}/crew.js`)
-  const limits = require(`${__hooks}/limits.js`)
-  const r = exports.findRequest(e.requestInfo().body)
-  if (!r) return e.json(404, { message: 'Request not found.' })
-  if (r.getString('status') !== 'unverified') return e.json(410, { message: 'That request is no longer open.' })
-  if (Date.now() / 1000 - r.getDateTime('code_sent_at').unix() < 60 || !limits.consume('resend:' + r.id, 1, 60)) return e.json(429, { message: 'Wait a minute before asking again.' })
+  const body = e.requestInfo().body
+  if (typeof body.request_id !== 'string' || typeof body.secret !== 'string') return e.json(404, { message: 'Request not found.' })
   const code = $security.randomStringWithAlphabet(6, '0123456789')
-  if (!r.getBool('decoy')) r.set('code_hash', crew.hash(code))
-  r.set('code_attempts', 0)
-  r.set('code_sent_at', nowIso())
-  $app.save(r)
+  let outcome = 'missing', email = '', decoy = false
+  $app.runInTransaction((tx) => {
+    let r
+    try { r = tx.findRecordById('boarding_requests', body.request_id) } catch (_) { return }
+    if (!$security.equal(r.getString('secret_hash'), crew.hash(body.secret))) return
+    if (r.getString('status') !== 'unverified') { outcome = 'closed'; return }
+    if (Date.now() / 1000 - r.getDateTime('code_sent_at').unix() < 60) { outcome = 'early'; return }
+    decoy = r.getBool('decoy')
+    if (!decoy) r.set('code_hash', crew.hash(code))
+    r.set('code_attempts', 0)
+    r.set('code_sent_at', nowIso())
+    tx.save(r)
+    email = r.getString('email')
+    outcome = 'ok'
+  })
+  if (outcome === 'missing') return e.json(404, { message: 'Request not found.' })
+  if (outcome === 'closed') return e.json(410, { message: 'That request is no longer open.' })
+  if (outcome === 'early') return e.json(429, { message: 'Wait a minute before asking again.' })
   try {
-    if (r.getBool('decoy')) crew.sendMail($app, { to: [r.getString('email')], subject: 'You already have a seat', text: `You already have a seat: sign in at ${$app.settings().meta.appURL}/login` })
-    else crew.sendMail($app, { to: [r.getString('email')], subject: 'Your Chug-a-Lug boarding code', text: `Your Chug-a-Lug boarding code: ${code}\n\nIt works for 15 minutes.` })
+    if (decoy) crew.sendMail($app, { to: [email], subject: 'You already have a seat', text: `You already have a seat: sign in at ${$app.settings().meta.appURL}/login` })
+    else crew.sendMail($app, { to: [email], subject: 'Your Chug-a-Lug boarding code', text: `Your Chug-a-Lug boarding code: ${code}\n\nIt works for 15 minutes.` })
   } catch (_) { return e.json(502, { message: "Couldn't send the email. Try later." }) }
   return e.json(200, {})
 }
@@ -1666,14 +2002,12 @@ cronAdd('crew_access_daily', '17 3 * * *', () => require(`${__hooks}/boarding.js
 - [ ] **Step 4: Run the hooks suite**
 
 Run: `bash scripts/test-hooks.sh`
-Expected: PASS for `boarding.test.ts`. If `e.json` inside `googleRequest` must be the hook's
-return value, change the wrapper to `const handled = …googleRequest(e); if (handled) return handled`
-and have `googleRequest` return the `e.json(...)` result.
+Expected: PASS for `boarding.test.ts` and `oauth.test.ts`.
 
 - [ ] **Step 5: Commit**
 
 ```bash
-git add pocketbase/pb_hooks/boarding.js pocketbase/pb_hooks/boarding.pb.js web/tests/hooks/boarding.test.ts
+git add pocketbase/pb_hooks/boarding.js pocketbase/pb_hooks/boarding.pb.js web/tests/hooks/boarding.test.ts web/tests/hooks/oauth.test.ts
 git status --short
 git commit -m "feat(access): boarding requests — email codes, decoys, caps, Google sign-up, sweeps
 
@@ -1708,14 +2042,14 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 `web/tests/hooks/decisions.test.ts`:
 
 ```ts
-import { beforeEach, describe, expect, it } from 'vitest';
-import { ADMIN_LOGIN_PASSWORD, PB, clearMails, codeFor, loginToken, mailMode, mails, post, postFrom, randomIp, runCron, superuserToken, truncate } from './setup';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { ADMIN_LOGIN_PASSWORD, PB, clearMails, codeFor, loginToken, mailMode, mails, post, postFrom, randomIp, runCron, superuserToken, truncate, turnstileToken, waitFor } from './setup';
 
 const uid = () => Math.floor(Math.random() * 1e6);
 const su = async () => ({ Authorization: await superuserToken(), 'content-type': 'application/json' });
 async function waitingRequest(name = `Guest ${uid()}`) {
   const ip = randomIp(), email = `g${uid()}@test.invalid`;
-  const r = await (await postFrom(ip, '/api/crawl/join', { name, email, turnstile: 'ok' })).json();
+  const r = await (await postFrom(ip, '/api/crawl/join', { name, email, turnstile: turnstileToken() })).json();
   await postFrom(ip, '/api/crawl/join/verify', { ...r, code: await codeFor(email) });
   return { ...r, email, name, ip };
 }
@@ -1723,6 +2057,7 @@ const decide = (id: string, verdict: 'let-aboard' | 'turn-away', token?: string)
 
 describe('deciding boarding requests (spec §2.6–2.7)', () => {
   beforeEach(async () => { await mailMode('ok'); await clearMails(); await truncate('boarding_requests'); });
+  afterEach(() => mailMode('ok'));
 
   it('any crew member lets a guest aboard; the guest then signs in by code', async () => {
     const crew = await loginToken(`Voucher ${uid()}`);
@@ -1763,13 +2098,17 @@ describe('deciding boarding requests (spec §2.6–2.7)', () => {
     expect((await list(crew.token)).some((x) => x.id === g.request_id && x.status === 'turned_away')).toBe(true);
   });
 
-  it('Conductors are emailed once per batch, and a failed send is retried by the sweep', async () => {
+  it('a Conductor notice that fails to send is retried by the sweep', async () => {
+    // The code must reach the guest first; only the notice at verify time should fail.
+    const ip = randomIp(), email = `n${uid()}@test.invalid`;
+    const r = await (await postFrom(ip, '/api/crawl/join', { name: `Notice ${uid()}`, email, turnstile: turnstileToken() })).json();
+    const code = await codeFor(email);
     await mailMode('fail');
-    await waitingRequest();
+    expect((await postFrom(ip, '/api/crawl/join/verify', { ...r, code })).status).toBe(200); // the decision path never fails on mail
     await mailMode('ok');
     await clearMails();
     await runCron('boarding_sweep');
-    expect((await mails('conductor@test.invalid')).length).toBeGreaterThanOrEqual(1);
+    await waitFor(async () => (await mails('conductor@test.invalid')).some((m) => m.text.includes(email)), 10_000);
   });
 
   it('a failed "you are aboard" email still lets the guest aboard', async () => {
@@ -1777,7 +2116,6 @@ describe('deciding boarding requests (spec §2.6–2.7)', () => {
     const g = await waitingRequest();
     await mailMode('fail');
     expect((await decide(g.request_id, 'let-aboard', crew.token)).status).toBe(200);
-    await mailMode('ok');
   });
 });
 
@@ -1903,11 +2241,15 @@ exports.setBlocked = function (e, blocked) {
   if (!isConductor(e)) return e.json(403, { message: 'Only the Conductor can do that.' })
   const id = e.request.pathValue('id')
   if (blocked && id === e.auth.id) return e.json(400, { message: "You can't put yourself off." })
-  let u
-  try { u = $app.findRecordById('users', id) } catch (_) { return e.json(404, { message: 'Not found.' }) }
-  u.set('blocked', blocked)
-  if (blocked) u.refreshTokenKey() // every token dies once saved; realtime auth drops too
-  $app.save(u)
+  // Refetched inside the transaction: a concurrent sign-in or put-off cannot be written back stale.
+  let u = null
+  $app.runInTransaction((tx) => {
+    try { u = tx.findRecordById('users', id) } catch (_) { return }
+    u.set('blocked', blocked)
+    if (blocked) u.refreshTokenKey() // every token dies once saved; realtime auth drops too
+    tx.save(u)
+  })
+  if (!u) return e.json(404, { message: 'Not found.' })
   crew.logEvent($app, { event: blocked ? 'put_off' : 'let_back_on', actor: e.auth.id, user: u.id, name: u.getString('name'), email: u.email() }, crew.clientInfo(e))
   return e.json(200, {})
 }
@@ -1952,6 +2294,10 @@ onRecordUpdateRequest((e) => {
   crew.logEvent($app, { event: 'name_changed', user: e.record.id, actor: e.auth ? e.auth.id : '', name: n.display, detail: 'was ' + before }, crew.clientInfo(e))
 }, 'users')
 ```
+
+The harness runs with `NOTIFY_INTERVAL_SECONDS=0`, so the 10-minute batching is **not** proven
+by these tests. It is a manual acceptance item (Task 9, OPERATIONS checklist): two sign-ups a
+minute apart give the Conductor one email.
 
 `decide` answers 401 for a blocked user. A blocked user's token is already dead after put-off, and
 the remaining case is a superuser-set flag. The test expects 401 in both.
@@ -2109,6 +2455,7 @@ Expected: PASS.
 
 In `web/src/lib/pb.ts`:
 - rename `login` to `rehearsalLogin`, and update its one caller, the login page;
+- import `getTokenPayload` alongside `PocketBase` from `'pocketbase'`;
 - add:
 
 ```ts
@@ -2127,11 +2474,19 @@ export const joinStatus = (request_id: string, secret: string) =>
   pb.send<{ status: string }>('/api/crawl/join/status', { method: 'POST', body: { request_id, secret } });
 export const resendJoin = (request_id: string, secret: string) =>
   pb.send('/api/crawl/join/resend', { method: 'POST', body: { request_id, secret } });
-/** Spec §5: only a 401/403 ends the session; no signal keeps it (offline event day). */
+/**
+ * Spec §5, on every app open: ask who we are (GET /api/crawl/me, which mints nothing), and renew
+ * the token only in its last week. Only a 401/403 ends the session; no signal keeps it (offline
+ * event day). Impersonated test sessions are long-lived and never reach the renewal branch.
+ */
 export async function refreshSession(): Promise<'ok' | 'signed_out' | 'offline'> {
   if (!pb.authStore.isValid) return 'signed_out';
-  try { await pb.collection('users').authRefresh(); return 'ok'; }
-  catch (e) {
+  try {
+    await pb.send('/api/crawl/me', { method: 'GET' });
+    const exp = Number(getTokenPayload(pb.authStore.token).exp ?? 0) * 1000;
+    if (exp - Date.now() < 7 * 86400e3) await pb.collection('users').authRefresh();
+    return 'ok';
+  } catch (e) {
     const status = (e as { status?: number }).status ?? 0;
     return status === 401 || status === 403 ? 'signed_out' : 'offline';
   }
@@ -2185,17 +2540,23 @@ In `web/src/lib/labels.ts`:
 ```svelte
 <script lang="ts">
   // Cloudflare Turnstile, explicit render. No site key → no widget, and the server refuses the join.
+  // A token is single-use: the page calls reset() after every submit, whatever the answer.
   import { env } from '$env/dynamic/public';
   let { ontoken }: { ontoken: (token: string) => void } = $props();
   let box: HTMLDivElement;
-  type TurnstileApi = { render: (el: HTMLElement, o: Record<string, unknown>) => string; remove: (id: string) => void };
+  let widget = '';
+  type TurnstileApi = { render: (el: HTMLElement, o: Record<string, unknown>) => string; remove: (id: string) => void; reset: (id: string) => void };
+  export function reset() {
+    ontoken('');
+    if (widget) (window as unknown as { turnstile?: TurnstileApi }).turnstile?.reset(widget);
+  }
   $effect(() => {
     const sitekey = env.PUBLIC_TURNSTILE_SITE_KEY;
     if (!sitekey) return;
     let id = '', gone = false;
     const render = () => {
       const t = (window as unknown as { turnstile?: TurnstileApi }).turnstile;
-      if (t && !gone) id = t.render(box, { sitekey, callback: ontoken, 'expired-callback': () => ontoken('') });
+      if (t && !gone) widget = id = t.render(box, { sitekey, callback: ontoken, 'expired-callback': () => ontoken('') });
     };
     if ((window as unknown as { turnstile?: TurnstileApi }).turnstile) render();
     else {
@@ -2304,8 +2665,11 @@ has no `<style>`, so the global styles apply.
   import { GOOGLE_KEY, buildAuthUrl } from '$lib/google';
   import { copy } from '$lib/labels';
   import Turnstile from '$lib/components/Turnstile.svelte';
+  import { onMount } from 'svelte';
 
   const google = env.PUBLIC_GOOGLE_ENABLED === '1';
+  let turnstile: Turnstile;
+  let offline = $state(false);
   let step = $state<'start' | 'code' | 'waiting' | 'aboard' | 'turned_away' | 'expired'>('start');
   let name = $state(''), email = $state(''), code = $state(''), token = $state('');
   let error = $state(''), busy = $state(false);
@@ -2314,23 +2678,33 @@ has no `<style>`, so the global styles apply.
   const message = (e: unknown) => e instanceof ClientResponseError ? e.response?.message || copy.genericError : copy.genericError;
   const cleanName = () => name.trim().replace(/\s+/g, ' ');
 
-  // Resume a stored request (spec §5), then poll while waiting and visible.
-  $effect(() => {
+  // Resume a stored request once (spec §5). onMount, not $effect: check() reads `current`, and an
+  // effect that both writes and reads it would re-run itself.
+  onMount(() => {
     const stored = loadBoarding(localStorage, Date.now());
-    if (stored) { current = stored; void check(); }
+    if (stored) { current = stored; step = 'waiting'; void check(); }
   });
+  // Poll while a request is open. Only `step` is tracked; check() runs inside the timer callback.
   $effect(() => {
     if (step !== 'waiting' && step !== 'code') return;
     const timer = setInterval(() => { if (document.visibilityState === 'visible') void check(); }, 5000);
     return () => clearInterval(timer);
   });
+  // A 404 is definitive (unknown request or wrong secret); anything else is "try again later", and
+  // the stored request is kept so a dead zone never costs someone their place in line.
   async function check() {
-    if (!current) return;
+    const mine = current;
+    if (!mine) return;
     try {
-      const next = stepFor((await joinStatus(current.requestId, current.secret)).status);
+      const next = stepFor((await joinStatus(mine.requestId, mine.secret)).status);
+      if (current !== mine) return;
+      offline = false;
       step = next;
       if (next !== 'code' && next !== 'waiting') clearBoarding(localStorage);
-    } catch { step = 'expired'; clearBoarding(localStorage); }
+    } catch (e) {
+      if ((e as { status?: number }).status === 404) { step = 'expired'; clearBoarding(localStorage); }
+      else offline = true;
+    }
   }
   async function run(action: () => Promise<void>) {
     if (busy) return; error = ''; busy = true;
@@ -2340,9 +2714,11 @@ has no `<style>`, so the global styles apply.
     if (cleanName().length < 2 || cleanName().length > 32) { error = copy.nameError; return; }
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())) { error = copy.emailError; return; }
     void run(async () => {
-      const r = await joinCrew(cleanName(), email.trim(), token);
-      current = { requestId: r.request_id, secret: r.secret, name: cleanName(), email: email.trim().toLowerCase(), savedAt: Date.now() };
-      saveBoarding(localStorage, current); step = 'code';
+      try {
+        const r = await joinCrew(cleanName(), email.trim(), token);
+        current = { requestId: r.request_id, secret: r.secret, name: cleanName(), email: email.trim().toLowerCase(), savedAt: Date.now() };
+        saveBoarding(localStorage, current); step = 'code';
+      } finally { turnstile?.reset(); } // the token is spent either way
     }); };
   const verify = (ev: SubmitEvent) => { ev.preventDefault();
     if (!/^\d{6}$/.test(code.trim())) { error = copy.codeError; return; }
@@ -2371,7 +2747,7 @@ has no `<style>`, so the global styles apply.
     {#if google}<button type="button" onclick={withGoogle} disabled={busy} data-testid="google">{copy.continueGoogle}</button><p>{copy.orEmail}</p>{/if}
     <label for="email">{copy.emailLabel}</label>
     <input id="email" type="email" autocomplete="email" placeholder={copy.emailPlaceholder} bind:value={email} data-testid="email-input" disabled={busy} />
-    <Turnstile ontoken={(t) => (token = t)} />
+    <Turnstile bind:this={turnstile} ontoken={(t) => (token = t)} />
     <button type="submit" disabled={busy || !token} data-testid="send-code">{busy ? copy.working : token ? copy.sendCode : copy.humanCheck}</button>
   </form>
   <p><a href="/login">{copy.haveSeatSignIn}</a></p>
@@ -2385,6 +2761,7 @@ has no `<style>`, so the global styles apply.
   </form>
 {:else if step === 'waiting'}
   <p data-testid="waiting">{copy.requestSent}</p><p class="hint">{copy.requestSentHint}</p>
+  {#if offline}<p class="hint" data-testid="join-offline">{copy.noSignal}</p>{/if}
 {:else if step === 'aboard'}
   <p data-testid="aboard">{copy.youreAboard}</p><a class="button" href="/login" data-testid="go-sign-in">{copy.signIn}</a>
 {:else if step === 'turned_away'}
@@ -2457,7 +2834,8 @@ export async function codeFor(to: string): Promise<string> {
 /** Turnstile without the network: the widget script is replaced by one that passes at once. */
 export async function stubTurnstile(page: Page) {
   await page.route('https://challenges.cloudflare.com/**', (route) => route.fulfill({ contentType: 'text/javascript',
-    body: "window.turnstile={render:function(el,o){setTimeout(function(){o.callback('ok')});return 'w'},remove:function(){}};" }));
+    body: "(function(){var n=0,cb=null;function fresh(){setTimeout(function(){cb('ok-e2e-'+Date.now()+'-'+(++n))})}" +
+      "window.turnstile={render:function(el,o){cb=o.callback;fresh();return 'w'},reset:function(){fresh()},remove:function(){}}})();" }));
 }
 ```
 
@@ -2479,9 +2857,14 @@ test('a visitor boards by email, waits, is let aboard and signs in with a code',
   await page.getByTestId('verify').click();
   await expect(page.getByTestId('waiting')).toBeVisible();
 
-  // Reopening the page resumes the wait (Review Focus 3).
+  // Reopening the page resumes the wait (Review Focus 3), even with no signal.
   await page.reload();
   await expect(page.getByTestId('waiting')).toBeVisible();
+  await page.route('**/api/crawl/join/status', (route) => route.abort());
+  await page.reload();
+  await expect(page.getByTestId('join-offline')).toBeVisible({ timeout: 10_000 });
+  await expect(page.getByTestId('waiting')).toBeVisible();
+  await page.unroute('**/api/crawl/join/status');
 
   // A crew member answers through the API here; the popup UI is Task 8's spec.
   const crew = await sessionFor(`E2E Voucher ${n}`);
@@ -2567,25 +2950,33 @@ it('treats 409 as already answered, not an error (Review Focus 4)', () => {
 });
 ```
 
-`web/tests/unit/refreshSession.test.ts`. Review Focus 5. It mocks the SDK's `authRefresh` through
-the exported `pb`.
+`web/tests/unit/refreshSession.test.ts` covers Review Focus 5 by mocking `pb.send`, which
+`/api/crawl/me` goes through:
 
 ```ts
-import { expect, it, vi } from 'vitest';
+import { afterEach, expect, it, vi } from 'vitest';
 import { pb, refreshSession } from '../../src/lib/pb';
 
-it('keeps the session when the network fails and ends it on 401/403', async () => {
-  pb.authStore.save('header.' + btoa(JSON.stringify({ exp: Math.floor(Date.now() / 1000) + 3600 })) + '.sig', { id: 'u' } as never);
-  const spy = vi.spyOn(pb.collection('users'), 'authRefresh');
-  spy.mockRejectedValueOnce(Object.assign(new Error('offline'), { status: 0 }));
+const token = (expInDays: number) => 'h.' + btoa(JSON.stringify({ exp: Math.floor(Date.now() / 1000) + expInDays * 86400 })) + '.s';
+afterEach(() => { vi.restoreAllMocks(); pb.authStore.clear(); });
+
+it('keeps the session with no signal, ends it on 401/403, and renews only in the last week', async () => {
+  pb.authStore.save(token(30), { id: 'u' } as never);
+  const send = vi.spyOn(pb, 'send');
+  const refresh = vi.spyOn(pb.collection('users'), 'authRefresh').mockResolvedValue({} as never);
+  send.mockRejectedValueOnce(Object.assign(new Error('offline'), { status: 0 }));
   expect(await refreshSession()).toBe('offline');
-  spy.mockRejectedValueOnce(Object.assign(new Error('gone'), { status: 403 }));
+  send.mockRejectedValueOnce(Object.assign(new Error('gone'), { status: 403 }));
   expect(await refreshSession()).toBe('signed_out');
+  send.mockResolvedValueOnce({ record: { id: 'u' } });
+  expect(await refreshSession()).toBe('ok');
+  expect(refresh).not.toHaveBeenCalled();
+  pb.authStore.save(token(3), { id: 'u' } as never);
+  send.mockResolvedValueOnce({ record: { id: 'u' } });
+  expect(await refreshSession()).toBe('ok');
+  expect(refresh).toHaveBeenCalledOnce();
 });
 ```
-
-`pb.collection('users')` returns a new service object each call, so the spy may not attach. If it
-doesn't, spy on `pb.send` instead and reject with `{status: 0}` and then `{status: 403}`.
 
 Run: `cd web && npx vitest run tests/unit/boardingQueue.test.ts tests/unit/refreshSession.test.ts`
 Expected: FAIL: the module is missing.
@@ -2716,17 +3107,28 @@ Add labels:
 **`web/src/routes/(app)/+layout.svelte`:**
 - Import `refreshSession` and `logout` from `$lib/pb`, `boardingQueue` from
   `$lib/live/boardingQueue.svelte`, and `BoardingPopup`.
-- Add two effects next to the live-day owner:
+- **Key every session-scoped effect on the user id, not the record.** `authStore.save` publishes a
+  fresh record (a renewal, a name change), and an effect that reads `$auth.user` would re-run, so
+  it would restart the live day, the queue and the refresh itself, in a loop. Add
+  `const userId = $derived($auth.user?.id ?? '');` and change the existing live-day owner effect to
+  start with `const id = userId; if (!id) return;` instead of `if (!$auth.user) return;`.
+- Add, next to it:
 
 ```ts
-  // Spec §5: a refresh on every open ends a put-off session; no signal keeps it.
+  // Spec §5: once per session per app open. A put-off session ends; no signal keeps it. A late
+  // answer for a session that has since logged out (or switched user) is ignored.
+  let checkedFor = '';
   $effect(() => {
-    if (!$auth.user || !navigator.onLine) return;
-    void refreshSession().then((r) => { if (r === 'signed_out') logout(); });
+    const id = userId;
+    if (!id || id === checkedFor) return;
+    checkedFor = id;
+    void refreshSession().then((r) => { if (r === 'signed_out' && pb.authStore.record?.id === id) logout(); });
   });
   // The layout owns the boarding queue; logout disposes it (CLAUDE.md clock-ownership rule).
-  $effect(() => { if ($auth.user) return boardingQueue.start(); });
+  $effect(() => { if (userId) return boardingQueue.start(); });
 ```
+
+  `checkedFor` is a plain `let`, not `$state`: it must not be tracked.
 
 - Render `<BoardingPopup />` next to `<Lightbox />`.
 
@@ -2837,7 +3239,9 @@ Append to `web/tests/e2e/boarding.spec.ts`:
 
 ```ts
 test('crew get a popup; when one approver answers, the other popup clears; put off ends a session', async ({ browser }) => {
-  test.setTimeout(60_000);
+  // Realtime normally delivers in a second or two; the queue's 30 s reconciliation is the fallback,
+  // so every popup wait allows 35 s.
+  test.setTimeout(150_000);
   const n = Math.floor(Math.random() * 1e6), email = `popup${n}@test.invalid`;
   const boss = await browser.newContext(), mate = await browser.newContext(), guest = await browser.newContext();
   const [b, m, g] = await Promise.all([boss.newPage(), mate.newPage(), guest.newPage()]);
@@ -2852,10 +3256,10 @@ test('crew get a popup; when one approver answers, the other popup clears; put o
   await g.getByTestId('code-input').fill(await codeFor(email));
   await g.getByTestId('verify').click();
 
-  await expect(b.getByTestId('boarding-popup')).toContainText(`Popup ${n}`, { timeout: 15_000 });
-  await expect(m.getByTestId('boarding-popup')).toContainText(`Popup ${n}`, { timeout: 15_000 });
+  await expect(b.getByTestId('boarding-popup')).toContainText(`Popup ${n}`, { timeout: 35_000 });
+  await expect(m.getByTestId('boarding-popup')).toContainText(`Popup ${n}`, { timeout: 35_000 });
   await b.getByTestId('boarding-popup').getByTestId('let-aboard').click();
-  await expect(m.getByTestId('boarding-popup')).toHaveCount(0, { timeout: 15_000 });
+  await expect(m.getByTestId('boarding-popup')).toHaveCount(0, { timeout: 35_000 });
   await expect(g.getByTestId('aboard')).toBeVisible({ timeout: 10_000 });
 
   await b.goto('/crew/access');
@@ -2938,6 +3342,12 @@ Expected: `ok`. It reads `.env`; this validates syntax only and starts nothing.
 Rewrite "## Crew access" and add "## Deploying crew access" and "## Cloudflare checklist", with the
 exact contents of spec §7. Update "## Rotate a secret" to list `SMTP_PASSWORD`, `GOOGLE_CLIENT_*`,
 `TURNSTILE_SECRET` (`--force-recreate pocketbase`) and `PUBLIC_*` (needs `just up`, a rebuild).
+Add a **manual acceptance** list for what the harness cannot prove:
+- the real Google round trip;
+- Conductor-email batching (two sign-ups a minute apart produce one email; tests run with
+  `NOTIFY_INTERVAL_SECONDS=0`);
+- the daily access-log retention.
+
 Include:
 - "Conductor without mail: on the box, open http://127.0.0.1:8090/_/ → users → your record →
   Impersonate, or temporarily enable password auth for the users collection."
@@ -2946,8 +3356,8 @@ Include:
 
 - [ ] **Step 4: CLAUDE.md**
 
-- Under "One test run at a time", add "**12525–12527** for the SMTP sink, its control API and the
-  Turnstile fake (`web/scripts/test-fakes.mjs`)".
+- Under "One test run at a time", add "**12525–12528** for the SMTP sink, its control API, the
+  Turnstile fake and the fake OIDC provider (`web/scripts/test-fakes.mjs`)".
 - Add a trap: "**Users are keyed by email.** Production signs in only by OTP or Google, and every
   session passes `crew.signInGuard`; boarding requests are not users, and a decoy request must stay
   indistinguishable from a real one. Tests mint sessions by impersonation (`loginToken`,

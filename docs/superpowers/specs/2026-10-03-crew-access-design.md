@@ -731,3 +731,31 @@ Codex's adversarial review (2026-10-03) raised 14 findings; all were accepted.
 | 12 | Mail failure handling contradicted PocketBase | §2.1, §2.6–2.8, §8 |
 | 13 | Missed test callers, dependency location, environment | §6 |
 | 14 | `event_log` kept Bulletin bodies | Decisions, §1 step 5 |
+
+### Plan review (2026-10-03)
+
+Codex's review of the implementation plan raised 16 findings; all were accepted. Resolving them
+refined these points of the design (the plan carries the detail):
+
+- **Session checks mint nothing.** The app's on-open check and the web server's `requireUser` both
+  call `GET /api/crawl/me` (200 `{record}`, 401, or 403 when blocked). The client renews the token
+  with `auth-refresh` only in its last 7 days. Impersonated test sessions are not refreshable, and
+  a refresh must never loop the layout's effects, which are keyed on the user id.
+- **No stale saves.** `last_seen` is written with a one-column SQL update. Put-off, verify, resend
+  and the mail-failure expiry refetch inside a transaction before writing.
+- **Caps and names are checked inside the write transaction.** Unverified requests do not hold a
+  name: the name is checked against users and waiting requests only, by name alone, at join and
+  again at verify. Verify also re-checks the waiting caps.
+- **Decoys reuse their request id** on a repeat sign-up, exactly like real unverified requests.
+- **Resend's once-a-minute rule** lives in `code_sent_at`; there is no separate limiter.
+- **The migration wipes the Conductor's own activity too**, and rotates its token key, when an
+  existing account already has `CONDUCTOR_EMAIL`. Its rate-limit rules are added idempotently and
+  removed on rollback. It honours `PB_RATE_LIMITS=off` (harness only).
+- **Tests:**
+  - a fake OIDC provider (port **12528**) drives the real OAuth2 hook at runtime;
+  - the Turnstile fake is single-use, and the join page resets the widget after every submit;
+  - `runCron` is followed by polling;
+  - the Conductor-email throttle (`NOTIFY_INTERVAL_SECONDS=0` in tests), the Google round trip and
+    log retention are manual acceptance items.
+- **The waiting page keeps its stored request** on network errors. Only a 404 discards it.
+
