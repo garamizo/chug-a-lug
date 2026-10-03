@@ -150,6 +150,7 @@ it('crew access reuses an account that already has the Conductor email, but kill
     await writeFile(join(migrations, '1758905000_verify_reuse.js'), `migrate(app => {
       const c = app.findRecordById('users', 'legacyconductr1');
       if (!c.getBool('is_admin') || !c.verified()) throw new Error('not promoted');
+      if (c.getString('name') !== 'Gui' || c.getString('name_key') !== 'gui') throw new Error('reused account renamed: ' + c.getString('name'));
       if (c.tokenKey() === 'legacy-token-key-legacy-token-key') throw new Error('legacy sessions survive');
       if (app.countRecords('drink_entries') !== 0) throw new Error('conductor activity survived');
     }, app => {})`);

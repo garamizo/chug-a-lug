@@ -9,5 +9,7 @@ routerAdd('GET', '/api/crawl/me', (e) => {
   if (seen.isZero() || Date.now() / 1000 - seen.unix() > 600) {
     $app.db().newQuery('UPDATE users SET last_seen = {:t} WHERE id = {:id}').bind({ t: new Date().toISOString().replace('T', ' '), id: u.id }).execute()
   }
+  // The owner sees their own address; publicExport hides auth emails otherwise.
+  u.ignoreEmailVisibility(true)
   return e.json(200, { record: u })
 })

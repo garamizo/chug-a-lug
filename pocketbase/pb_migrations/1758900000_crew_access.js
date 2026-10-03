@@ -123,7 +123,8 @@ migrate((app) => {
   const locked = ['email', 'is_admin', 'blocked', 'approved_by', 'name_key', 'verified', 'password', 'last_seen']
   fresh.updateRule = 'id = @request.auth.id && ' + locked.map((f) => `@request.body.${f}:isset = false`).join(' && ')
   app.save(fresh)
-  if (conductor.getString('name') !== 'Conductor') {
+  // Only a minted account that had to take a suffix ("Conductor 2") is renamed; a reused one keeps its name.
+  if (/^Conductor \d+$/.test(conductor.getString('name'))) {
     let taken = false
     try { app.findFirstRecordByData('users', 'name_key', 'conductor'); taken = true } catch (_) {}
     if (!taken) { const c = app.findRecordById('users', conductor.id); c.set('name', 'Conductor'); c.set('name_key', 'conductor'); app.save(c) }
