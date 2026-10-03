@@ -187,6 +187,9 @@ Use `just index-recording` with the matching zip/date/window for legacy snapshot
 recover successful unchanged polls; legacy freshness remains conservative. Never re-date protobuf
 headers to pretend the recording is from another Saturday.
 
+After upgrading to crew access, delete existing `.simulations/<run>` folders and start fresh runs: the
+migration wipes their users while their marker still says ready.
+
 Sign in with the usual shared password, then choose Shakedown Run from the Conductor
 menu. All signed-in users see Railroad Time and synchronization status. Only the Conductor sees
 controls. Pause before seeking forward; the seek input is Chicago time on the source service date.

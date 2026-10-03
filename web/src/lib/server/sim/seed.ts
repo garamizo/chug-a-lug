@@ -6,10 +6,12 @@ export type Scenario = ScenarioClock & { title: string; runId?: string; recordin
 // The local launcher owns auth and checks HTTP errors. No response body is logged.
 export type SeedRequest = (method: string, path: string, body?: Record<string, unknown>) => Promise<any>;
 export async function seedTimetable(request: SeedRequest, clock: ScenarioClock & { runId: string; recordingId?: string | null }, scenario: Scenario,
-  passwords: { crew: string; conductor: string }) {
+  passwords: { crew: string; conductor: string }, conductorEmail: string) {
   for (const collection of ['simulation_clock', 'users', 'itineraries', 'stops', 'checkins', 'drink_entries', 'broadcasts', 'media']) {
-    const rows = await request('GET', `/api/collections/${collection}/records?perPage=1`);
-    if (rows.totalItems !== 0) throw new Error(simSetup.notEmpty);
+    const rows = await request('GET', `/api/collections/${collection}/records?perPage=2`);
+    // The crew-access migration always mints the rehearsal Conductor; nothing else may exist.
+    const allowed = collection === 'users' && rows.totalItems === 1 && rows.items?.[0]?.email === conductorEmail;
+    if (rows.totalItems !== 0 && !allowed) throw new Error(simSetup.notEmpty);
   }
   await request('POST', '/api/collections/simulation_clock/records', {
     id: 'simulationclock', run_id: clock.runId, revision: 1, epoch_start: clock.epochStart,

@@ -5,7 +5,7 @@ import { realpath } from 'node:fs/promises';
 import { join } from 'node:path';
 import { setTimeout } from 'node:timers/promises';
 import { fileURLToPath } from 'node:url';
-import { buildSimConfig, composeEnvironment } from '../src/lib/sim/config.ts';
+import { buildSimConfig, composeEnvironment, REHEARSAL_CONDUCTOR_EMAIL } from '../src/lib/sim/config.ts';
 import { assertPortsAvailable, loadRun, optionalSettings, prepareRun, readCredentials, saveMarker, withRunLock } from '../src/lib/server/sim/setup.ts';
 import { seedTimetable, verifySeedLegs } from '../src/lib/server/sim/seed.ts';
 import { resolveSimSource, stageSimSource } from '../src/lib/server/sim/source.ts';
@@ -92,7 +92,7 @@ try {
     if (marker.phase === 'prepared') {
       marker.phase = 'seeding'; await saveMarker(marker);
       const seeded = await seedTimetable(api, { runId: run, ...config.scenario, recordingId: selected.recordingId }, selected.scenario,
-        { crew: credentials.CREW_PASSWORD, conductor: credentials.ADMIN_PASSWORD });
+        { crew: credentials.CREW_PASSWORD, conductor: credentials.ADMIN_PASSWORD }, REHEARSAL_CONDUCTOR_EMAIL);
       await request(`${web}/api/internal/recompute?itinerary=${seeded.itineraryId}`, {
         method: 'POST', headers: { 'X-Internal-Secret': credentials.INTERNAL_SECRET }
       });

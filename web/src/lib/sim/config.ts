@@ -12,6 +12,7 @@ export type SimConfig = {
   fixtureHash: string; scenario: ScenarioClock;
 };
 export type Credentials = Record<'PB_ADMIN_EMAIL' | 'PB_ADMIN_PASSWORD' | 'CREW_PASSWORD' | 'ADMIN_PASSWORD' | 'INTERNAL_SECRET', string>;
+export const REHEARSAL_CONDUCTOR_EMAIL = 'conductor@rehearsal.invalid';
 const invalid = (field: string): never => { throw new Error(simSetup.invalid(field)); };
 export function runDirectory(root: string, run: string): string {
   if (!/^[a-z0-9][a-z0-9-]{0,39}$/.test(run)) invalid('RUN');

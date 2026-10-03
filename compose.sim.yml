@@ -6,6 +6,8 @@ services:
     environment:
       SIM: "1"
       SIM_RUN_ID: ${SIM_RUN_ID:?}
+      CONDUCTOR_EMAIL: conductor@rehearsal.invalid
+      PB_RATE_LIMITS: "off"
       PB_ADMIN_EMAIL: ${PB_ADMIN_EMAIL:?}
       PB_ADMIN_PASSWORD: ${PB_ADMIN_PASSWORD:?}
       CREW_PASSWORD: ${CREW_PASSWORD:?}
