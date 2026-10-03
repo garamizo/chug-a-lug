@@ -36,7 +36,7 @@ The app is public at chugalug.app and the admin suspects strangers and bots. Tod
 - **After boarding, sign-in is by email code or Google.** No passwords for the crew.
 - **Crew with the app open get a popup** for each waiting request. **Conductors get an email**,
   because the crew rarely has the app open.
-- **The Conductor account is minted from the environment:** `CONDUCTOR_EMAIL=garamizor@pm.me` in
+- **The Conductor account is minted from the environment:** `CONDUCTOR_EMAIL` (the admin's own address) in
   `.env`, not committed. `CREW_PASSWORD` and `ADMIN_PASSWORD` are retired in production. Making
   another Conductor is done in the PocketBase admin on the box.
 - **Existing users are wiped.** Routes and stops are reassigned to the Conductor. All personal

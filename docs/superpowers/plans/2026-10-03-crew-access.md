@@ -64,7 +64,7 @@ numbers below (§) refer to it.
   (Task 2).
 - **Times.** UTC everywhere. A PocketBase date filter takes `'YYYY-MM-DD HH:MM:SS.sssZ'`, i.e.
   `new Date(x).toISOString().replace('T', ' ')`.
-- **Production env:** `CONDUCTOR_EMAIL=garamizor@pm.me` goes into `.env` only, never into a
+- **Production env:** `CONDUCTOR_EMAIL` (the admin's own address) goes into `.env` only, never into a
   committed file.
 - **Green gate** at the end of every task: `cd web && npm test && npm run check && npm run test:e2e`,
   plus `bash scripts/test-hooks.sh`.
