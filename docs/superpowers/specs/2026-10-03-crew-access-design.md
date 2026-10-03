@@ -84,13 +84,19 @@ copy that is unit-tested against the module.
   - `passwordAuth.enabled = false` (unchanged);
   - `otp.enabled = true`, 6 digits, 600 s;
   - `oauth2.enabled` is set at serve time (§4);
-  - `authToken.duration = 2592000` (30 days).
+  - `authToken.duration = 7776000` (90 days), so a session minted in October lasts to the event;
+  - `authAlert.enabled = false`: no "new login" emails for email-code or Google sign-ins.
 - `updateRule`:
   `id = @request.auth.id && @request.body.email:isset = false && @request.body.is_admin:isset = false
   && @request.body.blocked:isset = false && @request.body.approved_by:isset = false
   && @request.body.name_key:isset = false && @request.body.verified:isset = false
   && @request.body.password:isset = false && @request.body.last_seen:isset = false`.
-  Only `name` can change; a hook (§2.11) recomputes `name_key`.
+  Only `name` can change; a hook (§2.11) recomputes `name_key`. That hook saves inside a transaction
+  against a fresh read and takes every field the request does not name from it, so a put-off that
+  commits while a crew member saves their own record is never written back stale; a blocked seat's
+  own save is refused.
+- Email changes: PocketBase's request/confirm email-change flow is refused for `users` (403 "Ask the
+  Conductor to change your email."). A superuser changes an email in the admin UI.
 - `listRule`/`viewRule` unchanged (`@request.auth.id != ''`).
 
 ### `boarding_requests` (new)
@@ -280,8 +286,10 @@ PocketBase's default `/api/` limit; the client polls every 5 s and stops after 7
 
 ### 2.4 `POST /api/crawl/join/resend` (guest)
 
-**Body:** `{request_id, secret}`. At most one per 60 s per request, and only while `unverified`.
-Rotates the code and resets the attempts. Decoys "resend" their notice email.
+**Body:** `{request_id, secret}`. At most one per 60 s per request, at most three per request in
+all (a hidden `resends` counter; the fourth answers 429 "That's enough codes for now. Start again
+later."), and only while `unverified`. Rotates the code and resets the attempts. Decoys "resend"
+their notice email under the same caps.
 
 ### 2.5 Google: `onRecordAuthWithOAuth2Request` for `users`
 
@@ -475,8 +483,12 @@ password form against the rehearsal route instead.
 
 ### App layout
 
-- On mount, while online and signed in, call `authRefresh()`. A 401/403 → `logout()` and go to
-  `/login`. A network failure keeps the current token, so the offline event day works.
+- On mount, while online and signed in, call `GET /api/crawl/me` and apply the record it returns
+  with the current token. PocketBase's own 401/403 (a JSON error) → `logout()` and go to `/login`.
+  A network failure, or an edge challenge page, keeps the current token, so the offline event day
+  works. A token issued more than a day ago is then renewed with `auth-refresh`; a failed renewal
+  never signs out, and an answer is applied only while the store still holds the token it was asked
+  about.
 - **The boarding queue** is a store owned by the layout, created at sign-in and disposed at logout,
   following the clock-ownership rule in `CLAUDE.md`. It reconciles from the server rather than
   trusting events, because a request that stops being `waiting` drops out of a crew member's
@@ -490,7 +502,8 @@ password form against the rehearsal route instead.
 - `BoardingPopup` shows one request at a time from the queue: name, email, device, country, how
   long ago, with **Let aboard** / **Turn away** / **Later**. "Later" hides that request until the
   next app open.
-- The header menu shows a dot while the queue is non-empty.
+- The header menu shows a dot while the queue is non-empty (as well as for unread alerts and
+  Bulletins).
 
 ### Other pages
 
@@ -739,7 +752,7 @@ refined these points of the design (the plan carries the detail):
 
 - **Session checks mint nothing.** The app's on-open check and the web server's `requireUser` both
   call `GET /api/crawl/me` (200 `{record}`, 401, or 403 when blocked). The client renews the token
-  with `auth-refresh` only in its last 7 days. Impersonated test sessions are not refreshable, and
+  with `auth-refresh` when it was issued more than a day ago (amended by the final review). Impersonated test sessions are not refreshable, and
   a refresh must never loop the layout's effects, which are keyed on the user id.
 - **No stale saves.** `last_seen` is written with a one-column SQL update. Put-off, verify, resend
   and the mail-failure expiry refetch inside a transaction before writing.
@@ -759,3 +772,17 @@ refined these points of the design (the plan carries the detail):
     log retention are manual acceptance items.
 - **The waiting page keeps its stored request** on network errors. Only a 404 discards it.
 
+### Final review (2026-10-03)
+
+The whole-branch reviews (Codex and Opus) changed these points; the code and tests follow them:
+
+- Sessions last **90 days** and the app renews one **older than a day** on every online open
+  (§1, §5); PocketBase's new-login alert emails are **off** (§1).
+- `requireUser` caches an identity for 60 s, and every admin-gated or write endpoint
+  (`plan/commit`, the simulation clock `POST`, `places/attach`, `places/nearby?refresh=1`) checks
+  the session afresh, so a put-off or demoted Conductor loses them at once.
+- Every non-empty `authMethod` passes the sign-in guard, including methods the app does not offer
+  (logged with an empty method).
+- A put-off seat is mailed no sign-in code, and the request still answers like any other.
+- Resends are capped at **three** per boarding request (§2.4); crew **cannot change their own
+  email** (§1).

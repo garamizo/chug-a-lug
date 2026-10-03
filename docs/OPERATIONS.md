@@ -110,7 +110,8 @@ dev (the PocketBase hook calls the SvelteKit server with that secret and URL aft
   pass through. A rejected file does not stop the rest of its batch; unsupported types get a specific
   error. The client supplies the board's stop, and the hook clears invalid tags but keeps the file.
 - Before the crawl, open the app online on each phone so the service worker precaches the shell and
-  IndexedDB receives the locked route. When PocketBase cannot be reached, Live uses that mirror and
+  IndexedDB receives the locked route. Do it in the week before: that open also renews the phone's
+  session (see Crew access), so nobody is signed out on the day. When PocketBase cannot be reached, Live uses that mirror and
   shows its age (a saved date/time after an hour). A fresh browser without a mirror has no saved route.
   Offline writes are deliberately not queued; retry failed actions after connectivity returns.
 
@@ -127,27 +128,51 @@ Everyone has their own account, keyed by email. There is no shared password.
   can Let aboard or Turn away, from the popup or the Crew Board section. Once let aboard, the person
   signs in at `/login` with an emailed code, or with Google when `PUBLIC_GOOGLE_ENABLED=1`. Conductors get
   a batched email about waiting requests (at most one per 10 minutes).
-- **The Manifest** (`/crew/access`, Conductor only) lists people, their emails, who let them aboard,
-  last seen, and the access log (kept 90 days, at most 10,000 rows).
+- **The Manifest** (`/crew/access`, Conductor only) lists people, their emails, status, when they came
+  aboard and who let them, last seen, and the access log (kept 90 days, at most 10,000 rows).
 - **Put off / Let back on** (Manifest, Conductor only) blocks or unblocks a person. Blocking from the
   PocketBase admin UI (`users` -> the record -> `blocked`) also ends that user's sessions.
-- **Your ticket** (`/account`) lets a person rename themselves.
+- **Your ticket** (`/account`) lets a person rename themselves. Nobody can change their own email; a
+  superuser does it in the admin UI.
+- **Sessions** last 90 days and renew whenever the app is opened online with a session more than a day
+  old. Someone who boards in October and next opens the app on the event day is still aboard, but
+  have everyone open the app online in the week before the crawl anyway.
 - **Add another Conductor:** PocketBase admin (http://127.0.0.1:8090/_/ on the box) -> Collections ->
   `users` -> the person's record -> tick `is_admin`; make sure `verified` is on too. The first Conductor is always the account
-  for `CONDUCTOR_EMAIL`, recreated on every start.
+  for `CONDUCTOR_EMAIL`, recreated on every start. When you type an email into a user record in the
+  admin UI, type it in lowercase: sign-in and boarding look addresses up lowercased.
 - **Mail troubleshooting.** `docker compose logs pocketbase` shows SMTP errors. Check `SMTP_HOST`,
   `SMTP_PORT=465` with `SMTP_TLS=1` (Resend uses implicit TLS), `SMTP_USERNAME=resend`, the API key in
   `SMTP_PASSWORD` and that the sending domain is verified in Resend. Settings are re-applied from `.env`
-  at every start. If mail is down, a join returns an error and nothing is created; Google sign-up still
-  works. After a decision the decision stands and the notification retries.
-- **Conductor without mail:** on the box, open http://127.0.0.1:8090/_/ -> users -> your record ->
-  Impersonate, or temporarily enable password auth for the users collection.
+  at every start. If mail is down, a join answers an error: its request is created and at once expired,
+  so nobody waits on it. Google sign-up still works. After a decision the decision stands and the
+  notification retries.
+- **Conductor without mail.** Never switch on password auth for `users` to get in. Instead:
+  1. If your Google account has the same email as your seat, sign in with Google.
+  2. Otherwise mint a session on the box (the admin UI and superuser API answer only there):
+     http://127.0.0.1:8090/_/ -> Collections -> `users` -> your record -> Impersonate, with a duration
+     such as 86400 (a day), or the same by API:
+
+         SU=$(curl -s http://127.0.0.1:8090/api/collections/_superusers/auth-with-password \
+           -H 'content-type: application/json' -d '{"identity":"<superuser email>","password":"<superuser password>"}' | jq -r .token)
+         curl -s http://127.0.0.1:8090/api/collections/users/impersonate/<your user id> -H "Authorization: $SU" \
+           -H 'content-type: application/json' -d '{"duration":86400}' > /tmp/session.json
+
+     The answer is `{"token": "...", "record": {...}}`. The app keeps its session in the cookie
+     `pb_auth` on `chugalug.app`, holding that same JSON shape URL-encoded (the SDK's cookie format):
+
+         node -e 'const s=require("/tmp/session.json");console.log(encodeURIComponent(JSON.stringify({token:s.token,record:s.record})))'
+
+     On https://chugalug.app open the browser's developer tools -> Application (Storage) -> Cookies,
+     add `pb_auth` with that value, path `/`, then reload. Delete `/tmp/session.json`. The session
+     cannot be renewed and ends after its duration; fix mail before then.
 - **Never publish port 8090 anywhere but the tunnel and the Docker network:** PocketBase trusts
   `CF-Connecting-IP`, so a directly reachable port would let anyone forge their address. Hooks in
   `edge.pb.js` answer 404 for `/_/` and the superusers endpoints on any request that carries that
   header, so the admin UI is reachable only from the box.
 - Rehearsal stacks (`SIM=1`) alone keep `CREW_PASSWORD` / `ADMIN_PASSWORD` and the
-  `/api/crawl/login` route; production has neither.
+  `/api/crawl/login` route; production has neither. A rehearsal's passwords come from the launcher's
+  per-run credentials (`node web/scripts/sim.mjs`), not from `.env`.
 - PocketBase's own rate limits are on (`PB_RATE_LIMITS`; only the test harness sets `off`).
 
 ## Deploying crew access
@@ -157,17 +182,34 @@ all personal activity (likes, comments, Tab, acks), keeps routes, and refuses to
 `CONDUCTOR_EMAIL`.
 
 1. `just backup`.
-2. Fill the new `.env` keys (see `.env.example`): `CONDUCTOR_EMAIL`, `APP_URL`, `MAIL_FROM`, `SMTP_*`,
+2. Dry-run the migration on a copy of that backup, never on `~/.chug-a-lug/pb_data`:
+
+       rm -rf /tmp/chugalug-dryrun && mkdir -p /tmp/chugalug-dryrun/pb_data
+       unzip -q ~/.chug-a-lug/backups/snapshot-<ts>/pocketbase.zip -d /tmp/chugalug-dryrun/pb_data
+       q() { sqlite3 /tmp/chugalug-dryrun/pb_data/data.db "select (select count(*) from users), (select count(*) from itineraries), (select count(*) from stops)"; }
+       q   # before: users, routes, stops
+       CONDUCTOR_EMAIL=<you> pocketbase/pocketbase migrate up --dir /tmp/chugalug-dryrun/pb_data \
+         --hooksDir pocketbase/pb_hooks --migrationsDir pocketbase/pb_migrations
+       q   # after: 1 user (the Conductor), the same routes and stops
+
+   Or look through the admin UI of a disposable serve on a spare port (never 8090):
+   `pocketbase/pocketbase serve --dir /tmp/chugalug-dryrun/pb_data --http 127.0.0.1:18099`. Then
+   `rm -rf /tmp/chugalug-dryrun`: it is a copy of production data.
+3. Fill the new `.env` keys (see `.env.example`): `CONDUCTOR_EMAIL`, `APP_URL`, `MAIL_FROM`, `SMTP_*`,
    `TURNSTILE_SECRET`, `PUBLIC_TURNSTILE_SITE_KEY`, and optionally `GOOGLE_CLIENT_ID`,
    `GOOGLE_CLIENT_SECRET` with `PUBLIC_GOOGLE_ENABLED=1`. Remove `CREW_PASSWORD` and `ADMIN_PASSWORD`.
    Do the Cloudflare checklist below first for the Turnstile, Resend and Google values.
-3. `just up`, then sign in as the Conductor by email code.
-4. Tell the family to board at `/join`.
-5. Delete and recreate any rehearsal runs (`.simulations/<run>`): the migration wipes their users while
+4. `just up`, then sign in as the Conductor by email code.
+5. Tell the family to board at `/join`.
+6. Delete and recreate any rehearsal runs (`.simulations/<run>`): the migration wipes their users while
    their marker still says ready.
-6. Never publish port 8090 anywhere but the tunnel and the Docker network, because the
+7. Never publish port 8090 anywhere but the tunnel and the Docker network, because the
    `CF-Connecting-IP` trust depends on it.
-7. Run the manual acceptance list below.
+8. Run the manual acceptance list below.
+
+**Rollback:** restore the backup (Restore from backup below) **and** check out the code from before
+crew access. Reverting the code alone leaves email required on every user with no password route,
+so nobody can sign in.
 
 ### Manual acceptance
 
