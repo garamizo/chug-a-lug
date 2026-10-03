@@ -1,0 +1,254 @@
+// Boarding (spec §2): how a stranger becomes crew. Guests file a request; any approved crew
+// member decides (decide, Task 6). A decoy is a real row that can never verify, used whenever
+// telling the truth would reveal that an email is a member or already waiting.
+const OPEN = ['unverified', 'waiting']
+const nowIso = () => new Date().toISOString()
+const ago = (minutes) => new Date(Date.now() - minutes * 60e3).toISOString().replace('T', ' ')
+
+// What a decoy's address is told instead of a code: the truth, which only the mailbox sees.
+function notice(app, member, email) {
+  return member
+    ? { to: [email], subject: 'You already have a seat', text: `Someone tried to board the Chug-a-Lug with this address. You already have a seat: sign in at ${app.settings().meta.appURL}/login` }
+    : { to: [email], subject: 'Your boarding request is already waiting', text: 'Your boarding request is already waiting for the crew. Nothing else to do: you will get an email when you are aboard.' }
+}
+const codeMail = (email, code) => ({ to: [email], subject: 'Your Chug-a-Lug boarding code', text: `Your Chug-a-Lug boarding code: ${code}\n\nIt works for 15 minutes.` })
+
+exports.turnstileOk = function (secret, token, ip) {
+  if (!token) return false
+  try {
+    const res = $http.send({
+      url: $os.getenv('TURNSTILE_VERIFY_URL') || 'https://challenges.cloudflare.com/turnstile/v0/siteverify',
+      method: 'POST', timeout: 10,
+      headers: { 'content-type': 'application/x-www-form-urlencoded' },
+      body: 'secret=' + encodeURIComponent(secret) + '&response=' + encodeURIComponent(token) + '&remoteip=' + encodeURIComponent(ip)
+    })
+    return res.statusCode === 200 && !!(res.json && res.json.success)
+  } catch (_) { return false }
+}
+
+exports.findRequest = function (body) {
+  const crew = require(`${__hooks}/crew.js`)
+  if (typeof body.request_id !== 'string' || typeof body.secret !== 'string') return null
+  let r
+  try { r = $app.findRecordById('boarding_requests', body.request_id) } catch (_) { return null }
+  return $security.equal(r.getString('secret_hash'), crew.hash(body.secret)) ? r : null
+}
+
+// Shared by email sign-up (join) and Google sign-up (the OAuth2 hook). Returns [status, json].
+// Every check and the write share one transaction: PocketBase serialises write transactions, so
+// two concurrent joins cannot both pass a cap or both claim a name.
+exports.fileRequest = function (e, x) {
+  const crew = require(`${__hooks}/crew.js`)
+  const { name, email, method, info } = x
+  const ip = info.ip
+  const secret = $security.randomString(43)
+  const code = $security.randomStringWithAlphabet(6, '0123456789')
+  let outcome = '', record = null, member = false, decoy = false
+  $app.runInTransaction((tx) => {
+    const n = (filter, params) => tx.findRecordsByFilter('boarding_requests', filter, '', 0, 0, params || {}).length
+    // Each path is held to the caps of the state it files into: an email request starts
+    // unverified (verify then checks the waiting caps), a Google request starts waiting. Decided
+    // before the email is looked at, so a decoy meets exactly the caps a real request would.
+    const full = method === 'email'
+      ? n("status = 'unverified' && ip = {:ip}", { ip }) >= 2 || n("status = 'unverified'") >= 10
+      : n("status = 'waiting' && ip = {:ip}", { ip }) >= 3 || n("status = 'waiting'") >= 20
+    if (full) { outcome = 'full'; return }
+    // A name is held by users and waiting requests only, and is checked by name alone. Unverified
+    // requests hold nothing (verify re-checks), so no answer here depends on the email.
+    let taken = false
+    try { tx.findFirstRecordByData('users', 'name_key', name.key); taken = true } catch (_) {}
+    if (!taken) taken = n("name_key = {:k} && decoy = false && status = 'waiting'", { k: name.key }) > 0
+    if (taken) { outcome = 'taken'; return }
+    try { tx.findAuthRecordByEmail('users', email); member = true } catch (_) {}
+    decoy = member || n("email = {:e} && status = 'waiting' && decoy = false", { e: email }) > 0
+    // A repeat sign-up updates the open unverified request for this email in place, decoy or not,
+    // so every address answers a second sign-up with the same request id.
+    const open = tx.findRecordsByFilter('boarding_requests', "email = {:e} && status = 'unverified' && decoy = " + (decoy ? 'true' : 'false'), '-created', 1, 0, { e: email })
+    record = open.length ? open[0] : new Record(tx.findCollectionByNameOrId('boarding_requests'))
+    record.set('name', name.display)
+    record.set('name_key', name.key)
+    record.set('email', email)
+    record.set('method', method)
+    record.set('decoy', decoy)
+    record.set('status', decoy || method === 'email' ? 'unverified' : 'waiting')
+    record.set('status_at', nowIso())
+    record.set('secret_hash', crew.hash(secret))
+    record.set('code_hash', decoy ? crew.hash($security.randomString(32)) : (method === 'email' ? crew.hash(code) : ''))
+    record.set('code_attempts', 0)
+    record.set('code_sent_at', nowIso())
+    for (const k of ['ip', 'country', 'city', 'user_agent']) record.set(k, info[k])
+    tx.save(record)
+    outcome = 'ok'
+  })
+  if (outcome === 'full') {
+    crew.logEvent($app, { event: 'rate_limited', detail: 'boarding caps', name: name.display }, info)
+    return [429, { message: 'Too many people are waiting to board. Try again later.' }]
+  }
+  if (outcome === 'taken') return [409, { message: 'That name is taken. Add an initial?' }]
+  try {
+    if (decoy) crew.sendMail($app, notice($app, member, email))
+    else if (method === 'email') crew.sendMail($app, codeMail(email, code))
+  } catch (err) {
+    // Expire only the version written above: a concurrent re-signup may already have replaced it.
+    $app.runInTransaction((tx) => {
+      const r = tx.findRecordById('boarding_requests', record.id)
+      if (r.getString('secret_hash') === crew.hash(secret) && OPEN.indexOf(r.getString('status')) >= 0) { r.set('status', 'expired'); r.set('status_at', nowIso()); tx.save(r) }
+    })
+    crew.logEvent($app, { event: 'mail_failed', email, request: record.id, detail: String(err).slice(0, 200) }, info)
+    return [502, { message: "Couldn't send the email. Try Google or try later." }]
+  }
+  crew.logEvent($app, { event: 'boarding_requested', method, name: name.display, email, request: record.id }, info)
+  if (!decoy && method === 'google') try { exports.notifyConductors($app) } catch (_) { /* the sweep retries */ }
+  return [method === 'google' ? 202 : 200, method === 'google' ? { pending: true, request_id: record.id, secret } : { request_id: record.id, secret }]
+}
+
+exports.join = function (e) {
+  const crew = require(`${__hooks}/crew.js`)
+  const limits = require(`${__hooks}/limits.js`)
+  const normalizeName = require(`${__hooks}/names.js`)
+  const info = crew.clientInfo(e)
+  const body = e.requestInfo().body
+  if (!limits.consume('join:' + info.ip, 5, 3600)) {
+    crew.logEvent($app, { event: 'rate_limited', detail: 'join' }, info)
+    return e.json(429, { message: 'Too many attempts. Try again in an hour.' })
+  }
+  const secret = $os.getenv('TURNSTILE_SECRET')
+  if (!secret) return e.json(503, { message: 'Boarding is not configured on the server.' })
+  if (!exports.turnstileOk(secret, typeof body.turnstile === 'string' ? body.turnstile : '', info.ip)) {
+    crew.logEvent($app, { event: 'turnstile_failed' }, info)
+    return e.json(400, { message: "Couldn't confirm you're human. Try again." })
+  }
+  const name = normalizeName(body.name)
+  if (!name) return e.json(400, { message: "Enter a name: 2 to 32 letters, numbers, spaces, or . ' -" })
+  const email = crew.normalizeEmail(body.email)
+  if (!email) return e.json(400, { message: 'Enter a valid email address.' })
+  const [status, json] = exports.fileRequest(e, { name, email, method: 'email', info })
+  return e.json(status, json)
+}
+
+// The secret, the state, the code and the transition are judged on one transactional read, so a
+// concurrent re-signup (new secret) or decision cannot slip between check and write. Promotion to
+// waiting re-checks the waiting caps and the name, which unverified requests never held.
+exports.verify = function (e) {
+  const crew = require(`${__hooks}/crew.js`)
+  const body = e.requestInfo().body
+  if (typeof body.request_id !== 'string' || typeof body.secret !== 'string') return e.json(404, { message: 'Request not found.' })
+  let outcome = 'missing', request = null
+  $app.runInTransaction((tx) => {
+    let r
+    try { r = tx.findRecordById('boarding_requests', body.request_id) } catch (_) { return }
+    if (!$security.equal(r.getString('secret_hash'), crew.hash(body.secret))) return
+    request = r
+    const age = Date.now() / 1000 - r.getDateTime('code_sent_at').unix()
+    if (r.getString('status') !== 'unverified' || r.getInt('code_attempts') >= 5 || age > 900) { outcome = 'expired'; return }
+    r.set('code_attempts', r.getInt('code_attempts') + 1)
+    const good = !r.getBool('decoy') && r.getString('code_hash') !== '' && $security.equal(r.getString('code_hash'), crew.hash(String(body.code || '')))
+    const n = (filter, params) => tx.findRecordsByFilter('boarding_requests', filter, '', 0, 0, params || {}).length
+    if (!good) outcome = 'wrong'
+    else if (n("status = 'waiting' && ip = {:ip}", { ip: r.getString('ip') }) >= 3 || n("status = 'waiting'") >= 20) outcome = 'full'
+    else {
+      let taken = false
+      try { tx.findFirstRecordByData('users', 'name_key', r.getString('name_key')); taken = true } catch (_) {}
+      if (!taken) taken = n("name_key = {:k} && decoy = false && status = 'waiting'", { k: r.getString('name_key') }) > 0
+      if (taken) outcome = 'taken'
+      else { r.set('code_hash', ''); r.set('status', 'waiting'); r.set('status_at', nowIso()); outcome = 'ok' }
+    }
+    tx.save(r)
+  })
+  if (outcome === 'missing') return e.json(404, { message: 'Request not found.' })
+  if (outcome === 'expired') return e.json(410, { message: 'That code expired. Start again.' })
+  if (outcome === 'wrong') return e.json(400, { message: "That code isn't right." })
+  if (outcome === 'full') return e.json(429, { message: 'Too many people are waiting to board. Try again later.' })
+  if (outcome === 'taken') return e.json(409, { message: 'That name was just taken. Board again with another.' })
+  crew.logEvent($app, { event: 'boarding_verified', method: 'email', email: request.getString('email'), name: request.getString('name'), request: request.id }, crew.clientInfo(e))
+  try { exports.notifyConductors($app) } catch (_) { /* the sweep retries */ }
+  return e.json(200, { status: 'waiting' })
+}
+
+exports.status = function (e) {
+  const r = exports.findRequest(e.requestInfo().body)
+  if (!r) return e.json(404, { message: 'Request not found.' })
+  return e.json(200, { status: r.getString('status') })
+}
+
+// Transactional for the same reason as verify. The once-a-minute rule lives in code_sent_at, so
+// tests can backdate it.
+exports.resend = function (e) {
+  const crew = require(`${__hooks}/crew.js`)
+  const body = e.requestInfo().body
+  if (typeof body.request_id !== 'string' || typeof body.secret !== 'string') return e.json(404, { message: 'Request not found.' })
+  const code = $security.randomStringWithAlphabet(6, '0123456789')
+  let outcome = 'missing', email = '', decoy = false, member = false
+  $app.runInTransaction((tx) => {
+    let r
+    try { r = tx.findRecordById('boarding_requests', body.request_id) } catch (_) { return }
+    if (!$security.equal(r.getString('secret_hash'), crew.hash(body.secret))) return
+    if (r.getString('status') !== 'unverified') { outcome = 'closed'; return }
+    if (Date.now() / 1000 - r.getDateTime('code_sent_at').unix() < 60) { outcome = 'early'; return }
+    decoy = r.getBool('decoy')
+    email = r.getString('email')
+    // A decoy repeats the notice that fits its address now: a seat, or a request already waiting.
+    if (decoy) try { tx.findAuthRecordByEmail('users', email); member = true } catch (_) {}
+    else r.set('code_hash', crew.hash(code))
+    r.set('code_attempts', 0)
+    r.set('code_sent_at', nowIso())
+    tx.save(r)
+    outcome = 'ok'
+  })
+  if (outcome === 'missing') return e.json(404, { message: 'Request not found.' })
+  if (outcome === 'closed') return e.json(410, { message: 'That request is no longer open.' })
+  if (outcome === 'early') return e.json(429, { message: 'Wait a minute before asking again.' })
+  try {
+    crew.sendMail($app, decoy ? notice($app, member, email) : codeMail(email, code))
+  } catch (_) { return e.json(502, { message: "Couldn't send the email. Try later." }) }
+  return e.json(200, {})
+}
+
+// Spec §2.5: called from onRecordAuthWithOAuth2Request. Returns true when it answered the request.
+exports.googleRequest = function (e) {
+  const crew = require(`${__hooks}/crew.js`)
+  const limits = require(`${__hooks}/limits.js`)
+  const normalizeName = require(`${__hooks}/names.js`)
+  const info = crew.clientInfo(e)
+  const u = e.oAuth2User
+  const raw = (u && u.rawUser) || {}
+  const decision = crew.oauthDecision({
+    isNewRecord: e.isNewRecord, hasName: !!(e.createData && e.createData.name), blocked: !!(e.record && e.record.getBool('blocked')),
+    recordEmail: e.record ? e.record.email() : '', oauthEmail: (u && u.email) || '', oauthEmailVerified: raw.email_verified === true || raw.verified_email === true
+  })
+  const refuse = (message, detail) => { crew.logEvent($app, { event: 'sign_in_refused', method: 'google', email: (u && u.email) || '', detail }, info); e.json(403, { message }); return true }
+  if (decision === 'continue') return false
+  if (decision === 'refuse_unverified') return refuse("Google hasn't verified this email.", 'unverified google email')
+  if (decision === 'refuse_new') return refuse('No seat for this Google account yet. Board first.', 'no account')
+  if (decision === 'refuse_blocked') return refuse('Your seat was taken away. Ask the Conductor.', 'blocked')
+  if (decision === 'refuse_mismatch') return refuse("This Google account's email doesn't match your seat. Use an email code.", 'email mismatch')
+  // decision === 'request'
+  if (!limits.consume('join:' + info.ip, 5, 3600)) { crew.logEvent($app, { event: 'rate_limited', detail: 'join' }, info); e.json(429, { message: 'Too many attempts. Try again in an hour.' }); return true }
+  const name = normalizeName(e.createData.name)
+  if (!name) { e.json(400, { message: "Enter a name: 2 to 32 letters, numbers, spaces, or . ' -" }); return true }
+  const email = crew.normalizeEmail(u.email)
+  if (!email) { e.json(400, { message: "Google didn't share an email address." }); return true }
+  const [status, json] = exports.fileRequest(e, { name, email, method: 'google', info })
+  e.json(status, json)
+  return true
+}
+
+// Found and expired on one transactional read, so a decision or a verify cannot land between the
+// two and be overwritten. The notification runs after the commit: it may consume a limit.
+exports.sweep = function (app) {
+  app.runInTransaction((tx) => {
+    for (const r of tx.findRecordsByFilter('boarding_requests', "status = 'unverified' && status_at < {:t}", '', 0, 0, { t: ago(30) })
+      .concat(tx.findRecordsByFilter('boarding_requests', "status = 'waiting' && status_at < {:t}", '', 0, 0, { t: ago(72 * 60) }))) {
+      r.set('status', 'expired'); r.set('status_at', nowIso()); tx.save(r)
+    }
+  })
+  exports.notifyConductors(app)
+}
+
+exports.daily = function (app) {
+  app.db().newQuery('DELETE FROM access_log WHERE created < {:t}').bind({ t: ago(90 * 24 * 60) }).execute()
+  app.db().newQuery('DELETE FROM access_log WHERE id NOT IN (SELECT id FROM access_log ORDER BY created DESC LIMIT 10000)').execute()
+}
+
+// Task 6 replaces this stub with the real batched mail.
+exports.notifyConductors = function (app) {}
