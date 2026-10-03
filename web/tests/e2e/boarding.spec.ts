@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test';
-import { clearMails, codeFor, sessionFor, stubTurnstile } from './helpers';
+import { clearMails, codeFor, login, sessionFor, stubTurnstile } from './helpers';
 
 test('a visitor boards by email, waits, is let aboard and signs in with a code', async ({ page }) => {
   const n = Math.floor(Math.random() * 1e6), email = `visitor${n}@test.invalid`;
@@ -36,4 +36,35 @@ test('a visitor boards by email, waits, is let aboard and signs in with a code',
   await page.getByTestId('code-input').fill(await codeFor(email));
   await page.getByTestId('sign-in').click();
   await expect(page.getByTestId('name')).toHaveText(`Visitor ${n}`);
+});
+
+test('crew get a popup; when one approver answers, the other popup clears; put off ends a session', async ({ browser }) => {
+  // Realtime normally delivers in a second or two; the queue's 30 s reconciliation is the fallback,
+  // so every popup wait allows 35 s.
+  test.setTimeout(150_000);
+  const n = Math.floor(Math.random() * 1e6), email = `popup${n}@test.invalid`;
+  const boss = await browser.newContext(), mate = await browser.newContext(), guest = await browser.newContext();
+  const [b, m, g] = await Promise.all([boss.newPage(), mate.newPage(), guest.newPage()]);
+  await login(b, `E2E Chief ${n}`, 'admin-test-password');
+  await login(m, `E2E Mate ${n}`, 'crew-test-password');
+
+  await clearMails(); await stubTurnstile(g);
+  await g.goto('/join');
+  await g.getByTestId('name-input').fill(`Popup ${n}`);
+  await g.getByTestId('email-input').fill(email);
+  await g.getByTestId('send-code').click();
+  await g.getByTestId('code-input').fill(await codeFor(email));
+  await g.getByTestId('verify').click();
+
+  await expect(b.getByTestId('boarding-popup')).toContainText(`Popup ${n}`, { timeout: 35_000 });
+  await expect(m.getByTestId('boarding-popup')).toContainText(`Popup ${n}`, { timeout: 35_000 });
+  await b.getByTestId('boarding-popup').getByTestId('let-aboard').click();
+  await expect(m.getByTestId('boarding-popup')).toHaveCount(0, { timeout: 35_000 });
+  await expect(g.getByTestId('aboard')).toBeVisible({ timeout: 10_000 });
+
+  await b.goto('/crew/access');
+  await b.getByTestId('manifest-person').filter({ hasText: `E2E Mate ${n}` }).getByTestId('toggle-block').click();
+  await m.reload();
+  await expect(m).toHaveURL(/\/login$/);
+  await Promise.all([boss.close(), mate.close(), guest.close()]);
 });

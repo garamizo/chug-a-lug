@@ -11,6 +11,7 @@
   import { fetchAlerts } from '$lib/live/feed';
   import { readSeen, unseenCount } from '$lib/live/seen';
   import { liveDay } from '$lib/live/day.svelte';
+  import { boardingQueue } from '$lib/live/boardingQueue.svelte';
   import { ui } from '$lib/ui.svelte';
   let { children } = $props();
 
@@ -64,7 +65,7 @@
     {/if}
   </div>
 </header>
-<AppMenu open={ui.menuOpen} {unread} onclose={() => (ui.menuOpen = false)} oncompose={() => (liveDay.composing = true)} />
+<AppMenu open={ui.menuOpen} {unread} waiting={boardingQueue.count} onclose={() => (ui.menuOpen = false)} oncompose={() => (liveDay.composing = true)} />
 <main class="col">{@render children()}</main>
 
 <style>

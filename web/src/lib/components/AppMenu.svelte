@@ -6,7 +6,7 @@
   import { copy, labels } from '$lib/labels';
   import { logout, auth } from '$lib/pb';
 
-  let { open, unread, onclose, oncompose }: { open: boolean; unread: number; onclose: () => void; oncompose: () => void } = $props();
+  let { open, unread, waiting, onclose, oncompose }: { open: boolean; unread: number; waiting: number; onclose: () => void; oncompose: () => void } = $props();
 
   const go = (href: string) => { onclose(); void goto(href); };
 </script>
@@ -35,7 +35,12 @@
     {/if}
     <button type="button" class="item" onclick={() => go('/crew')} data-testid="menu-crew">
       <span class="label">{labels.userRoster}</span>
+      {#if waiting}<span class="badge">{waiting}</span>{/if}
     </button>
+    <button type="button" class="item" onclick={() => go('/account')} data-testid="menu-account"><span class="label">{labels.yourTicket}</span></button>
+    {#if $auth.user?.is_admin}
+      <button type="button" class="item" onclick={() => go('/crew/access')} data-testid="menu-manifest"><span class="label">{labels.manifest}</span></button>
+    {/if}
     <button type="button" class="item" onclick={() => { onclose(); logout(); }} data-testid="logout">
       <span class="label">{copy.logout}</span>
     </button>

@@ -9,6 +9,8 @@
   import { dayBounds } from '$lib/time';
   import type { BroadcastAck, DrinkEntry, UserRecord } from '$lib/types';
   import IconLink from '$lib/components/IconLink.svelte';
+  import WaitingList from '$lib/components/WaitingList.svelte';
+  import { boardingQueue } from '$lib/live/boardingQueue.svelte';
 
   let crew = $state<UserRecord[]>([]);
   let drinks = $state<DrinkEntry[]>([]);
@@ -62,6 +64,11 @@
 {#if !liveDay.isEventDay}<nav><IconLink href="/live" icon="back" label={copy.backToLive} /></nav>{/if}
 <h1>{labels.userRoster}</h1>
 {#if error}<p class="error" role="alert">{error}</p>{/if}
+
+{#if boardingQueue.requests.length}
+  <h2>{copy.waitingToBoard}</h2>
+  <WaitingList items={boardingQueue.requests} />
+{/if}
 
 {#each ranked as { person, score } (person.id)}
   <div class="row" data-testid="crew-row">

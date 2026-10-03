@@ -52,6 +52,21 @@ export function label(key: LabelKey): string {
 
 // UI copy lives alongside the glossary so it can be changed in one place.
 export const copy = {
+  waitingToBoard: 'Waiting to board',
+  letAboard: 'Let aboard',
+  turnAway: 'Turn away',
+  later: 'Later',
+  alreadyAnswered: 'Someone already answered this one.',
+  putOff: 'Put off',
+  letBackOn: 'Let back on',
+  approvedBy: 'Let aboard by',
+  lastSeen: 'Last seen',
+  never: 'never',
+  accessLog: 'Access log',
+  recentRequests: 'Recent boarding requests',
+  allEvents: 'All events',
+  yourName: 'Your name',
+  conductorOnly: 'Only the Conductor can see this.',
   rehearsalTitle: 'Rehearsal — practice only',
   mainNav: 'Main',
   liveHint: 'Departure Board, Tab and crew chat',

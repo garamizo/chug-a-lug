@@ -2,7 +2,7 @@
   import { clientClock } from '$lib/sim/clock.svelte';
   import { afterNavigate, goto } from '$app/navigation';
   import { page } from '$app/state';
-  import { pb, auth } from '$lib/pb';
+  import { pb, auth, refreshSession, logout } from '$lib/pb';
   import { copy } from '$lib/labels';
   import { liveDay } from '$lib/live/day.svelte';
   import DepartureBoard from '$lib/components/DepartureBoard.svelte';
@@ -10,13 +10,19 @@
   import BulletinSheet from '$lib/components/BulletinSheet.svelte';
   import TabBar from '$lib/components/TabBar.svelte';
   import Lightbox from '$lib/components/Lightbox.svelte';
+  import BoardingPopup from '$lib/components/BoardingPopup.svelte';
+  import { boardingQueue } from '$lib/live/boardingQueue.svelte';
   import { newRecordId } from '$lib/live/staged';
   let { children } = $props();
   let error = $state('');
   $effect(() => { if (!$auth.user) goto('/login'); });
+  // Session-scoped effects key on the user id, not the record: authStore.save publishes a fresh
+  // record on every renewal or rename, and re-running them would restart the poller and the queue.
+  const userId = $derived($auth.user?.id ?? '');
   // One owner for the live day: every screen reads this instance, so there is a single poller.
   $effect(() => {
-    if (!$auth.user) return;
+    const id = userId;
+    if (!id) return;
     let disposed = false;
     let stopDay: (() => void) | undefined;
     if (!clientClock.enabled) return liveDay.start();
@@ -24,6 +30,17 @@
     void clientClock.sync().catch(() => {}).then(() => { if (!disposed) stopDay = liveDay.start(); });
     return () => { disposed = true; stopDay?.(); stopClock(); };
   });
+  // Spec §5: once per session per app open. A put-off session ends; no signal keeps it. A late
+  // answer for a session that has since logged out (or switched user) is ignored.
+  let checkedFor = '';
+  $effect(() => {
+    const id = userId;
+    if (!id || id === checkedFor) return;
+    checkedFor = id;
+    void refreshSession().then((r) => { if (r === 'signed_out' && pb.authStore.record?.id === id) logout(); });
+  });
+  // The layout owns the boarding queue; logout disposes it (CLAUDE.md clock-ownership rule).
+  $effect(() => { if (userId) return boardingQueue.start(); });
   const here = $derived(liveDay.here);
   const onLive = $derived(page.url.pathname === '/live');
   // Practice interrupts only the screen that is practising; planning and voting stay quiet.
@@ -97,6 +114,7 @@
   <!-- The Tab opens from the tab bar, so a practice day's Live needs it too; practice stays off the other screens. -->
   {#if liveDay.isEventDay || (liveDay.practice && onLive)}<TabBar />{/if}
   <Lightbox />
+  <BoardingPopup />
   {#if liveDay.composing}
     <BulletinSheet text="" onsend={(body) => void postBulletin(body)} onskip={() => (liveDay.composing = false)} ondismiss={() => (liveDay.composing = false)} />
   {/if}
