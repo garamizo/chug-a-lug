@@ -190,6 +190,9 @@ exports.resend = function (e) {
     try { r = tx.findRecordById('boarding_requests', body.request_id) } catch (_) { return }
     if (!$security.equal(r.getString('secret_hash'), crew.hash(body.secret))) return
     if (r.getString('status') !== 'unverified') { outcome = 'closed'; return }
+    // At most three resends per request, decoys included: a request cannot be used to mail-bomb an
+    // address. A repeat sign-up updates the same row and does not reset the count.
+    if (r.getInt('resends') >= 3) { outcome = 'capped'; return }
     if (Date.now() / 1000 - r.getDateTime('code_sent_at').unix() < 60) { outcome = 'early'; return }
     decoy = r.getBool('decoy')
     email = r.getString('email')
@@ -201,11 +204,13 @@ exports.resend = function (e) {
     }
     r.set('code_attempts', 0)
     r.set('code_sent_at', nowIso())
+    r.set('resends', r.getInt('resends') + 1)
     tx.save(r)
     outcome = 'ok'
   })
   if (outcome === 'missing') return e.json(404, { message: 'Request not found.' })
   if (outcome === 'closed') return e.json(410, { message: 'That request is no longer open.' })
+  if (outcome === 'capped') return e.json(429, { message: "That's enough codes for now. Start again later." })
   if (outcome === 'early') return e.json(429, { message: 'Wait a minute before asking again.' })
   try {
     crew.sendMail($app, decoy ? notice($app, member, email) : codeMail(email, code))

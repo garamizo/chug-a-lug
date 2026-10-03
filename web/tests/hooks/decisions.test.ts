@@ -14,6 +14,35 @@ async function logRows(filter: string) {
   return (await (await fetch(`${PB}/api/collections/access_log/records?${q}`, { headers: await su() })).json()).items as any[];
 }
 const decide = (id: string, verdict: 'let-aboard' | 'turn-away', token?: string) => post(`/api/crawl/boarding/${id}/${verdict}`, {}, token);
+/** An SSE connection to PocketBase's realtime API, subscribed with `token`; events collect in `events`. */
+async function listen(token: string, subscriptions: string[]) {
+  const ctrl = new AbortController();
+  const res = await fetch(`${PB}/api/realtime`, { signal: ctrl.signal });
+  const reader = res.body!.getReader();
+  const decoder = new TextDecoder();
+  const events: Array<{ name: string; data: any }> = [];
+  let buffer = '', connect: (id: string) => void = () => {};
+  const connected = new Promise<string>((r) => (connect = r));
+  void (async () => {
+    try {
+      for (;;) {
+        const { value, done } = await reader.read();
+        if (done) return;
+        buffer += decoder.decode(value, { stream: true });
+        for (let i = buffer.indexOf('\n\n'); i >= 0; i = buffer.indexOf('\n\n')) {
+          const chunk = buffer.slice(0, i); buffer = buffer.slice(i + 2);
+          const name = /^event:(.*)$/m.exec(chunk)?.[1].trim() ?? '';
+          const data = JSON.parse(/^data:(.*)$/m.exec(chunk)?.[1] ?? 'null');
+          if (name === 'PB_CONNECT') connect(data.clientId); else events.push({ name, data });
+        }
+      }
+    } catch { /* aborted */ }
+  })();
+  const clientId = await connected;
+  const sub = await post('/api/realtime', { clientId, subscriptions }, token);
+  if (sub.status !== 204) throw new Error(`Subscribe failed: ${sub.status}`);
+  return { events, close: () => ctrl.abort() };
+}
 
 describe('deciding boarding requests (spec §2.6–2.7)', () => {
   beforeEach(async () => { await mailMode('ok'); await clearMails(); await truncate('boarding_requests'); });
@@ -96,6 +125,22 @@ describe('put off, manifest and names (spec §2.9–2.11)', () => {
     expect((await fetch(`${PB}/api/collections/users/auth-refresh`, { method: 'POST', headers: { Authorization: rider.token } })).status).toBe(401);
     expect((await (await fetch(`${PB}/api/collections/users/records`, { headers: { Authorization: rider.token } })).json()).items).toEqual([]);
     expect((await post(`/api/crawl/users/${rider.id}/let-back-on`, {}, boss.token)).status).toBe(200);
+  });
+
+  it('a put-off person stops receiving realtime events at once', async () => {
+    const boss = await loginToken(`Dispatcher ${uid()}`, ADMIN_LOGIN_PASSWORD);
+    const rider = await loginToken(`Listener ${uid()}`);
+    const itinerary = (await (await post('/api/collections/itineraries/records', { title: `Realtime ${uid()}`, event_date: '2026-12-26', start_time: '12:00' }, boss.token)).json()).id;
+    const stream = await listen(rider.token, ['chat_messages']);
+    try {
+      const say = async (body: string) => expect((await post('/api/collections/chat_messages/records', { itinerary, user: boss.id, body }, await superuserToken())).status).toBe(200);
+      await say('before');
+      await waitFor(async () => stream.events.some((ev) => ev.data?.record?.body === 'before'), 5000); // the control: events do arrive
+      expect((await post(`/api/crawl/users/${rider.id}/put-off`, {}, boss.token)).status).toBe(200);
+      await say('after');
+      await new Promise((r) => setTimeout(r, 1500));
+      expect(stream.events.some((ev) => ev.data?.record?.body === 'after')).toBe(false);
+    } finally { stream.close(); }
   });
 
   it('the manifest shows emails to Conductors only', async () => {

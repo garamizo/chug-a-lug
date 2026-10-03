@@ -95,6 +95,27 @@ describe('joining by email (spec §2.1–2.4)', () => {
     expect((await postFrom(ip, '/api/crawl/join/verify', { ...r, code: fresh })).status).toBe(200);
   });
 
+  it('a request gets at most three resends, decoy or not', async () => {
+    const n = uid();
+    await loginToken(`Capped Member ${n}`);
+    const memberEmail = `${Buffer.from(`capped member ${n}`).toString('hex')}@test.invalid`;
+    for (const email of [`cap${n}@test.invalid`, memberEmail]) {
+      const ip = randomIp();
+      const r = await (await join(ip, { name: `Capped ${uid()}`, email })).json();
+      for (let i = 1; i <= 3; i++) {
+        await backdate(r.request_id, 'code_sent_at', 2);
+        expect((await postFrom(ip, '/api/crawl/join/resend', r)).status, `${email} resend ${i}`).toBe(200);
+      }
+      await backdate(r.request_id, 'code_sent_at', 2);
+      await clearMails();
+      const fourth = await postFrom(ip, '/api/crawl/join/resend', r);
+      expect(fourth.status, email).toBe(429);
+      expect((await fourth.json()).message).toBe("That's enough codes for now. Start again later.");
+      await new Promise((res) => setTimeout(res, 300));
+      expect(await mails(email)).toEqual([]);
+    }
+  });
+
   it('concurrent joins from one IP cannot beat the unverified cap', async () => {
     const ip = randomIp();
     const statuses = await Promise.all([1, 2, 3, 4].map(() => join(ip, { name: `Race ${uid()}`, email: `race${uid()}@test.invalid` }).then((r) => r.status)));

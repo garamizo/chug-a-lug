@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it } from 'vitest';
-import { PB, clearMails, codeFor, loginToken, mails, post, superuserToken } from './setup';
+import { ADMIN_LOGIN_PASSWORD, PB, clearMails, codeFor, get, loginToken, mails, post, superuserToken } from './setup';
 
 const emailOf = (key: string) => `${Buffer.from(key).toString('hex')}@test.invalid`;
 const su = async () => ({ Authorization: await superuserToken(), 'content-type': 'application/json' });
@@ -43,9 +43,75 @@ describe('sign-in by email code and the guards', () => {
     const { token } = await (await otp()).json();
     expect((await post('/api/collections/users/auth-refresh', {}, token)).status).toBe(200);
     expect((await logRows(`user = "${id}" && event = "signed_in"`)).length).toBe(1); // the OTP sign-in only
+    // A code mailed before the put-off: once blocked, no new code is ever mailed (below).
+    await clearMails();
+    const { otpId } = await (await post('/api/collections/users/request-otp', { email })).json();
+    const early = await codeFor(email);
     await fetch(`${PB}/api/collections/users/records/${id}`, { method: 'PATCH', headers: await su(), body: JSON.stringify({ blocked: true }) });
     expect((await post('/api/collections/users/auth-refresh', {}, token)).status).toBe(401); // blocking now ends the session
-    expect((await otp()).status).toBe(403);
+    // Blocking rotates the token key, and PocketBase then drops the seat's open codes: the code mailed
+    // before the put-off is dead too, and no new one is ever mailed (next test). The sign-in guard
+    // is proven on password auth below; Google refuses a blocked seat in oauth.test.ts.
+    const otps = await (await fetch(`${PB}/api/collections/_otps/records?filter=${encodeURIComponent(`recordRef="${id}"`)}`, { headers: await su() })).json();
+    expect(otps.items).toEqual([]);
+    expect((await post('/api/collections/users/auth-with-otp', { otpId, password: early })).status).toBe(400);
+  });
+
+  it('a put-off member asks for a code: the answer looks like anyone\'s, and no mail is sent', async () => {
+    const name = `Unmailed ${Math.floor(Math.random() * 1e6)}`;
+    const { id } = await loginToken(name);
+    const email = emailOf(name.toLowerCase());
+    await fetch(`${PB}/api/collections/users/records/${id}`, { method: 'PATCH', headers: await su(), body: JSON.stringify({ blocked: true }) });
+    const res = await post('/api/collections/users/request-otp', { email });
+    expect(res.status).toBe(200);
+    expect(typeof (await res.json()).otpId).toBe('string');
+    await new Promise((r) => setTimeout(r, 700));
+    expect(await mails(email)).toEqual([]);
+    expect((await logRows(`user = "${id}" && event = "code_sent"`)).length).toBe(0);
+  });
+
+  it('every sign-in method is guarded, even one switched on later (password auth)', async () => {
+    const name = `Passworded ${Math.floor(Math.random() * 1e6)}`;
+    const { id } = await loginToken(name);
+    const email = emailOf(name.toLowerCase());
+    const collection = async (enabled: boolean) => fetch(`${PB}/api/collections/users`, { method: 'PATCH', headers: await su(), body: JSON.stringify({ passwordAuth: { enabled } }) });
+    try {
+      expect((await collection(true)).status).toBe(200);
+      await fetch(`${PB}/api/collections/users/records/${id}`, { method: 'PATCH', headers: await su(),
+        body: JSON.stringify({ password: 'recovery-password-1', passwordConfirm: 'recovery-password-1', blocked: true }) });
+      expect((await post('/api/collections/users/auth-with-password', { identity: email, password: 'recovery-password-1' })).status).toBe(403);
+      expect((await logRows(`user = "${id}" && event = "sign_in_refused" && method = ""`)).length).toBe(1);
+    } finally {
+      expect((await collection(false)).status).toBe(200);
+    }
+  });
+
+  it('crew cannot change their own email through PocketBase\'s email-change flow', async () => {
+    const { token } = await loginToken(`Mover ${Math.floor(Math.random() * 1e6)}`);
+    const newEmail = `moved${Math.floor(Math.random() * 1e6)}@test.invalid`;
+    const res = await post('/api/collections/users/request-email-change', { newEmail }, token);
+    expect(res.status).toBe(403);
+    expect((await res.json()).message).toBe('Ask the Conductor to change your email.');
+    await new Promise((r) => setTimeout(r, 500));
+    expect(await mails(newEmail)).toEqual([]);
+  });
+
+  it('a put-off that lands while the person saves their own record is never undone', async () => {
+    const boss = await loginToken(`Guard ${Math.floor(Math.random() * 1e6)}`, ADMIN_LOGIN_PASSWORD);
+    for (let round = 0; round < 3; round++) {
+      const rider = await loginToken(`Racer ${Math.floor(Math.random() * 1e6)}`);
+      const save = (i: number) => fetch(`${PB}/api/collections/users/records/${rider.id}`, { method: 'PATCH',
+        headers: { Authorization: rider.token, 'content-type': 'application/json' }, body: JSON.stringify({ share_position: i % 2 === 0 }) });
+      const early = Array.from({ length: 12 }, (_, i) => save(i));
+      const off = post(`/api/crawl/users/${rider.id}/put-off`, {}, boss.token);
+      const late = Array.from({ length: 12 }, (_, i) => save(i));
+      expect((await off).status).toBe(200);
+      await Promise.all([...early, ...late]);
+      const row = await (await fetch(`${PB}/api/collections/users/records/${rider.id}`, { headers: await su() })).json();
+      expect(row.blocked, `round ${round}`).toBe(true);
+      expect((await get('/api/crawl/me', rider.token)).status, `round ${round}`).toBe(401);
+      expect((await post('/api/collections/users/auth-refresh', {}, rider.token)).status, `round ${round}`).toBe(401);
+    }
   });
 
   it('the Conductor exists from CONDUCTOR_EMAIL with is_admin', async () => {
