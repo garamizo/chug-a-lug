@@ -1,4 +1,4 @@
-import { beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { ADMIN_LOGIN_PASSWORD, get, loginToken, patch, post, superuserToken, truncate } from './setup';
 
 // Every field clone.pb.js's STOP_FIELDS lists, so a copy of a fully populated stop can be checked
@@ -29,6 +29,9 @@ beforeAll(async () => {
   cloner = await loginToken('Clone Taker');
   admin = await loginToken('Clone Boss', ADMIN_LOGIN_PASSWORD);
 });
+
+// places rows outlive this file otherwise and leak into places.test.ts's lookups.
+afterAll(async () => { await truncate('places'); });
 
 beforeEach(async () => {
   for (const c of ['comments', 'legs', 'stops', 'itineraries']) await truncate(c);
