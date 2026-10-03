@@ -169,3 +169,21 @@ export async function openTab(page: Page): Promise<void> {
   await page.getByTestId('tab-drinks').click();
   await page.getByTestId('tab-sheet').waitFor();
 }
+
+const MAIL = process.env.MAIL_SINK_URL ?? 'http://127.0.0.1:12526';
+export async function clearMails() { await fetch(`${MAIL}/messages`, { method: 'DELETE' }); }
+export async function codeFor(to: string): Promise<string> {
+  for (let i = 0; i < 50; i++) {
+    const all = (await (await fetch(`${MAIL}/messages`)).json()) as { to: string[]; text: string }[];
+    const code = all.filter((m) => m.to.includes(to.toLowerCase())).map((m) => /\b(\d{6})\b/.exec(m.text)?.[1]).filter(Boolean).at(-1);
+    if (code) return code;
+    await new Promise((r) => setTimeout(r, 100));
+  }
+  throw new Error(`No code mailed to ${to}`);
+}
+/** Turnstile without the network: the widget script is replaced by one that passes at once. */
+export async function stubTurnstile(page: Page) {
+  await page.route('https://challenges.cloudflare.com/**', (route) => route.fulfill({ contentType: 'text/javascript',
+    body: "(function(){var n=0,cb=null;function fresh(){setTimeout(function(){cb('ok-e2e-'+Date.now()+'-'+(++n))})}" +
+      "window.turnstile={render:function(el,o){cb=o.callback;fresh();return 'w'},reset:function(){fresh()},remove:function(){}}})();" }));
+}
