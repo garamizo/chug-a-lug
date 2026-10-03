@@ -45,6 +45,13 @@ describe('joining by email (spec §2.1–2.4)', () => {
     expect((await join(ip, { name: 'Fine Name', email: 'not-an-email' })).status).toBe(400);
   });
 
+  it('a Turnstile outage answers 503 and is not logged as a failed check', async () => {
+    const ip = randomIp();
+    expect((await join(ip, { name: `Outage ${uid()}`, email: `o${uid()}@test.invalid`, turnstile: `down-${uid()}` })).status).toBe(503);
+    const q = new URLSearchParams({ filter: `ip = "${ip}" && event = "turnstile_failed"` });
+    expect((await (await fetch(`${PB}/api/collections/access_log/records?${q}`, { headers: await su() })).json()).totalItems).toBe(0);
+  });
+
   it('refuses a name that differs from a member only by case and spacing', async () => {
     const n = uid();
     await loginToken(`Bob Smith${n}`);
@@ -102,6 +109,28 @@ describe('joining by email (spec §2.1–2.4)', () => {
     expect((await verified(randomIp())).status).toBe(429);
   });
 
+  it('the global caps admit the last slot: 9 unverified at join, 19 waiting at verify', async () => {
+    await seedRequests(9, 'unverified');
+    expect((await join(randomIp(), { name: `Ninth ${uid()}`, email: `n${uid()}@test.invalid` })).status).toBe(200);
+    await truncate('boarding_requests');
+    await seedRequests(19, 'waiting');
+    expect((await verified(randomIp())).status).toBe(200);
+  });
+
+  it('a full queue spends no code attempts: the right code still verifies once a slot frees', async () => {
+    await seedRequests(20, 'waiting');
+    const ip = randomIp(), email = `q${uid()}@test.invalid`;
+    const r = await (await join(ip, { name: `Queued ${uid()}`, email })).json();
+    const code = await codeFor(email);
+    for (let i = 0; i < 5; i++) expect((await postFrom(ip, '/api/crawl/join/verify', { ...r, code })).status).toBe(429);
+    expect((await row(r.request_id)).code_attempts).toBe(0);
+    const q = new URLSearchParams({ filter: 'status = "waiting"', perPage: '100' });
+    for (const x of (await (await fetch(`${PB}/api/collections/boarding_requests/records?${q}`, { headers: await su() })).json()).items as Array<{ id: string }>) {
+      await fetch(`${PB}/api/collections/boarding_requests/records/${x.id}`, { method: 'PATCH', headers: await su(), body: JSON.stringify({ status: 'expired' }) });
+    }
+    expect((await postFrom(ip, '/api/crawl/join/verify', { ...r, code })).status).toBe(200);
+  });
+
   it('one IP keeps at most 3 requests waiting', async () => {
     const ip = randomIp();
     for (let i = 0; i < 3; i++) expect((await verified(ip)).status).toBe(200);
@@ -114,7 +143,9 @@ describe('joining by email (spec §2.1–2.4)', () => {
     const b = await join(ip2, { name: shared, email: e2 });
     expect(b.status).toBe(200);
     expect((await postFrom(ip1, '/api/crawl/join/verify', { ...a, code: await codeFor(e1) })).status).toBe(200);
-    expect((await postFrom(ip2, '/api/crawl/join/verify', { ...(await b.json()), code: await codeFor(e2) })).status).toBe(409);
+    const second = await b.json();
+    expect((await postFrom(ip2, '/api/crawl/join/verify', { ...second, code: await codeFor(e2) })).status).toBe(409);
+    expect((await row(second.request_id)).code_attempts).toBe(0); // only a wrong code counts
   });
 
   it('repeat sign-ups return the same request id, for a member address and a fresh one alike', async () => {

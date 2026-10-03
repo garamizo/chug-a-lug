@@ -1,6 +1,6 @@
 // Disposable stand-ins for the harnesses only: Resend (SMTP), Cloudflare Turnstile and an OIDC
 // provider that plays Google. SMTP sink :12525 · control :12526 (GET/DELETE /messages, POST /mode)
-// · Turnstile :12527 (single-use tokens starting "ok") · OIDC :12528 (code = base64url identity JSON).
+// · Turnstile :12527 (single-use tokens starting "ok"; "down…" answers 500) · OIDC :12528 (code = base64url identity JSON).
 import { SMTPServer } from 'smtp-server';
 import { simpleParser } from 'mailparser';
 import { createServer } from 'node:http';
@@ -34,6 +34,8 @@ const usedTokens = new Set();
 const turnstile = createServer(async (req, res) => {
   const form = new URLSearchParams(await readBody(req));
   const token = form.get('response') ?? '';
+  // A token starting "down" plays a siteverify outage.
+  if (token.startsWith('down')) { res.writeHead(500, { 'content-type': 'application/json' }); return res.end('{}'); }
   const success = token.startsWith('ok') && !usedTokens.has(token) && form.get('secret') === 'test-turnstile-secret';
   usedTokens.add(token);
   res.writeHead(200, { 'content-type': 'application/json' });

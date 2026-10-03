@@ -1,7 +1,6 @@
 // Boarding (spec §2): how a stranger becomes crew. Guests file a request; any approved crew
 // member decides (decide, Task 6). A decoy is a real row that can never verify, used whenever
 // telling the truth would reveal that an email is a member or already waiting.
-const OPEN = ['unverified', 'waiting']
 const nowIso = () => new Date().toISOString()
 const ago = (minutes) => new Date(Date.now() - minutes * 60e3).toISOString().replace('T', ' ')
 
@@ -13,17 +12,21 @@ function notice(app, member, email) {
 }
 const codeMail = (email, code) => ({ to: [email], subject: 'Your Chug-a-Lug boarding code', text: `Your Chug-a-Lug boarding code: ${code}\n\nIt works for 15 minutes.` })
 
-exports.turnstileOk = function (secret, token, ip) {
-  if (!token) return false
+// 'ok', 'rejected' (the check said no) or 'unavailable' (siteverify could not answer): an outage
+// is the server's problem, never the visitor's, so it is not logged as a failed check (spec §8).
+exports.turnstile = function (secret, token, ip) {
+  if (!token) return 'rejected'
+  let res
   try {
-    const res = $http.send({
+    res = $http.send({
       url: $os.getenv('TURNSTILE_VERIFY_URL') || 'https://challenges.cloudflare.com/turnstile/v0/siteverify',
       method: 'POST', timeout: 10,
       headers: { 'content-type': 'application/x-www-form-urlencoded' },
       body: 'secret=' + encodeURIComponent(secret) + '&response=' + encodeURIComponent(token) + '&remoteip=' + encodeURIComponent(ip)
     })
-    return res.statusCode === 200 && !!(res.json && res.json.success)
-  } catch (_) { return false }
+  } catch (_) { return 'unavailable' }
+  if (res.statusCode !== 200) return 'unavailable'
+  return res.json && res.json.success === true ? 'ok' : 'rejected'
 }
 
 exports.findRequest = function (body) {
@@ -92,7 +95,8 @@ exports.fileRequest = function (e, x) {
     // Expire only the version written above: a concurrent re-signup may already have replaced it.
     $app.runInTransaction((tx) => {
       const r = tx.findRecordById('boarding_requests', record.id)
-      if (r.getString('secret_hash') === crew.hash(secret) && OPEN.indexOf(r.getString('status')) >= 0) { r.set('status', 'expired'); r.set('status_at', nowIso()); tx.save(r) }
+      // Join mails only unverified rows, and only the sweep may expire a waiting one (spec §1).
+      if (r.getString('secret_hash') === crew.hash(secret) && r.getString('status') === 'unverified') { r.set('status', 'expired'); r.set('status_at', nowIso()); tx.save(r) }
     })
     crew.logEvent($app, { event: 'mail_failed', email, request: record.id, detail: String(err).slice(0, 200) }, info)
     return [502, { message: "Couldn't send the email. Try Google or try later." }]
@@ -114,7 +118,9 @@ exports.join = function (e) {
   }
   const secret = $os.getenv('TURNSTILE_SECRET')
   if (!secret) return e.json(503, { message: 'Boarding is not configured on the server.' })
-  if (!exports.turnstileOk(secret, typeof body.turnstile === 'string' ? body.turnstile : '', info.ip)) {
+  const human = exports.turnstile(secret, typeof body.turnstile === 'string' ? body.turnstile : '', info.ip)
+  if (human === 'unavailable') return e.json(503, { message: "Couldn't reach the human check. Try Google or try again later." })
+  if (human !== 'ok') {
     crew.logEvent($app, { event: 'turnstile_failed' }, info)
     return e.json(400, { message: "Couldn't confirm you're human. Try again." })
   }
@@ -141,19 +147,19 @@ exports.verify = function (e) {
     request = r
     const age = Date.now() / 1000 - r.getDateTime('code_sent_at').unix()
     if (r.getString('status') !== 'unverified' || r.getInt('code_attempts') >= 5 || age > 900) { outcome = 'expired'; return }
-    r.set('code_attempts', r.getInt('code_attempts') + 1)
     const good = !r.getBool('decoy') && r.getString('code_hash') !== '' && $security.equal(r.getString('code_hash'), crew.hash(String(body.code || '')))
+    // Only a wrong code spends an attempt: a full queue or a lost name refuses a proven code,
+    // which must still work once a slot frees.
+    if (!good) { r.set('code_attempts', r.getInt('code_attempts') + 1); tx.save(r); outcome = 'wrong'; return }
     const n = (filter, params) => tx.findRecordsByFilter('boarding_requests', filter, '', 0, 0, params || {}).length
-    if (!good) outcome = 'wrong'
-    else if (n("status = 'waiting' && ip = {:ip}", { ip: r.getString('ip') }) >= 3 || n("status = 'waiting'") >= 20) outcome = 'full'
+    if (n("status = 'waiting' && ip = {:ip}", { ip: r.getString('ip') }) >= 3 || n("status = 'waiting'") >= 20) outcome = 'full'
     else {
       let taken = false
       try { tx.findFirstRecordByData('users', 'name_key', r.getString('name_key')); taken = true } catch (_) {}
       if (!taken) taken = n("name_key = {:k} && decoy = false && status = 'waiting'", { k: r.getString('name_key') }) > 0
       if (taken) outcome = 'taken'
-      else { r.set('code_hash', ''); r.set('status', 'waiting'); r.set('status_at', nowIso()); outcome = 'ok' }
+      else { r.set('code_hash', ''); r.set('status', 'waiting'); r.set('status_at', nowIso()); tx.save(r); outcome = 'ok' }
     }
-    tx.save(r)
   })
   if (outcome === 'missing') return e.json(404, { message: 'Request not found.' })
   if (outcome === 'expired') return e.json(410, { message: 'That code expired. Start again.' })
@@ -188,8 +194,11 @@ exports.resend = function (e) {
     decoy = r.getBool('decoy')
     email = r.getString('email')
     // A decoy repeats the notice that fits its address now: a seat, or a request already waiting.
-    if (decoy) try { tx.findAuthRecordByEmail('users', email); member = true } catch (_) {}
-    else r.set('code_hash', crew.hash(code))
+    if (decoy) {
+      try { tx.findAuthRecordByEmail('users', email); member = true } catch (_) {}
+    } else {
+      r.set('code_hash', crew.hash(code))
+    }
     r.set('code_attempts', 0)
     r.set('code_sent_at', nowIso())
     tx.save(r)
