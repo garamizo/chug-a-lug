@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { ADMIN_LOGIN_PASSWORD, PB, clearMails, codeFor, loginToken, mailMode, mails, post, postFrom, randomIp, runCron, superuserToken, truncate, turnstileToken, waitFor } from './setup';
+import { ADMIN_LOGIN_PASSWORD, PB, clearMails, codeFor, get, loginToken, mailMode, mails, post, postFrom, randomIp, runCron, superuserToken, truncate, turnstileToken, waitFor } from './setup';
 
 const uid = () => Math.floor(Math.random() * 1e6);
 const su = async () => ({ Authorization: await superuserToken(), 'content-type': 'application/json' });
@@ -8,6 +8,10 @@ async function waitingRequest(name = `Guest ${uid()}`) {
   const r = await (await postFrom(ip, '/api/crawl/join', { name, email, turnstile: turnstileToken() })).json();
   await postFrom(ip, '/api/crawl/join/verify', { ...r, code: await codeFor(email) });
   return { ...r, email, name, ip };
+}
+async function logRows(filter: string) {
+  const q = new URLSearchParams({ filter, sort: '-created' });
+  return (await (await fetch(`${PB}/api/collections/access_log/records?${q}`, { headers: await su() })).json()).items as any[];
 }
 const decide = (id: string, verdict: 'let-aboard' | 'turn-away', token?: string) => post(`/api/crawl/boarding/${id}/${verdict}`, {}, token);
 
@@ -71,7 +75,11 @@ describe('deciding boarding requests (spec §2.6–2.7)', () => {
     const crew = await loginToken(`Mailless ${uid()}`);
     const g = await waitingRequest();
     await mailMode('fail');
-    expect((await decide(g.request_id, 'let-aboard', crew.token)).status).toBe(200);
+    const res = await decide(g.request_id, 'let-aboard', crew.token);
+    expect(res.status).toBe(200);
+    const { user_id } = await res.json();
+    expect((await fetch(`${PB}/api/collections/users/records/${user_id}`, { headers: await su() })).status).toBe(200);
+    expect((await logRows(`event = "mail_failed" && user = "${user_id}"`)).length).toBe(1);
   });
 });
 
@@ -81,7 +89,9 @@ describe('put off, manifest and names (spec §2.9–2.11)', () => {
     const rider = await loginToken(`Rider ${uid()}`);
     expect((await post(`/api/crawl/users/${boss.id}/put-off`, {}, rider.token)).status).toBe(403);
     expect((await post(`/api/crawl/users/${boss.id}/put-off`, {}, boss.token)).status).toBe(400);
+    expect((await get('/api/crawl/me', rider.token)).status).toBe(200);
     expect((await post(`/api/crawl/users/${rider.id}/put-off`, {}, boss.token)).status).toBe(200);
+    expect((await get('/api/crawl/me', rider.token)).status).toBe(401);
     // A list rule filters rather than rejects (200, zero rows), so prove the token is dead where PocketBase must reject it.
     expect((await fetch(`${PB}/api/collections/users/auth-refresh`, { method: 'POST', headers: { Authorization: rider.token } })).status).toBe(401);
     expect((await (await fetch(`${PB}/api/collections/users/records`, { headers: { Authorization: rider.token } })).json()).items).toEqual([]);
@@ -107,5 +117,30 @@ describe('put off, manifest and names (spec §2.9–2.11)', () => {
     const ok = await rename(`  Omega   ${n} `);
     expect(ok.status).toBe(200);
     expect(await ok.json()).toMatchObject({ name: `Omega ${n}`, name_key: `omega ${n}` });
+    const row = await logRows(`event = "name_changed" && user = "${a.id}"`);
+    expect(row.length).toBe(1);
+    expect(row[0]).toMatchObject({ actor: a.id, name: `Omega ${n}` });
+    expect(row[0].detail).toContain(`was Alpha ${n}`);
+    // Whitespace or case only: saved normalised, but nothing to report.
+    const same = await rename(`  omega   ${n}`);
+    expect(same.status).toBe(200);
+    expect(await same.json()).toMatchObject({ name: `omega ${n}` });
+    expect((await logRows(`event = "name_changed" && user = "${a.id}"`)).length).toBe(1);
+  });
+
+  it('a superuser rename is saved and logged without an actor; a superuser block ends sessions', async () => {
+    const n = uid();
+    const u = await loginToken(`Sued ${n}`);
+    const patch = async (body: object) => fetch(`${PB}/api/collections/users/records/${u.id}`, { method: 'PATCH', headers: await su(), body: JSON.stringify(body) });
+    const ok = await patch({ name: `  Renamed   ${n} ` });
+    expect(ok.status).toBe(200);
+    const rows = await logRows(`event = "name_changed" && user = "${u.id}"`);
+    expect(rows.length).toBe(1);
+    expect(rows[0].actor).toBe('');
+    expect(rows[0].detail).toContain('by superuser');
+    expect(rows[0].detail).toContain(`was Sued ${n}`);
+    expect((await get('/api/crawl/me', u.token)).status).toBe(200);
+    expect((await patch({ blocked: true })).status).toBe(200);
+    expect((await get('/api/crawl/me', u.token)).status).toBe(401);
   });
 });

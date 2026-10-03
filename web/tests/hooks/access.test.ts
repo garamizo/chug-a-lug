@@ -44,7 +44,7 @@ describe('sign-in by email code and the guards', () => {
     expect((await post('/api/collections/users/auth-refresh', {}, token)).status).toBe(200);
     expect((await logRows(`user = "${id}" && event = "signed_in"`)).length).toBe(1); // the OTP sign-in only
     await fetch(`${PB}/api/collections/users/records/${id}`, { method: 'PATCH', headers: await su(), body: JSON.stringify({ blocked: true }) });
-    expect((await post('/api/collections/users/auth-refresh', {}, token)).status).toBe(403);
+    expect((await post('/api/collections/users/auth-refresh', {}, token)).status).toBe(401); // blocking now ends the session
     expect((await otp()).status).toBe(403);
   });
 

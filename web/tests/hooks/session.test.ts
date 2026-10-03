@@ -14,5 +14,5 @@ it('names the caller without minting a token, and refuses blocked or missing ses
   expect((await get('/api/crawl/me', 'nonsense')).status).toBe(401);
   await fetch(`${PB}/api/collections/users/records/${id}`, { method: 'PATCH',
     headers: { Authorization: await superuserToken(), 'content-type': 'application/json' }, body: JSON.stringify({ blocked: true }) });
-  expect((await get('/api/crawl/me', token)).status).toBe(403);
+  expect((await get('/api/crawl/me', token)).status).toBe(401); // blocking ends the session
 });

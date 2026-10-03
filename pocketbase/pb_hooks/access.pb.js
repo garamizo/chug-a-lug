@@ -39,6 +39,14 @@ onRecordUpdateRequest((e) => {
   e.record.set('name', n.display)
   e.record.set('name_key', n.key)
   e.next()
+  if (n.key === e.record.original().getString('name_key')) return // whitespace or case only: saved normalised, nothing to report
   const crew = require(`${__hooks}/crew.js`)
-  crew.logEvent($app, { event: 'name_changed', user: e.record.id, actor: e.auth ? e.auth.id : '', name: n.display, detail: 'was ' + before }, crew.clientInfo(e))
+  const byCrew = !!e.auth && e.auth.collection().name === 'users' // a superuser id is not a users relation
+  crew.logEvent($app, { event: 'name_changed', user: e.record.id, actor: byCrew ? e.auth.id : '', name: n.display, detail: 'was ' + before + (byCrew ? '' : '; by superuser') }, crew.clientInfo(e))
+}, 'users')
+
+// Blocking by any route (the admin UI included) ends every session.
+onRecordUpdate((e) => {
+  if (e.record.getBool('blocked') && !e.record.original().getBool('blocked')) e.record.refreshTokenKey()
+  e.next()
 }, 'users')
