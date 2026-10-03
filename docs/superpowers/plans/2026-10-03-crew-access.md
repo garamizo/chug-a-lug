@@ -1,5 +1,17 @@
 # Crew Access Implementation Plan
 
+> **Spike results (Task 1, 2026-10-03), binding on Tasks 2–6:**
+> - `onServe` is **not** bound in the PocketBase 0.40.4 JSVM (ReferenceError). `config.pb.js` uses
+>   `onBootstrap((e) => { e.next(); … })` instead.
+> - Bootstrap runs before application migrations, so the users-collection work in it (OAuth2
+>   providers, `ensureConductor`) runs only once the schema is ready, i.e. when `users` has a
+>   `blocked` field.
+> - The crew-access migration also applies the Google provider from `GOOGLE_CLIENT_ID`/`_SECRET`,
+>   so a first deploy has Google without a second restart.
+> - Confirmed as assumed: OAuth2 providers map from plain objects; the default rate-limit labels are
+>   `*:auth`, `*:create`, `/api/batch` and `/api/`; `authMethod` is `"otp"` for OTP and `""` for
+>   refresh; `$apis.recordAuthResponse`, `MailerMessage`, `$app.newMailClient` and `cronAdd` exist.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Replace the shared crew password with per-person accounts keyed by email: peer-approved
