@@ -108,6 +108,7 @@ copy that is unit-tested against the module.
 | `code_hash` | text, hidden | SHA-256 of the email code; cleared once used |
 | `code_attempts` | number | |
 | `code_sent_at` | date | |
+| `status_at` | date | When `status` last changed; expiry counts from here |
 | `ip`, `country`, `city`, `user_agent` | text | |
 | `decided_by` | relation → users | |
 | `decided_at` | date | |
@@ -117,7 +118,10 @@ copy that is unit-tested against the module.
 
 **Rules:**
 - `listRule`/`viewRule`:
-  `@request.auth.id != '' && decoy = false && (status = 'waiting' || @request.auth.is_admin = true)`.
+  `@request.auth.id != '' && decoy = false && (status = 'waiting' || ((status = 'aboard' ||
+  status = 'turned_away') && decided_at > @yesterday) || @request.auth.is_admin = true)`.
+  Crew can see requests decided in the last day, so their realtime subscription receives the
+  update that clears a popup the moment another approver answers it (§5).
 - Create, update and delete: `null`. Only hooks write.
 
 **Allowed transitions** (anything else is refused):
@@ -152,8 +156,8 @@ cron, `cronAdd('crew_access_daily', '17 3 * * *', …)`:
 ### Expiry
 
 A 5-minute `cronAdd('boarding_sweep', '*/5 * * * *', …)` job:
-- sets `unverified` requests older than 30 min to `expired`;
-- sets `waiting` requests older than 72 h to `expired`;
+- sets `unverified` requests whose `status_at` is older than 30 min to `expired`;
+- sets `waiting` requests whose `status_at` is older than 72 h to `expired`;
 - sends any pending Conductor notification (§2.6).
 
 ### Settings (migration)
@@ -412,7 +416,7 @@ as does `http://127.0.0.1:8090/_/` on the box.
 ## 4. Serve-time configuration (`pocketbase/pb_hooks/config.pb.js`)
 
 `onServe` runs after the application migrations, and not during `pocketbase superuser upsert`.
-It calls `e.next()` and then applies the environment, saving only what changed:
+It calls `e.next()` and then applies the environment, saving on every start (idempotent):
 - `meta.appURL = APP_URL` (`https://chugalug.app`).
 - `meta.senderName = "Chug-a-Lug"`, `meta.senderAddress = MAIL_FROM`.
 - `smtp`: `{enabled: !!SMTP_HOST, host, port, username, password, tls}` from `SMTP_*`.
