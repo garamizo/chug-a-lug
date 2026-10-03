@@ -3,6 +3,13 @@ import { once } from 'node:events';
 import { setTimeout } from 'node:timers/promises';
 import { createServer } from 'node:net';
 
+const fakes = spawn(process.execPath, ['web/scripts/test-fakes.mjs'], { stdio: ['ignore', 'ignore', 'inherit'] });
+for (let attempt = 0; ; attempt++) {
+  try { if ((await fetch('http://127.0.0.1:12526/health')).ok) break; } catch {}
+  if (attempt > 50) throw new Error('Test fakes did not start');
+  await setTimeout(100);
+}
+
 // Separate disposable databases prove normal-mode isolation and simulation event hooks.
 for (const sim of [false, true]) {
   process.env.SIM = sim ? '1' : '0';
@@ -35,7 +42,8 @@ for (const sim of [false, true]) {
     test = spawn('npm', sim ? ['exec', '--', 'vitest', 'run', 'tests/hooks/simulationEvents.test.ts'] : ['run', 'test:hooks'], {
       cwd: 'web', stdio: 'inherit', env: {
         ...process.env, PB_URL: 'http://127.0.0.1:18090', PB_ADMIN_EMAIL: 'tests@chugalug.invalid',
-        PB_ADMIN_PASSWORD: 'local-test-password-only', CREW_PASSWORD: 'crew-test-password', ADMIN_PASSWORD: 'admin-test-password'
+        PB_ADMIN_PASSWORD: 'local-test-password-only', CREW_PASSWORD: 'crew-test-password', ADMIN_PASSWORD: 'admin-test-password',
+        CONDUCTOR_EMAIL: 'conductor@test.invalid', MAIL_SINK_URL: 'http://127.0.0.1:12526'
       }
     });
     const [code] = await once(test, 'exit');
@@ -48,3 +56,4 @@ for (const sim of [false, true]) {
   }
   if (process.exitCode) break;
 }
+fakes.kill('SIGTERM');

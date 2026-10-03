@@ -16,6 +16,8 @@ export function browserConfig(sim = false, production = false) {
   process.env.PB_ADMIN_PASSWORD = 'local-test-password-only';
   process.env.CREW_PASSWORD = 'crew-test-password';
   process.env.ADMIN_PASSWORD = 'admin-test-password';
+  process.env.MAIL_SINK_URL = 'http://127.0.0.1:12526';
+  process.env.CONDUCTOR_EMAIL = 'conductor@test.invalid';
 
   process.env.GTFS_URL = pathToFileURL(resolve('tests/fixtures/gtfs.zip')).href;
   // Playwright evaluates config again in workers; preserve this invocation's disposable paths.
@@ -41,6 +43,12 @@ export function browserConfig(sim = false, production = false) {
     use: { ...devices['iPhone 13'], browserName: 'chromium', baseURL: 'http://127.0.0.1:15173', trace: 'retain-on-failure' },
     webServer: [
       {
+        command: 'node scripts/test-fakes.mjs',
+        url: 'http://127.0.0.1:12526/health',
+        reuseExistingServer: false, timeout: 10_000,
+        gracefulShutdown: { signal: 'SIGTERM', timeout: 2000 }
+      },
+      {
         command: 'node ../scripts/pb-test-server.mjs 18093',
         url: 'http://127.0.0.1:18093/api/health',
         reuseExistingServer: false, timeout: 30_000,
@@ -49,7 +57,8 @@ export function browserConfig(sim = false, production = false) {
       {
         command: sim ? `node scripts/sim-test-web.mjs${production ? ' --production' : ''}` : 'npm run dev -- --host 127.0.0.1 --port 15173 --strictPort',
         url: 'http://127.0.0.1:15173/login',
-        env: { PUBLIC_PB_URL: 'http://127.0.0.1:18093', HOST: '127.0.0.1', PORT: '15173', ORIGIN: 'http://127.0.0.1:15173' },
+        env: { PUBLIC_PB_URL: 'http://127.0.0.1:18093', HOST: '127.0.0.1', PORT: '15173', ORIGIN: 'http://127.0.0.1:15173',
+          PUBLIC_TURNSTILE_SITE_KEY: 'test-site-key', PUBLIC_GOOGLE_ENABLED: '0' },
         reuseExistingServer: false, timeout: 60_000,
         gracefulShutdown: { signal: 'SIGTERM', timeout: 5000 }
       }

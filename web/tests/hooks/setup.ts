@@ -93,3 +93,54 @@ export async function truncate(collection: string): Promise<void> {
     await fetch(`${PB}/api/collections/${collection}/records/${record.id}`, { method: 'DELETE', headers: { Authorization: token } });
   }
 }
+
+export const MAIL = process.env.MAIL_SINK_URL ?? 'http://127.0.0.1:12526';
+export type Mail = { to: string[]; subject: string; text: string };
+export async function mails(to?: string): Promise<Mail[]> {
+  const all = (await (await fetch(`${MAIL}/messages`)).json()) as Mail[];
+  return to ? all.filter((m) => m.to.includes(to.toLowerCase())) : all;
+}
+export async function clearMails(): Promise<void> { await fetch(`${MAIL}/messages`, { method: 'DELETE' }); }
+export async function mailMode(mode: 'ok' | 'fail'): Promise<void> {
+  await fetch(`${MAIL}/mode`, { method: 'POST', body: JSON.stringify({ mode }) });
+}
+/** The last 6-digit code mailed to `to`, polling briefly because PocketBase sends OTP mail asynchronously. */
+export async function codeFor(to: string): Promise<string> {
+  for (let i = 0; i < 50; i++) {
+    const code = (await mails(to)).map((m) => /\b(\d{6})\b/.exec(m.text)?.[1]).filter(Boolean).at(-1);
+    if (code) return code;
+    await new Promise((r) => setTimeout(r, 100));
+  }
+  throw new Error(`No code mailed to ${to}`);
+}
+/** A fresh documentation-range IP, so each test owns its own rate-limit buckets. */
+export const randomIp = () => `10.${Math.floor(Math.random() * 250)}.${Math.floor(Math.random() * 250)}.${1 + Math.floor(Math.random() * 250)}`;
+/** POST as if through the tunnel from `ip`; PocketBase trusts CF-Connecting-IP once Task 2's migration runs. */
+export function postFrom(ip: string, path: string, body: unknown, token?: string) {
+  return fetch(`${PB}${path}`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', 'CF-Connecting-IP': ip, ...(token ? { Authorization: token } : {}) },
+    body: JSON.stringify(body)
+  });
+}
+/** Schedules a registered cron job now (superuser API). It returns before the job finishes: follow with waitFor. */
+export async function runCron(id: string): Promise<void> {
+  const res = await fetch(`${PB}/api/crons/${id}`, { method: 'POST', headers: { Authorization: await superuserToken() } });
+  if (!res.ok) throw new Error(`Cron ${id} failed: ${res.status}`);
+}
+/** Polls until `probe` returns something truthy, or fails after `ms`. */
+export async function waitFor<T>(probe: () => Promise<T | null | undefined | false>, ms = 5000): Promise<T> {
+  const until = Date.now() + ms;
+  for (;;) {
+    const v = await probe();
+    if (v) return v;
+    if (Date.now() > until) throw new Error('waitFor timed out');
+    await new Promise((r) => setTimeout(r, 100));
+  }
+}
+let tokens = 0;
+/** A Turnstile token the fake accepts exactly once. */
+export const turnstileToken = () => `ok-${process.pid}-${++tokens}-${Math.random().toString(36).slice(2)}`;
+/** A code the fake OIDC provider exchanges for this identity. */
+export const oidcCode = (identity: { sub: string; email: string; email_verified?: boolean; name?: string }) =>
+  Buffer.from(JSON.stringify({ email_verified: true, name: 'Fake Person', ...identity })).toString('base64url');
