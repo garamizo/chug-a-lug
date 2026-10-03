@@ -104,6 +104,22 @@ it('crew access keeps routes for the Conductor and wipes every other user and th
       b.set('itinerary', it.id); b.set('kind', 'message'); b.set('body', 'secret plan'); b.set('created_by', boss.id); app.save(b);
       const log = new Record(app.findCollectionByNameOrId('event_log'));
       log.set('itinerary', it.id); log.set('kind', 'bulletin'); log.set('payload', { body: 'secret plan' }); log.set('at', '2026-12-26T18:00:00Z'); app.save(log);
+      const ack = new Record(app.findCollectionByNameOrId('broadcast_acks'));
+      ack.set('broadcast', b.id); ack.set('user', rider.id); app.save(ack);
+      const ci = new Record(app.findCollectionByNameOrId('checkins'));
+      ci.set('user', rider.id); ci.set('stop', stop.id); ci.set('kind', 'at_stop'); ci.set('at', '2026-12-26T18:00:00Z'); app.save(ci);
+      const msg = new Record(app.findCollectionByNameOrId('chat_messages'));
+      msg.set('itinerary', it.id); msg.set('user', rider.id); msg.set('body', 'see you there'); app.save(msg);
+      const re = new Record(app.findCollectionByNameOrId('reactions'));
+      re.set('user', boss.id); re.set('target_kind', 'message'); re.set('target_id', msg.id); re.set('itinerary', it.id); app.save(re);
+      const m = new Record(app.findCollectionByNameOrId('media'));
+      m.set('user', rider.id); m.set('kind', 'image'); m.set('stop', stop.id);
+      m.set('file', $filesystem.fileFromBytes([137, 80, 78, 71, 13, 10, 26, 10], 'freightfixture.png')); app.save(m);
+      if (!m.getString('file')) throw new Error('media file not stored');
+      // The precondition the wipe is judged against: every seeded collection holds a row.
+      for (const name of ['comments', 'drink_entries', 'broadcasts', 'event_log', 'checkins', 'chat_messages', 'reactions', 'media', 'broadcast_acks']) {
+        if (app.countRecords(name) === 0) throw new Error(name + ' not seeded');
+      }
     }, app => {})`);
     await writeFile(join(migrations, '1758905000_verify_crew.js'), `migrate(app => {
       const users = app.findAllRecords('users');
@@ -121,12 +137,23 @@ it('crew access keeps routes for the Conductor and wipes every other user and th
       if (s.trustedProxy.headers.join() !== 'CF-Connecting-IP') throw new Error('trusted proxy');
       if (!s.rateLimits.rules.some(r => r.label === 'users:requestOTP')) throw new Error('rate limits');
       const u = app.findCollectionByNameOrId('users');
-      if (!u.otp.enabled || u.authToken.duration !== 2592000 || !u.fields.getByName('email').required) throw new Error('users options');
-      app.findCollectionByNameOrId('boarding_requests'); app.findCollectionByNameOrId('access_log');
+      if (!u.otp.enabled || !u.fields.getByName('email').required) throw new Error('users options');
+      if (u.authToken.duration !== 7776000) throw new Error('token duration: ' + u.authToken.duration);
+      if (u.authAlert.enabled) throw new Error('new-login alert emails are on');
+      for (const f of ['email', 'is_admin', 'blocked', 'approved_by', 'name_key', 'verified', 'password', 'last_seen']) {
+        if (u.updateRule.indexOf('@request.body.' + f + ':isset = false') < 0) throw new Error('updateRule leaves ' + f + ' open');
+      }
+      if (u.updateRule.indexOf('id = @request.auth.id') !== 0) throw new Error('updateRule owner: ' + u.updateRule);
+      const resends = app.findCollectionByNameOrId('boarding_requests').fields.getByName('resends');
+      if (!resends || !resends.hidden) throw new Error('boarding_requests.resends');
+      app.findCollectionByNameOrId('access_log');
     }, app => {})`);
     const output = execFileSync(resolve('../pocketbase/pocketbase'), ['migrate', 'up', '--dir', join(dir, 'data'),
       '--migrationsDir', migrations, '--hooksDir', hooks], { encoding: 'utf8', timeout: 15000, env: { ...process.env, CONDUCTOR_EMAIL: 'conductor@test.invalid' } });
     expect(output).toContain('1758905000_verify_crew');
+    // Freight files go with their rows: nothing of the fixture's upload is left in storage.
+    const files = (await readdir(join(dir, 'data', 'storage'), { recursive: true }).catch(() => [] as string[])).map(String);
+    expect(files.filter((f) => f.includes('freightfixture'))).toEqual([]);
   } finally { await rm(dir, { recursive: true, force: true }); }
 });
 

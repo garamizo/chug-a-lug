@@ -29,6 +29,7 @@ migrate((app) => {
       { name: 'secret_hash', type: 'text', hidden: true },
       { name: 'code_hash', type: 'text', hidden: true },
       { name: 'code_attempts', type: 'number', onlyInt: true },
+      { name: 'resends', type: 'number', onlyInt: true, hidden: true },
       { name: 'code_sent_at', type: 'date' },
       { name: 'status_at', type: 'date' },
       { name: 'ip', type: 'text', max: 64 },
@@ -112,7 +113,11 @@ migrate((app) => {
   fresh.otp.length = 6
   fresh.otp.emailTemplate.subject = 'Your Chug-a-Lug code'
   fresh.otp.emailTemplate.body = '<p>Your Chug-a-Lug sign-in code is <strong>{OTP}</strong>.</p><p>It works for 10 minutes. If you did not ask for it, ignore this email.</p>'
-  fresh.authToken.duration = 2592000
+  // 90 days: someone who boards in October and next opens the app on the event day is still aboard.
+  // The app renews a session older than a day whenever it opens online (web/src/lib/pb.ts).
+  fresh.authToken.duration = 7776000
+  // No "new login" emails: every email code or Google sign-in from a new network would send one.
+  fresh.authAlert.enabled = false
   // Google sign-in from the environment, so a first deploy has it without a restart.
   // config.pb.js's onBootstrap re-applies the same on every start.
   const googleId = $os.getenv('GOOGLE_CLIENT_ID'), googleSecret = $os.getenv('GOOGLE_CLIENT_SECRET')
@@ -157,6 +162,7 @@ migrate((app) => {
   users.oauth2.enabled = false
   users.oauth2.providers = []
   users.authToken.duration = 31536000
+  users.authAlert.enabled = true
   users.updateRule = "id = @request.auth.id && @request.body.is_admin:isset = false && @request.body.name:isset = false && @request.body.name_key:isset = false && @request.body.password:isset = false"
   app.save(users)
 })
