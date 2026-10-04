@@ -48,4 +48,5 @@
   .row { padding: 10px 0; border-bottom: 1px solid #2a2a2a; display: grid; gap: 4px; }
   .email { color: #bbb; word-break: break-all; }
   small { color: #9a9a9a; }
+  select { font: inherit; font-size: 15px; padding: 10px; min-height: 44px; border-radius: 10px; border: 1px solid #555; background: #202020; color: #fff; }
 </style>
