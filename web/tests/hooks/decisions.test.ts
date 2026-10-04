@@ -5,7 +5,7 @@ const uid = () => Math.floor(Math.random() * 1e6);
 const su = async () => ({ Authorization: await superuserToken(), 'content-type': 'application/json' });
 async function waitingRequest(name = `Guest ${uid()}`) {
   const ip = randomIp(), email = `g${uid()}@test.invalid`;
-  const r = await (await postFrom(ip, '/api/crawl/join', { name, email, turnstile: turnstileToken() })).json();
+  const r = await (await postFrom(ip, '/api/crawl/join', { name, email, password: 'boarding-pass-1', turnstile: turnstileToken() })).json();
   await postFrom(ip, '/api/crawl/join/verify', { ...r, code: await codeFor(email) });
   return { ...r, email, name, ip };
 }
@@ -47,6 +47,34 @@ async function listen(token: string, subscriptions: string[]) {
 describe('deciding boarding requests (spec §2.6–2.7)', () => {
   beforeEach(async () => { await mailMode('ok'); await clearMails(); await truncate('boarding_requests'); });
   afterEach(() => mailMode('ok'));
+
+  it('let aboard installs the chosen password, clears the hash and says so in the mail', async () => {
+    const crew = await loginToken(`Pw Voucher ${uid()}`);
+    const g = await waitingRequest();
+    expect((await decide(g.request_id, 'let-aboard', crew.token)).status).toBe(200);
+    expect((await post('/api/collections/users/auth-with-password', { identity: g.email, password: 'boarding-pass-1' })).status).toBe(200);
+    const req = await (await fetch(`${PB}/api/collections/boarding_requests/records/${g.request_id}`, { headers: await su() })).json();
+    expect(req.password_hash).toBe('');
+    expect((await mails(g.email)).at(-1)?.text).toContain('the password you chose');
+  });
+
+  it('a request filed before passwords existed is let aboard with the email-or-Google notice', async () => {
+    const crew = await loginToken(`Old Voucher ${uid()}`);
+    const email = `old${uid()}@test.invalid`, n = uid();
+    const seeded = await (await fetch(`${PB}/api/collections/boarding_requests/records`, { method: 'POST', headers: await su(),
+      body: JSON.stringify({ name: `Old ${n}`, name_key: `old ${n}`, email, method: 'email', status: 'waiting', ip: randomIp(),
+        status_at: new Date().toISOString().replace('T', ' '), code_sent_at: new Date().toISOString().replace('T', ' ') }) })).json();
+    expect((await decide(seeded.id, 'let-aboard', crew.token)).status).toBe(200);
+    expect((await mails(email)).at(-1)?.text).toContain('this email address or Google');
+  });
+
+  it('turning a request away clears its hash', async () => {
+    const crew = await loginToken(`Pw Away ${uid()}`);
+    const g = await waitingRequest();
+    expect((await decide(g.request_id, 'turn-away', crew.token)).status).toBe(200);
+    const req = await (await fetch(`${PB}/api/collections/boarding_requests/records/${g.request_id}`, { headers: await su() })).json();
+    expect(req.password_hash).toBe('');
+  });
 
   it('any crew member lets a guest aboard; the guest then signs in by code', async () => {
     const crew = await loginToken(`Voucher ${uid()}`);
@@ -90,7 +118,7 @@ describe('deciding boarding requests (spec §2.6–2.7)', () => {
   it('a Conductor notice that fails to send is retried by the sweep', async () => {
     // The code must reach the guest first; only the notice at verify time should fail.
     const ip = randomIp(), email = `n${uid()}@test.invalid`;
-    const r = await (await postFrom(ip, '/api/crawl/join', { name: `Notice ${uid()}`, email, turnstile: turnstileToken() })).json();
+    const r = await (await postFrom(ip, '/api/crawl/join', { name: `Notice ${uid()}`, email, password: 'boarding-pass-1', turnstile: turnstileToken() })).json();
     const code = await codeFor(email);
     await mailMode('fail');
     expect((await postFrom(ip, '/api/crawl/join/verify', { ...r, code })).status).toBe(200); // the decision path never fails on mail

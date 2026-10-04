@@ -9,6 +9,7 @@ test('a visitor boards by email, waits, is let aboard and signs in with a code',
   await page.getByTestId('to-join').click();
   await page.getByTestId('name-input').fill(`Visitor ${n}`);
   await page.getByTestId('email-input').fill(email);
+  await page.getByTestId('password-input').fill('boarding-pass-1');
   await page.getByTestId('send-code').click();
   await page.getByTestId('code-input').fill(await codeFor(email));
   await page.getByTestId('verify').click();
@@ -45,6 +46,7 @@ test('a status poll answered after the code is confirmed cannot send the page ba
   await page.goto('/join');
   await page.getByTestId('name-input').fill(`Poller ${n}`);
   await page.getByTestId('email-input').fill(email);
+  await page.getByTestId('password-input').fill('boarding-pass-1');
   await page.getByTestId('send-code').click();
   await expect(page.getByTestId('code-input')).toBeVisible();
   // Google is off in e2e: the hint offers only another code, and the button confirms, not signs in.
@@ -89,6 +91,7 @@ test('crew get a popup; when one approver answers, the other popup clears; put o
   await g.goto('/join');
   await g.getByTestId('name-input').fill(`Popup ${n}`);
   await g.getByTestId('email-input').fill(email);
+  await g.getByTestId('password-input').fill('boarding-pass-1');
   await g.getByTestId('send-code').click();
   await g.getByTestId('code-input').fill(await codeFor(email));
   await g.getByTestId('verify').click();

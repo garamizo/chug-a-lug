@@ -1,9 +1,9 @@
 import { beforeEach, describe, expect, it } from 'vitest';
-import { PB, clearMails, codeFor, loginToken, mailMode, mails, postFrom, randomIp, runCron, superuserToken, truncate, turnstileToken, waitFor } from './setup';
+import { ADMIN_LOGIN_PASSWORD, PB, clearMails, codeFor, loginToken, mailMode, mails, postFrom, randomIp, runCron, superuserToken, truncate, turnstileToken, waitFor } from './setup';
 
 const uid = () => Math.floor(Math.random() * 1e6);
 const su = async () => ({ Authorization: await superuserToken(), 'content-type': 'application/json' });
-const join = (ip: string, body: Record<string, unknown>) => postFrom(ip, '/api/crawl/join', { turnstile: turnstileToken(), ...body });
+const join = (ip: string, body: Record<string, unknown>) => postFrom(ip, '/api/crawl/join', { turnstile: turnstileToken(), password: 'boarding-pass-1', ...body });
 /** Requests written directly by the superuser, to reach the global caps without 20 IPs of joins. */
 async function seedRequests(count: number, status: 'unverified' | 'waiting') {
   for (let i = 0; i < count; i++) await fetch(`${PB}/api/collections/boarding_requests/records`, { method: 'POST', headers: await su(),
@@ -24,6 +24,59 @@ async function backdate(id: string, field: 'status_at' | 'code_sent_at', minutes
 describe('joining by email (spec §2.1–2.4)', () => {
   // The global caps (10 unverified, 20 waiting) would otherwise fill up across tests.
   beforeEach(async () => { await mailMode('ok'); await clearMails(); await truncate('boarding_requests'); });
+
+  it('refuses a missing, short or four-emoji password', async () => {
+    for (const password of [undefined, 'short1', '😀😀😀😀']) {
+      const res = await join(randomIp(), { name: `NoPass ${uid()}`, email: `np${uid()}@test.invalid`, password });
+      expect(res.status, String(password)).toBe(400);
+      expect((await res.json()).message).toBe('Pick a password of 8 to 64 characters.');
+    }
+  });
+
+  it('keeps only a bcrypt hash of the chosen password on the request', async () => {
+    const r = await (await join(randomIp(), { name: `Hashed ${uid()}`, email: `h${uid()}@test.invalid` })).json();
+    const stored = await row(r.request_id);
+    expect(stored.password_hash).toMatch(/^\$2a\$10\$.{53}$/);
+    expect(JSON.stringify(stored)).not.toContain('boarding-pass-1');
+  });
+
+  it('a decoy for a member stores a hash like any request and never touches the member\'s password', async () => {
+    const n = uid();
+    await loginToken(`Pw Member ${n}`);
+    const memberEmail = `${Buffer.from(`pw member ${n}`).toString('hex')}@test.invalid`;
+    const d = await (await join(randomIp(), { name: `Pw Taker ${n}`, email: memberEmail, password: 'takeover-pass-1' })).json();
+    expect((await row(d.request_id)).password_hash).toMatch(/^\$2a\$/);
+    const signIn = (password: string) => postFrom(randomIp(), '/api/collections/users/auth-with-password', { identity: memberEmail, password });
+    expect((await signIn('takeover-pass-1')).status).toBe(400);
+    expect((await signIn('seed-test-password-1')).status).toBe(200);
+  });
+
+  it('a mail failure clears the hash, for a real request and a decoy alike', async () => {
+    const n = uid();
+    await loginToken(`Fail Member ${n}`);
+    await mailMode('fail');
+    for (const email of [`nomailpw${n}@test.invalid`, `${Buffer.from(`fail member ${n}`).toString('hex')}@test.invalid`]) {
+      expect((await join(randomIp(), { name: `Fail ${uid()}`, email })).status, email).toBe(502);
+      const q = new URLSearchParams({ filter: `email = "${email}"` });
+      const rows = (await (await fetch(`${PB}/api/collections/boarding_requests/records?${q}`, { headers: await su() })).json()).items;
+      expect(rows.map((x: { status: string; password_hash: string }) => [x.status, x.password_hash]), email).toEqual([['expired', '']]);
+    }
+    await mailMode('ok');
+  });
+
+  it('crew and the Conductor never see a request\'s password hash', async () => {
+    const ip = randomIp(), email = `seen${uid()}@test.invalid`;
+    const r = await (await join(ip, { name: `Seen ${uid()}`, email })).json();
+    await postFrom(ip, '/api/crawl/join/verify', { ...r, code: await codeFor(email) });
+    for (const who of [await loginToken(`Pw Crew ${uid()}`), await loginToken(`Pw Conductor ${uid()}`, ADMIN_LOGIN_PASSWORD)]) {
+      const list = await (await fetch(`${PB}/api/collections/boarding_requests/records?perPage=200`, { headers: { Authorization: who.token } })).json();
+      const view = await (await fetch(`${PB}/api/collections/boarding_requests/records/${r.request_id}`, { headers: { Authorization: who.token } })).json();
+      expect(list.items.some((x: { id: string }) => x.id === r.request_id)).toBe(true);
+      expect(JSON.stringify(list)).not.toContain('password_hash');
+      expect(view.id).toBe(r.request_id);
+      expect(view).not.toHaveProperty('password_hash');
+    }
+  });
 
   it('sends a code, verifies it once, and the request waits; replay is refused', async () => {
     const ip = randomIp(), email = `new${uid()}@test.invalid`;
@@ -240,6 +293,7 @@ describe('joining by email (spec §2.1–2.4)', () => {
     await backdate(r.request_id, 'status_at', 31);
     await runCron('boarding_sweep');
     await waitFor(async () => (await row(r.request_id)).status === 'expired');
+    expect((await row(r.request_id)).password_hash).toBe('');
   });
 
   it('the sweep expires waiting requests after 72 h and leaves younger ones alone', async () => {

@@ -34,6 +34,14 @@ exports.passwordProblem = function (p) {
   return points < 8 || points > 64 || bytes > 72 ? refusal : null
 }
 
+// The bcrypt hash PocketBase would store for `p`, from a throwaway, unsaved users record. Verified on
+// 0.40.4 (2026-10-03): written to users.password by SQL, it validates; setRaw of the string does not.
+exports.hashPassword = function (app, p) {
+  const r = new Record(app.findCollectionByNameOrId('users'))
+  r.setPassword(p)
+  return r.getRaw('password').hash
+}
+
 // Denials are throttled per IP and event, so a flood writes one row per 15 min, not one per hit.
 // Never call this with a denial event inside a transaction: limits.consume opens its own.
 exports.logEvent = function (app, fields, info) {

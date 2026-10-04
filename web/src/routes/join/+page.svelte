@@ -7,6 +7,8 @@
   import { GOOGLE_KEY, buildAuthUrl } from '$lib/google';
   import { copy } from '$lib/labels';
   import Turnstile from '$lib/components/Turnstile.svelte';
+  import PasswordInput from '$lib/components/PasswordInput.svelte';
+  import { passwordProblem } from '$lib/password';
   import SignInButton from '$lib/components/SignInButton.svelte';
   import { onMount } from 'svelte';
 
@@ -14,7 +16,7 @@
   let turnstile = $state<Turnstile>();
   let offline = $state(false);
   let step = $state<'start' | 'code' | 'waiting' | 'aboard' | 'turned_away' | 'expired'>('start');
-  let name = $state(''), email = $state(''), code = $state(''), token = $state('');
+  let name = $state(''), email = $state(''), password = $state(''), code = $state(''), token = $state('');
   let error = $state(''), busy = $state(false);
   let current = $state<StoredBoarding | null>(null);
   $effect(() => { if ($auth.user) void goto('/', { replaceState: true }); });
@@ -62,9 +64,10 @@
   const start = (ev: SubmitEvent) => { ev.preventDefault();
     if (cleanName().length < 2 || cleanName().length > 32) { error = copy.nameError; return; }
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())) { error = copy.emailError; return; }
+    const problem = passwordProblem(password); if (problem) { error = problem; return; }
     void run(async () => {
       try {
-        const r = await joinCrew(cleanName(), email.trim(), token);
+        const r = await joinCrew(cleanName(), email.trim(), password, token);
         epoch++;
         current = { requestId: r.request_id, secret: r.secret, name: cleanName(), email: email.trim().toLowerCase(), savedAt: Date.now() };
         saveBoarding(localStorage, current); step = 'code';
@@ -97,6 +100,9 @@
     {#if google}<SignInButton provider="google" label={copy.continueGoogle} onclick={withGoogle} disabled={busy} testid="google" /><p>{copy.orEmail}</p>{/if}
     <label for="email">{copy.emailLabel}</label>
     <input id="email" type="email" autocomplete="email" placeholder={copy.emailPlaceholder} bind:value={email} data-testid="email-input" disabled={busy} />
+    <label for="join-password">{copy.passwordField}</label>
+    <PasswordInput id="join-password" autocomplete="new-password" bind:value={password} disabled={busy} testid="password-input" />
+    <small class="hint">{copy.passwordHint}</small>
     <Turnstile bind:this={turnstile} ontoken={(t) => (token = t)} />
     <SignInButton provider="email" type="submit" label={busy ? copy.working : token ? copy.sendCode : copy.humanCheck} disabled={busy || !token} testid="send-code" />
   </form>

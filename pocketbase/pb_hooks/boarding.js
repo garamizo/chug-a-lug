@@ -42,7 +42,7 @@ exports.findRequest = function (body) {
 // two concurrent joins cannot both pass a cap or both claim a name.
 exports.fileRequest = function (e, x) {
   const crew = require(`${__hooks}/crew.js`)
-  const { name, email, method, info } = x
+  const { name, email, method, info, passwordHash } = x
   const ip = info.ip
   const secret = $security.randomString(43)
   const code = $security.randomStringWithAlphabet(6, '0123456789')
@@ -72,6 +72,7 @@ exports.fileRequest = function (e, x) {
     record.set('name_key', name.key)
     record.set('email', email)
     record.set('method', method)
+    record.set('password_hash', passwordHash || '') // decoys too: same cost, same answer; never applied
     record.set('decoy', decoy)
     record.set('status', decoy || method === 'email' ? 'unverified' : 'waiting')
     record.set('status_at', nowIso())
@@ -96,7 +97,7 @@ exports.fileRequest = function (e, x) {
     $app.runInTransaction((tx) => {
       const r = tx.findRecordById('boarding_requests', record.id)
       // Join mails only unverified rows, and only the sweep may expire a waiting one (spec §1).
-      if (r.getString('secret_hash') === crew.hash(secret) && r.getString('status') === 'unverified') { r.set('status', 'expired'); r.set('status_at', nowIso()); tx.save(r) }
+      if (r.getString('secret_hash') === crew.hash(secret) && r.getString('status') === 'unverified') { r.set('status', 'expired'); r.set('status_at', nowIso()); r.set('password_hash', ''); tx.save(r) }
     })
     crew.logEvent($app, { event: 'mail_failed', email, request: record.id, detail: String(err).slice(0, 200) }, info)
     return [502, { message: "Couldn't send the email. Try Google or try later." }]
@@ -128,7 +129,9 @@ exports.join = function (e) {
   if (!name) return e.json(400, { message: "Enter a name: 2 to 32 letters, numbers, spaces, or . ' -" })
   const email = crew.normalizeEmail(body.email)
   if (!email) return e.json(400, { message: 'Enter a valid email address.' })
-  const [status, json] = exports.fileRequest(e, { name, email, method: 'email', info })
+  const problem = crew.passwordProblem(body.password)
+  if (problem) return e.json(400, { message: problem })
+  const [status, json] = exports.fileRequest(e, { name, email, method: 'email', info, passwordHash: crew.hashPassword($app, body.password) })
   return e.json(status, json)
 }
 
@@ -253,7 +256,7 @@ exports.sweep = function (app) {
   app.runInTransaction((tx) => {
     for (const r of tx.findRecordsByFilter('boarding_requests', "status = 'unverified' && status_at < {:t}", '', 0, 0, { t: ago(30) })
       .concat(tx.findRecordsByFilter('boarding_requests', "status = 'waiting' && status_at < {:t}", '', 0, 0, { t: ago(72 * 60) }))) {
-      r.set('status', 'expired'); r.set('status_at', nowIso()); tx.save(r)
+      r.set('status', 'expired'); r.set('status_at', nowIso()); r.set('password_hash', ''); tx.save(r)
     }
   })
   exports.notifyConductors(app)
@@ -262,6 +265,7 @@ exports.sweep = function (app) {
 exports.daily = function (app) {
   app.db().newQuery('DELETE FROM access_log WHERE created < {:t}').bind({ t: ago(90 * 24 * 60) }).execute()
   app.db().newQuery('DELETE FROM access_log WHERE id NOT IN (SELECT id FROM access_log ORDER BY created DESC LIMIT 10000)').execute()
+  app.db().newQuery("UPDATE boarding_requests SET password_hash = '' WHERE password_hash != '' AND status NOT IN ('unverified', 'waiting')").execute()
 }
 
 exports.notifyConductors = function (app) {
@@ -290,10 +294,11 @@ exports.decide = function (e, verdict) {
   const auth = e.auth
   if (!auth || auth.collection().name !== 'users' || auth.getBool('blocked')) return e.json(401, { message: 'Sign in first.' })
   const id = e.request.pathValue('id')
-  let result = null, user = null, request = null
+  let result = null, user = null, request = null, installed = false, method = ''
   $app.runInTransaction((tx) => {
     try { request = tx.findRecordById('boarding_requests', id) } catch (_) { result = [404, 'Request not found.']; return }
     if (request.getBool('decoy') || request.getString('status') !== 'waiting') { result = [409, 'Someone already answered this one.']; return }
+    method = request.getString('method')
     if (verdict === 'aboard') {
       let clash = false
       try { tx.findFirstRecordByData('users', 'name_key', request.getString('name_key')); clash = true } catch (_) {}
@@ -307,8 +312,15 @@ exports.decide = function (e, verdict) {
       user.setPassword($security.randomString(40))
       user.set('approved_by', auth.id)
       tx.save(user)
+      // The hash /join stored becomes the password (spec §3.2). SQL, because setRaw rejects a hash.
+      const hash = request.getString('password_hash')
+      if (hash) {
+        tx.db().newQuery('UPDATE users SET password = {:h} WHERE id = {:id}').bind({ h: hash, id: user.id }).execute()
+        installed = true
+      }
       request.set('user', user.id)
     }
+    request.set('password_hash', '')
     request.set('status', verdict === 'aboard' ? 'aboard' : 'turned_away')
     request.set('status_at', new Date().toISOString())
     request.set('decided_by', auth.id)
@@ -318,7 +330,8 @@ exports.decide = function (e, verdict) {
   })
   if (result) return e.json(result[0], { message: result[1] })
   if (user) {
-    try { crew.sendMail($app, { to: [user.email()], subject: "You're aboard the Chug-a-Lug", text: `You're aboard! Sign in at ${$app.settings().meta.appURL}/login with this email address or Google.` }) }
+    const how = installed ? 'with your email and the password you chose' : method === 'google' ? 'with Google' : 'with this email address or Google'
+    try { crew.sendMail($app, { to: [user.email()], subject: "You're aboard the Chug-a-Lug", text: `You're aboard! Sign in at ${$app.settings().meta.appURL}/login ${how}.` }) }
     catch (err) { crew.logEvent($app, { event: 'mail_failed', user: user.id, detail: 'aboard notice: ' + String(err).slice(0, 180) }) }
     return e.json(200, { user_id: user.id })
   }

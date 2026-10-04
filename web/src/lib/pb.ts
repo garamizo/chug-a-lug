@@ -60,8 +60,8 @@ export async function requestCode(email: string): Promise<string> {
 export async function signInWithCode(otpId: string, code: string): Promise<void> {
   await pb.collection('users').authWithOTP(otpId, code.trim());
 }
-export const joinCrew = (name: string, email: string, turnstile: string) =>
-  pb.send<{ request_id: string; secret: string }>('/api/crawl/join', { method: 'POST', body: { name, email, turnstile } });
+export const joinCrew = (name: string, email: string, password: string, turnstile: string) =>
+  pb.send<{ request_id: string; secret: string }>('/api/crawl/join', { method: 'POST', body: { name, email, password, turnstile } });
 export const verifyJoin = (request_id: string, secret: string, code: string) =>
   pb.send('/api/crawl/join/verify', { method: 'POST', body: { request_id, secret, code } });
 export const joinStatus = (request_id: string, secret: string) =>
