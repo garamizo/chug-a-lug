@@ -2,7 +2,7 @@
 // (web/tests/unit/oauthDecision.test.ts); nothing touches $app or a global at load time.
 const DENIALS = ['rate_limited', 'turnstile_failed', 'sign_in_refused']
 
-exports.METHODS = { otp: 'email', oauth2: 'google', rehearsal: 'rehearsal' }
+exports.METHODS = { otp: 'email', oauth2: 'google', rehearsal: 'rehearsal', password: 'password' }
 
 // Works for a plain request event and for the auth events, which wrap theirs in `requestEvent`.
 exports.clientInfo = function (e) {

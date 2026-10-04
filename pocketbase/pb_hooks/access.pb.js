@@ -29,6 +29,57 @@ onMailerRecordOTPSend((e) => {
   require(`${__hooks}/crew.js`).logEvent($app, { event: 'code_sent', method: 'email', user: e.record.id, email: e.record.email() })
 }, 'users')
 
+// Password sign-in (password spec §3.2). Every try counts against the typed address, member or not,
+// before PocketBase compares the password: the limit reveals nothing, and it holds with
+// PB_RATE_LIMITS=off. The person locked out keeps email code and Google.
+onRecordAuthWithPasswordRequest((e) => {
+  const crew = require(`${__hooks}/crew.js`)
+  const identity = String(e.identity || '').trim().toLowerCase()
+  if (!require(`${__hooks}/limits.js`).consume('password:' + identity, 10, 900)) {
+    crew.logEvent($app, { event: 'rate_limited', method: 'password', detail: 'password' }, crew.clientInfo(e))
+    return e.json(429, { message: 'Too many tries for this address. Use an email code or Google, or try again in 15 minutes.' })
+  }
+  e.next()
+}, 'users')
+
+// Runs only for an address with a seat, after PocketBase's two-minute cooldown. A put-off seat, or
+// a fourth link in an hour, gets the same empty 204 as a sent link, and no mail.
+onRecordRequestPasswordResetRequest((e) => {
+  if (e.record.getBool('blocked')) return e.noContent(204)
+  if (!require(`${__hooks}/limits.js`).consume('reset:' + e.record.email().toLowerCase(), 3, 3600)) return e.noContent(204)
+  e.next()
+}, 'users')
+
+onMailerRecordPasswordResetSend((e) => {
+  if (e.record.getBool('blocked')) return
+  e.next()
+  require(`${__hooks}/crew.js`).logEvent($app, { event: 'password_reset_sent', method: 'password', user: e.record.id, email: e.record.email() })
+}, 'users')
+
+// PocketBase checks the token against a record it loaded earlier and saves that instance after
+// e.next(). Judged and saved in one transaction against a fresh read, so a put-off or a second
+// confirmation committed in between is never written back stale: a changed token key means the
+// link is dead (single-use, also under concurrency); a block refuses.
+onRecordConfirmPasswordResetRequest((e) => {
+  const app = e.app
+  let refusal = null
+  try {
+    app.runInTransaction((tx) => {
+      e.app = tx
+      const fresh = tx.findRecordById('users', e.record.id)
+      if (fresh.tokenKey() !== e.record.tokenKey()) { refusal = [400, 'That link expired or was already used.']; return }
+      if (fresh.getBool('blocked')) { refusal = [403, 'Your seat was taken away. Ask the Conductor.']; return }
+      // A reset changes the password and nothing else: every other field comes from the fresh row,
+      // preferences included (share_position, home_station, left_early).
+      for (const k of e.record.collection().fields.fieldNames()) if (k !== 'password' && k !== 'tokenKey') e.record.setRaw(k, fresh.getRaw(k))
+      e.next()
+    })
+  } finally { e.app = app }
+  if (refusal) return e.json(refusal[0], { message: refusal[1] })
+  const crew = require(`${__hooks}/crew.js`) // after the commit: logEvent writes with $app
+  crew.logEvent($app, { event: 'password_set', method: 'password', user: e.record.id, email: e.record.email() }, crew.clientInfo(e))
+}, 'users')
+
 routerAdd('POST', '/api/crawl/users/{id}/put-off', (e) => require(`${__hooks}/access.js`).setBlocked(e, true))
 routerAdd('POST', '/api/crawl/users/{id}/let-back-on', (e) => require(`${__hooks}/access.js`).setBlocked(e, false))
 routerAdd('GET', '/api/crawl/manifest', (e) => require(`${__hooks}/access.js`).manifest(e))
@@ -50,6 +101,9 @@ onRecordUpdateRequest((e) => {
       const fresh = tx.findRecordById('users', e.record.id)
       if (byCrew && fresh.getBool('blocked')) { refusal = [403, 'Your seat was taken away. Ask the Conductor.']; return }
       for (const k of ['blocked', 'is_admin', 'email', 'emailVisibility', 'verified', 'approved_by', 'last_seen']) if (!named(k)) e.record.set(k, fresh.get(k))
+      // A password this request sets (a superuser in the admin UI) stands; otherwise the stored hash
+      // does, so an edit loaded before a reset never writes the old password back (password spec §3.2).
+      if (!named('password')) e.record.setRaw('password', fresh.getRaw('password'))
       // A key this request rotated itself (a password change) stands; otherwise the fresh one does.
       if (e.record.tokenKey() === e.record.original().tokenKey()) e.record.setTokenKey(fresh.tokenKey())
       const before = fresh.getString('name')

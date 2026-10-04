@@ -15,7 +15,7 @@ const smtp = new SMTPServer({
   },
   onData(stream, session, callback) {
     simpleParser(stream).then((m) => {
-      messages.push({ to: session.envelope.rcptTo.map((r) => r.address.toLowerCase()), subject: m.subject ?? '', text: m.text ?? '' });
+      messages.push({ to: session.envelope.rcptTo.map((r) => r.address.toLowerCase()), subject: m.subject ?? '', text: m.text ?? '', html: typeof m.html === 'string' ? m.html : '' });
       callback();
     }, callback);
   }

@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it } from 'vitest';
-import { ADMIN_LOGIN_PASSWORD, PB, clearMails, codeFor, get, loginToken, mails, post, superuserToken } from './setup';
+import { ADMIN_LOGIN_PASSWORD, PB, clearMails, codeFor, get, loginToken, mails, post, postFrom, randomIp, superuserToken } from './setup';
 
 const emailOf = (key: string) => `${Buffer.from(key).toString('hex')}@test.invalid`;
 const su = async () => ({ Authorization: await superuserToken(), 'content-type': 'application/json' });
@@ -70,7 +70,7 @@ describe('sign-in by email code and the guards', () => {
     expect((await logRows(`user = "${id}" && event = "code_sent"`)).length).toBe(0);
   });
 
-  it('every sign-in method is guarded, even one switched on later (password auth)', async () => {
+  it('a password sign-in is guarded like every other method', async () => {
     const name = `Passworded ${Math.floor(Math.random() * 1e6)}`;
     const { id } = await loginToken(name);
     const email = emailOf(name.toLowerCase());
@@ -80,8 +80,9 @@ describe('sign-in by email code and the guards', () => {
       expect((await collection(true)).status).toBe(200);
       await fetch(`${PB}/api/collections/users/records/${id}`, { method: 'PATCH', headers: await su(),
         body: JSON.stringify({ password: 'recovery-password-1', passwordConfirm: 'recovery-password-1', blocked: true }) });
-      expect((await post('/api/collections/users/auth-with-password', { identity: email, password: 'recovery-password-1' })).status).toBe(403);
-      expect((await logRows(`user = "${id}" && event = "sign_in_refused" && method = ""`)).length).toBe(1);
+      // Refusals are logged once per IP per 15 minutes, so this test brings its own address.
+      expect((await postFrom(randomIp(), '/api/collections/users/auth-with-password', { identity: email, password: 'recovery-password-1' })).status).toBe(403);
+      expect((await logRows(`user = "${id}" && event = "sign_in_refused" && method = "password"`)).length).toBe(1);
     } finally {
       expect((await collection(before)).status).toBe(200);
     }

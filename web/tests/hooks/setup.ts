@@ -88,7 +88,7 @@ export async function truncate(collection: string): Promise<void> {
 }
 
 export const MAIL = process.env.MAIL_SINK_URL ?? 'http://127.0.0.1:12526';
-export type Mail = { to: string[]; subject: string; text: string };
+export type Mail = { to: string[]; subject: string; text: string; html: string };
 export async function mails(to?: string): Promise<Mail[]> {
   const all = (await (await fetch(`${MAIL}/messages`)).json()) as Mail[];
   return to ? all.filter((m) => m.to.includes(to.toLowerCase())) : all;
@@ -105,6 +105,15 @@ export async function codeFor(to: string): Promise<string> {
     await new Promise((r) => setTimeout(r, 100));
   }
   throw new Error(`No code mailed to ${to}`);
+}
+/** The last password-reset link mailed to `to` (text or HTML part), polling: PocketBase mails after replying. */
+export async function resetLinkFor(to: string): Promise<{ url: string; token: string }> {
+  for (let i = 0; i < 50; i++) {
+    const hit = (await mails(to)).map((m) => /(https?:\/\/[^\s"<]+\/reset-password#([\w.-]+))/.exec(`${m.text}\n${m.html}`)).filter(Boolean).at(-1);
+    if (hit) return { url: hit[1], token: hit[2] };
+    await new Promise((r) => setTimeout(r, 100));
+  }
+  throw new Error(`No reset link mailed to ${to}`);
 }
 /** A fresh documentation-range IP, so each test owns its own rate-limit buckets. */
 export const randomIp = () => `10.${Math.floor(Math.random() * 250)}.${Math.floor(Math.random() * 250)}.${1 + Math.floor(Math.random() * 250)}`;
