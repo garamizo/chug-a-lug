@@ -54,6 +54,8 @@ place. So:
 The harnesses bind fixed ports, so two worktrees cannot run them simultaneously:
 
 - e2e (`npm run test:e2e`): **15173** for the web server, **18093** for its PocketBase.
+- Hooks (`bash scripts/test-hooks.sh`): **18090** for the normal pass's PocketBase, **18091** for the
+  simulation pass's (the two run at once), **18095** for `recompute.test.ts`'s listener.
 - The production stack (`just up`): **8090** for PocketBase, **3000** for the web server.
 - **12525–12528** for the SMTP sink, its control API, the Turnstile fake and the fake OIDC provider
   (`web/scripts/test-fakes.mjs`).
@@ -125,3 +127,6 @@ rebuild.
   of truth for the names.
 - Tests are written before the code they cover, and each task ends with everything green:
   `cd web && npm test && npm run check && npm run test:e2e`, plus `bash scripts/test-hooks.sh`.
+- A new page or page state gets one line in `web/tests/e2e/layoutSweep.spec.ts`, which checks generic
+  layout rules (`layoutRules.ts`) at phone width. `login()` in the e2e helpers only signs in: open the
+  page you want next (`openHome()` for the home screen).

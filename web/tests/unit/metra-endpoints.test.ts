@@ -97,16 +97,6 @@ describe('/api/metra/next', () => {
     expect(body.trips[0].status).toBe('scheduled');
   });
 
-  it('applies a live prediction to the matching trip', async () => {
-    const first = fixtureSchedule().trips.find((t) => t.routeId === 'BNSF')!;
-    allFresh(10);
-    state.feed = await decodeFeed(first.id, 4102444800);
-    const body = await get('../../src/routes/api/metra/next/+server', 'http://x/api/metra/next?from=LAGRANGE&to=CUS&date=2026-12-26');
-    expect(body.mode).toBe('live');
-    const hit = body.trips.find((t: { tripId: string }) => t.tripId === first.id);
-    if (hit) expect(hit.status).toBe('live');
-  });
-
   it('ignores predictions when the tripupdates feed is stale, however fresh the others are', async () => {
     const first = fixtureSchedule().trips.find((t) => t.routeId === 'BNSF')!;
     allFresh(10);

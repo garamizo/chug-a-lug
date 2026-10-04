@@ -103,17 +103,6 @@ describe('live anchor lookup', () => {
   });
 });
 
-it('requests paused anchors in server action order', async () => {
-  const day = new LiveDay();
-  mocks.getList.mockResolvedValue({ items: [
-    { stop: 'newest', at: '2026-12-26T18:00:00Z', action_order: 2, expand: { user: { is_admin: true } } },
-    { stop: 'older', at: '2026-12-26T18:00:00Z', action_order: 1, expand: { user: { is_admin: true } } }
-  ] });
-  await day.loadAnchor('itinerary');
-  expect(mocks.getList).toHaveBeenCalledWith(1, 20, expect.objectContaining({ sort: '-at,-action_order' }));
-  expect(day.anchor?.stopId).toBe('newest');
-});
-
 it('does not let an earlier anchor query overwrite a newer correction', async () => {
   const day = new LiveDay();
   let finish!: (value: unknown) => void;

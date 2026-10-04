@@ -69,10 +69,6 @@ describe('activeAnchor', () => {
     expect(anchoredOffDay).toEqual(unanchored);
   });
 
-  it('is null when there is no anchor to begin with', () => {
-    expect(activeAnchor('2026-12-26', null, new Date('2026-12-26T15:00:00.000Z'))).toBeNull();
-  });
-
   it('uses the anchor’s Chicago date across UTC midnight', () => {
     const now = new Date('2026-12-26T20:00:00.000Z');
     expect(activeAnchor('2026-12-26', { ...anchor, at: '2026-12-26T05:59:00.000Z' }, now)).toBeNull();

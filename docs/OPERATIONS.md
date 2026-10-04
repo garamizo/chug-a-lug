@@ -330,9 +330,10 @@ Chicago time against that date's timetable, with a Practice badge, and nothing p
 day reaches the event day.
 
 
-Tests use disposable credentials/data and ports 15173/18093, one suite at a time. Never test against
-the regular stack ports 3000/8090. The advanced standalone launcher remains available through
-`node web/scripts/sim.mjs` for isolated developer runs, independent of the real stack.
+Tests use disposable credentials/data and ports 15173/18093 (e2e) and 18090/18091 (hooks), one suite
+at a time. Never test against the regular stack ports 3000/8090. The advanced standalone launcher
+remains available through `node web/scripts/sim.mjs` for isolated developer runs, independent of the
+real stack.
 
 To capture or index an archive, supply its service date and explicit UTC playback window:
 
