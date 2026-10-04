@@ -67,9 +67,10 @@ test('login only signs in: the next page opened is already signed in, and an ope
   await page.goto('/account');
   await expect(page.getByTestId('account-name')).toHaveValue('E2E Cookie Only');
 
-  // A second login on a page that already runs the app: the app re-reads the cookie.
+  // A second login on a page that already runs the app: login reloads it, so the app re-reads the
+  // cookie. Asserted before any navigation of our own, so it fails if login stops reloading.
   await login(page, 'E2E Cookie Second', 'crew-test-password');
-  await page.goto('/account');
+  await expect(page).toHaveURL(/\/account$/);
   await expect(page.getByTestId('account-name')).toHaveValue('E2E Cookie Second');
 });
 ```
@@ -131,6 +132,7 @@ Remove the `exactly()` helper if nothing else uses it (`grep -n "exactly(" web/t
 3. For each call, apply the first rule that fits:
    - The next page step is `page.goto(...)` (possibly after seeding or `clock.install`): leave it.
    - The test wanted the home screen (its next step clicks `nav-plan`, reads `name`, checks the menu, or calls `makeDraft`): insert `await openHome(page, name)` right after the `login`.
+   - The test inspects whatever page is showing right after `login` (geometry, header content, headers): `layout.spec.ts` L6 (desktop width), L14 (pinned header), L29 (no date in the header: a negative assertion that would pass on a blank page), L34 (menu), L58 (normal mode). Insert `await openHome(page, name)` after the `login`. For every negative assertion you touch, first assert something positive on the same page (e.g. the header is visible) so a blank page cannot pass.
    - It calls `page.reload()` next (`login.spec.ts:9`, `boarding.spec.ts` `b.reload()`): replace the reload with `await openHome(page, name)`.
    - Secondary pages logged in and then only watched (`boarding.spec.ts` approver `m`, the `other` pages in planning/cloneRoute/liveEdit/chat): add `await <page>.goto('/')` or the page they are meant to watch, before their first assertion.
    - `tests/sim/rehearsal.spec.ts:23`: the page is already on `/login`, so `login` reloads it and the login page sends the signed-in user on; keep the following `expect(... nav-live or tab-bar)` as is. Lines 32–33 are followed by `goto('/live')`: leave them.
@@ -206,7 +208,10 @@ import { layoutViolations } from './layoutRules';
 
 const page390 = async (page: Page, body: string) => {
   await page.setViewportSize({ width: 390, height: 844 });
-  await page.setContent(`<!doctype html><html><head><style>body{margin:0;font:16px sans-serif}</style></head><body>${body}</body></html>`);
+  // The app's own viewport meta (src/app.html): without it, mobile emulation lays out at 980 px.
+  await page.setContent(`<!doctype html><html><head><meta name="viewport" content="width=device-width, initial-scale=1">` +
+    `<style>body{margin:0;font:16px sans-serif}</style></head><body>${body}</body></html>`);
+  expect(await page.evaluate(() => innerWidth)).toBe(390);
 };
 const rules = (v: string[]) => v.map((s) => s.split(':')[0]);
 
@@ -221,13 +226,16 @@ test('page-overflow: something wider than the phone', async ({ page }) => {
   expect(rules(await layoutViolations(page))).toContain('page-overflow');
 });
 
-test('page-overflow ignores a scroller that scrolls inside its own box', async ({ page }) => {
-  await page390(page, `<div style="overflow-x:auto;width:100%"><div style="width:900px;display:flex;gap:8px">
-    ${Array.from({ length: 12 }, (_, i) => `<button style="width:60px;height:40px">S${i}</button>`).join('')}</div></div>`);
-  const before = await page.evaluate(() => document.querySelector('div')!.scrollLeft);
-  expect(await layoutViolations(page)).toEqual([]);
-  // The off-screen buttons were checked (covered scrolls them in) and the scroller is put back.
-  expect(await page.evaluate(() => document.querySelector('div')!.scrollLeft)).toBe(before);
+test('a scroller that scrolls inside its own box: no page-overflow, off-screen controls still checked, position restored', async ({ page }) => {
+  await page390(page, `<div id="strip" style="overflow-x:auto;width:100%"><div style="width:900px;display:flex;gap:8px">
+    ${Array.from({ length: 12 }, (_, i) => `<button style="width:60px;height:40px;flex:none">S${i}</button>`).join('')}
+    <button id="far" style="width:10px;height:40px;flex:none;padding:0">x</button></div></div>`);
+  await page.evaluate(() => { document.getElementById('strip')!.scrollLeft = 50; });
+  const v = await layoutViolations(page);
+  expect(rules(v)).not.toContain('page-overflow');
+  expect(v.join()).toContain('small-target: button#far');            // off-screen at 50 px, still checked
+  expect(v.filter((s) => s.startsWith('covered'))).toEqual([]);       // scrolled into view, so not covered
+  expect(await page.evaluate(() => document.getElementById('strip')!.scrollLeft)).toBe(50);
 });
 
 test('narrow-field: a free-text field under 120 px; a compact time field is fine', async ({ page }) => {
@@ -272,6 +280,16 @@ test('only the topmost modal layer is checked, and a broken control inside it st
   expect(v.join()).toContain('small-target: button#tiny');
 });
 
+test('the modal opened last is the layer, whatever the DOM order', async ({ page }) => {
+  await page390(page, `<dialog id="top" style="width:340px;height:400px"><button id="tinyTop" style="width:10px;height:10px;padding:0">t</button></dialog>
+    <dialog id="under" style="width:340px;height:400px"><button id="tinyUnder" style="width:10px;height:10px;padding:0">u</button></dialog>`);
+  // Opened in reverse DOM order: #under first, then #top, which therefore sits above it.
+  await page.evaluate(() => { (document.getElementById('under') as HTMLDialogElement).showModal(); (document.getElementById('top') as HTMLDialogElement).showModal(); });
+  const v = (await layoutViolations(page)).join();
+  expect(v).toContain('button#tinyTop');
+  expect(v).not.toContain('button#tinyUnder');
+});
+
 test('an aria-modal sheet is a layer too; controls behind its scrim are not covered', async ({ page }) => {
   await page390(page, `<button style="width:100%;height:48px">Behind</button>
     <div style="position:fixed;inset:0;background:#0008"></div>
@@ -295,7 +313,7 @@ test('the original bug: a Show button taking the row squeezes the password field
   // The cascade before button.link existed: the global button rule made Show full-width.
   await page.addStyleTag({ content: '.password button { width: 100% !important; flex: 0 1 auto !important; padding: 14px !important; min-height: 48px !important; }' });
   expect((await page.getByTestId('password-input').boundingBox())!.width).toBeLessThan(120);
-  expect((await layoutViolations(page)).join('\n')).toMatch(/narrow-field: input#password .* on \/login/);
+  expect((await layoutViolations(page)).join('\n')).toMatch(/narrow-field: input#password.* on \/login/);
 });
 ```
 
@@ -332,20 +350,27 @@ export async function layoutViolations(page: Page, skip: LayoutRule[] = []): Pro
         `${text ? ` "${text}"` : ''} ${Math.round(r.width)}×${Math.round(r.height)} px`;
     };
 
-    // The active layer: the topmost open modal (native dialog:modal or aria-modal), else the document.
+    // The active layer: the open modals (native dialog:modal or aria-modal) that are actually on top.
+    // The DOM cannot tell top-layer order (showModal() order), so hit-test each modal at its own
+    // centre: a modal under another one (StopSheet under Lightbox) is hit-tested to the one above.
     const modals = [...document.querySelectorAll('dialog, [aria-modal="true"]')].filter((el) =>
       el instanceof HTMLDialogElement ? el.matches(':modal') : el.checkVisibility({ visibilityProperty: true }));
-    const innermost = modals.filter((m) => !modals.some((o) => o !== m && m.contains(o)));
-    const layer: ParentNode = innermost.at(-1) ?? document;
+    const onTop = modals.filter((m) => {
+      const r = m.getBoundingClientRect();
+      const hit = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
+      return !!hit && m.contains(hit) && !modals.some((o) => o !== m && m.contains(o) && o.contains(hit));
+    });
+    const layers: ParentNode[] = modals.length ? onTop : [document];
 
     const srOnly = (el: Element) => {
       const r = el.getBoundingClientRect(), s = getComputedStyle(el);
-      return r.width <= 1 && r.height <= 1 && (s.clip.startsWith('rect') || s.clipPath !== 'none' || s.overflow === 'hidden');
+      // The .sr-only pattern: a 1×1 box clipped away. Zero size alone is not hidden (small-target reports it).
+      return r.width <= 1 && r.height <= 1 && (s.clip.startsWith('rect') || s.clipPath !== 'none');
     };
     const hidden = (el: Element) =>
       !el.checkVisibility({ visibilityProperty: true }) || !!el.closest('[hidden], [inert], [aria-hidden="true"]') ||
       (el instanceof HTMLInputElement && el.type === 'hidden') || srOnly(el);
-    const controls = [...layer.querySelectorAll(CONTROLS)].filter((el) => !hidden(el));
+    const controls = layers.flatMap((l) => [...l.querySelectorAll(CONTROLS)]).filter((el) => !hidden(el));
 
     // page-overflow
     const doc = document.documentElement;
@@ -454,6 +479,17 @@ async function stubDepartures(page: Page) {
   await page.route(/\/api\/metra\/(next|status|alerts)/, (r) => r.fulfill({ json: { mode: 'schedule_only', fetchedAt: null, trips: [], alerts: [] } }));
 }
 
+const GIF = Buffer.from('R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7', 'base64');
+
+/** Shares a photo at the current stop, opens that stop's sheet and the photo: Lightbox over StopSheet (liveUx.spec.ts L70). */
+async function openSheetPhoto(page: Page) {
+  await page.goto('/live');
+  await page.getByTestId('freight-input').setInputFiles({ name: 'bar.gif', mimeType: 'image/gif', buffer: GIF });
+  await expect(page.getByTestId('freight-open-0')).toBeVisible();
+  await page.getByTestId('route-strip').locator('[aria-current="step"]').click();
+  await page.getByTestId('stop-sheet').locator('.gallery button').first().click();
+}
+
 async function sweep(page: Page, states: State[]) {
   for (const s of states) {
     await test.step(s.name, async () => {
@@ -496,12 +532,15 @@ test('crew pages on the event day', async ({ page, browser }) => {
     { name: 'live', open: (p) => p.goto('/live'), ready: (p) => p.getByTestId('departure-board') },
     { name: 'live, Tab open', open: (p) => openTab(p), ready: (p) => p.getByTestId('drink-beer') },
     { name: 'live, stop sheet', open: (p) => p.goto(`/live?stop=${ids.secondStopId}`), ready: (p) => p.getByTestId('sheet-name') },
+    // Lightbox stacks over StopSheet: two native modals, only the top one is checked.
+    { name: 'live, photo over the stop sheet', open: (p) => openSheetPhoto(p), ready: (p) => p.getByTestId('lightbox') },
     { name: 'route', open: (p) => p.goto('/route'), ready: (p) => p.getByTestId('locked-on') },
     { name: 'crew board', open: (p) => p.goto('/crew'), ready: (p) => p.getByTestId('crew-row') },
     { name: 'notifications', open: (p) => p.goto('/notifications'), ready: (p) => p.getByTestId('bulletin-list') },
     { name: 'account', open: (p) => p.goto('/account'), ready: (p) => p.getByTestId('account-save') },
     { name: 'plan list', open: (p) => p.goto('/plan'), ready: (p) => p.getByTestId('draft-title') },
-    { name: 'route view', open: (p) => p.goto(`/plan/${ids.itineraryId}`), ready: (p) => p.getByTestId('current-route') },
+    // current-route renders only for admins; crew see the stops.
+    { name: 'route view', open: (p) => p.goto(`/plan/${ids.itineraryId}`), ready: (p) => p.getByText('The Whistle Stop') },
     { name: 'stop page', open: (p) => p.goto(`/plan/${ids.itineraryId}/stops/${ids.firstStopId}`), ready: (p) => p.getByTestId('notes') }
   ]);
   await crew.context().close();
@@ -530,7 +569,7 @@ test('Live on a practice day', async ({ page }) => {
 });
 ```
 
-Before running, verify each `ready` test id exists on its page (`grep -rn 'data-testid="<id>"' web/src`). In particular the draft editor's ready locator is a guess: open the draft editor's markup (`web/src/routes/(app)/plan/[id]/edit/+page.svelte` and `ItineraryView.svelte`) and pick a test id that renders for an empty draft. Replace any id that does not exist with one that does on that page; do not drop a state.
+Before running, verify each `ready` locator renders **for that state's user** (crew vs Conductor): open the page's markup and check any `{#if}` around it, not only that the test id exists (`grep -rn 'data-testid="<id>"' web/src`). In particular the draft editor's ready locator is a guess: open the draft editor's markup (`web/src/routes/(app)/plan/[id]/edit/+page.svelte` and `ItineraryView.svelte`) and pick a test id that renders for an empty draft. Replace any id that does not exist with one that does on that page; do not drop a state.
 
 - [ ] **Step 2: Run the sweep and collect violations**
 
@@ -616,19 +655,29 @@ Check every `longPress` caller's page installed the clock (`grep -n "longPress\|
 "overlapping taps…": replace `await page.waitForTimeout(1500);` with a wait for the feed reload that starts after the second save's response:
 
 ```ts
-  // Barrier: the reload the app starts after a save (live/+page.svelte:87), begun after both POSTs answered.
+  // Barrier: the feed reload the app starts after a save (live/+page.svelte:85-87). loadFeed() reads four
+  // collections and applies them together (day.svelte.ts:269), so wait for every collection read that
+  // STARTED after the second POST answered to finish, then let the page apply them.
   let answered = 0;
-  const reloaded = new Promise<void>((resolve) => {
-    page.on('response', (res) => {
-      const req = res.request(), url = req.url();
-      if (!url.includes('/api/collections/drink_entries/records')) return;
-      if (req.method() === 'POST') answered++;
-      else if (req.method() === 'GET' && answered >= 2) resolve();
-    });
+  const after: import('@playwright/test').Request[] = [];
+  page.on('requestfinished', (req) => {
+    if (req.method() === 'POST' && req.url().includes('/api/collections/drink_entries/records')) answered++;
+  });
+  page.on('request', (req) => {
+    if (answered >= 2 && req.method() === 'GET' && req.url().includes('/api/collections/')) after.push(req);
   });
 ```
 
-Register this listener right after the `page.route(...)` call (before the clicks), and where the sleep was, write `await reloaded;`. Keep the assertions that follow.
+Register both listeners right after the `page.route(...)` call (before the clicks). Where the sleep was, write:
+
+```ts
+  await expect.poll(() => answered).toBe(2);
+  await expect.poll(() => after.some((r) => r.url().includes('/drink_entries/'))).toBe(true);
+  await Promise.all(after.map(async (r) => (await r.response())?.finished()));
+  await page.evaluate(() => new Promise((r) => setTimeout(r, 0)));
+```
+
+Keep the assertions that follow.
 
 "a repeat Undo tap…": replace `await page.waitForTimeout(700);` with:
 
@@ -645,26 +694,29 @@ Register it as `const deleted = page.waitForResponse(...)` before the first `tab
 In "a slow first comments load…", replace the route handler and the tail:
 
 ```ts
-  let release!: () => void;
+  let release!: () => void, captured!: () => void;
   const fresh = new Promise<void>((r) => (release = r));
-  let stale: Promise<void> | undefined;
+  const staleCaptured = new Promise<void>((r) => (captured = r));
+  let staleRequest: import('@playwright/test').Request | undefined;
   let first = true;
   await page.route(/\/api\/collections\/comments\/records\?.*itineraries/, async (route) => {
     if (!first) return route.continue();
     first = false;
-    const response = await route.fetch();
-    stale = (async () => { await fresh; await route.fulfill({ response }).catch(() => {}); })();
-    await stale;
+    staleRequest = route.request();
+    const response = await route.fetch();   // the empty snapshot, taken before the post below
+    captured();
+    await fresh;
+    await route.fulfill({ response });       // no .catch: a failed delivery must fail the test
   });
   await page.goto(draftUrl);
+  await staleCaptured;                       // capture-before-post: the stale answer predates the comment
   await page.getByTestId('comment-input').fill('Right on time');
   await page.getByTestId('comment-post').click();
   await expect(page.getByTestId('comments')).toContainText('Right on time');
   release();
-  await expect.poll(() => stale).toBeDefined();
-  await stale;
-  // Barrier: two animation frames, so the page has processed the stale answer before the check.
-  await page.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))));
+  // Barrier: the stale response fully delivered to the page, then one task for its handler to run.
+  await (await staleRequest!.response())!.finished();
+  await page.evaluate(() => new Promise((r) => setTimeout(r, 0)));
   await expect(page.getByTestId('comments')).toContainText('Right on time');
 ```
 
@@ -726,7 +778,7 @@ How to merge (applies to every row below): keep the target test's setup; append 
 - [ ] **Step 1: Record the starting count**
 
 Run: `cd web && npx playwright test --list | tail -1`
-Expected: about 130 tests (114, plus Task 1's login test, Task 2's twelve proofs and Task 3's four sweeps, minus Task 4's deletion). Note the number.
+Expected: 131 tests (114, plus Task 1's login test, Task 2's twelve proofs and Task 3's four sweeps, minus Task 4's deletion), plus any tests Task 3's triage added. Note the number.
 
 - [ ] **Step 2: tab.spec.ts**
 
@@ -753,7 +805,7 @@ Run: `cd web && npx playwright test tests/e2e/liveUx.spec.ts tests/e2e/live.spec
 - liveEdit: merge L70 "Save disabled while the preview is checking" into L21 (after `set-here-0`: gate the preview, `set-here-1`, assert Save disabled and the checking status, release, Save, anchor = middle stop); merge L107 + L118 (preview abort → `checkFailed` → commit abort → No signal with Save enabled → unroute → Save → URL).
 - While here, make `latestAnchor` accept an itinerary: `latestAnchor(itineraryId?: string)` adds `&filter=${encodeURIComponent(`stop.itinerary="${itineraryId}"`)}` when given; pass the seeded id at its one caller.
 - bulletins: delete L92 "post a Bulletin without changing the plan" (the `pinBulletin` helper used by L157/L173 performs and asserts the same steps); merge L68 "Save cannot replace a drafted Bulletin while the sheet is open" into L10 (assert `save-plan` disabled before `bulletin-send`); merge L157 + L173 (one `pinBulletin`: abort the ack → pin restored + alert; unroute; hold the ack → hidden at once; release; reload → hidden).
-- offline: run `arrive()` once for the storage-failure loop (L117-162) by seeding in a `test.beforeAll` with its own `browser.newPage()` for the owner login, and keep one test per failure mode; drop the "open throws" case (same `catch` as "getter throws", `src/lib/offline.ts:43` vs `:60`). **Keep L164** (spec §3.4).
+- offline: split `arrive()` (L36-49) into `seedTunnelRoute()` (clear + seed: shared) and `openRoute(page)` (routes, login, clock, `goto`, readiness: per page). The storage-failure loop (L117-162) seeds once in a `test.beforeAll` with `sessionFor(owner, true)` + `clearRoutes()` + `seedLockedCrawl(...)` (no page needed: `seedLockedCrawl` only needs the user to exist), and each case still calls `openRoute(page)` on its own fresh page. With `workers: 1` and files run one at a time, no other file's `clearRoutes()` can run between this file's `beforeAll` and its tests; L68 and L164 keep calling the full setup and must sit before/after the loop as today, so their own `clearRoutes()` does not delete the shared seed mid-loop (if one sits between loop cases, move it). Drop the "open throws" case (same `catch` as "getter throws", `src/lib/offline.ts:43` vs `:60`). **Keep L164** (spec §3.4).
 
 Run: `cd web && npx playwright test tests/e2e/{liveEdit,bulletins,offline}.spec.ts` → PASS.
 
@@ -771,7 +823,7 @@ Run: `cd web && npx playwright test tests/e2e/{crew,layout,freight,chat,practice
 - [ ] **Step 6: Count, full gate, commit**
 
 Run: `cd web && npx playwright test --list | tail -1`
-Expected: Step 1's number minus about 18 (about 112: the original 114 become about 96).
+Expected: Step 1's number minus 27, counting each parameterized case (offline storage, freight) individually. The spec's "about 97" undercounted those cases; the plan's 27 is the exact tally of the rows above. If your number differs, list which removal you skipped or added and why.
 Then the full gate. Expected: green.
 
 ```bash
@@ -934,12 +986,19 @@ async function pass(sim, port) {
   // ... the body of today's loop iteration, using `env` for both spawns and `port` instead of 18090 ...
   return code;
 }
-const [normal, simulated] = await Promise.all([pass(false, 18090), pass(true, 18091)]);
-process.exitCode = normal || simulated;
-fakes.kill('SIGTERM');
+const stops = [];   // each pass pushes a () => void that kills its PocketBase and vitest
+try {
+  const results = await Promise.allSettled([pass(false, 18090, stops), pass(true, 18091, stops)]);
+  // One pass failing to start must not leave the other running: stop everything, then report.
+  for (const r of results) if (r.status === 'rejected') console.error(r.reason);
+  process.exitCode = results.every((r) => r.status === 'fulfilled' && r.value === 0) ? 0 : 1;
+} finally {
+  for (const stop of stops) stop();
+  fakes.kill('SIGTERM');
+}
 ```
 
-Pass `env` explicitly to both `spawn` calls instead of mutating `process.env` (two passes now run at once). Keep the SIGINT/SIGTERM handling per pass. `pb-test-server.mjs` reads `SIM` from its environment: confirm with `grep -n "SIM" scripts/pb-test-server.mjs`.
+Pass `env` explicitly to both `spawn` calls instead of mutating `process.env` (two passes now run at once). `pass(sim, port, stops)` pushes its own stop function onto `stops` as soon as it spawns PocketBase, and keeps today's per-pass `finally` that awaits its server's exit. Install one SIGINT/SIGTERM handler at the top level that calls every function in `stops`, instead of one per pass. If one pass's port probe throws, the other pass is stopped by the outer `finally`. `pb-test-server.mjs` reads `SIM` from its environment: confirm with `grep -n "SIM" scripts/pb-test-server.mjs`.
 
 - [ ] **Step 8: Run hooks and the full gate**
 
