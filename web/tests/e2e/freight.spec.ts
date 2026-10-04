@@ -64,27 +64,24 @@ test('a rejected middle upload still sends the last photo and reports the partia
   await expect(page.getByTestId('freight-input')).toBeEnabled();
 });
 
-for (const [phase, time] of [
-  ['before', '2026-12-26T17:00:00.000Z'],
-  ['after', '2026-12-26T22:00:00.000Z']
-]) {
-  test(`a photo still goes to the chat ${phase} the crawl, with no stop to file it under`, async ({ page }) => {
-    await page.route('**/api/metra/**', (r) => r.fulfill({ json: { mode: 'schedule_only', fetchedAt: null, trips: [], alerts: [] } }));
-    await login(page, 'E2E Freight Skipper', ADMIN);
-    await clearRoutes();
-    await seedLockedCrawl({
-      ownerName: 'E2E Freight Skipper', eventDate: DATE, startTime: '12:00',
-      departAt: '2026-12-26T20:34:00.000Z', arriveAt: '2026-12-26T20:49:00.000Z'
-    });
-    await page.clock.install({ time: new Date(time) });
+test('a photo still goes to the chat before and after the crawl, with no stop to file it under', async ({ page }) => {
+  await page.route('**/api/metra/**', (r) => r.fulfill({ json: { mode: 'schedule_only', fetchedAt: null, trips: [], alerts: [] } }));
+  await login(page, 'E2E Freight Skipper', ADMIN);
+  await clearRoutes();
+  await seedLockedCrawl({
+    ownerName: 'E2E Freight Skipper', eventDate: DATE, startTime: '12:00',
+    departAt: '2026-12-26T20:34:00.000Z', arriveAt: '2026-12-26T20:49:00.000Z'
+  });
+  await page.clock.install({ time: new Date('2026-12-26T17:00:00.000Z') });
+  for (const [phase, time, shared] of [['before', '2026-12-26T17:00:00.000Z', 1], ['after', '2026-12-26T22:00:00.000Z', 2]] as const) {
+    await page.clock.setSystemTime(new Date(time));
     await page.goto('/live');
-
     await expect(page.getByTestId('no-active-route')).toHaveCount(0);
     await expect(page.getByTestId('attach-media')).toBeEnabled();
     await expect(page.getByTestId('camera-button')).toBeVisible();
     await page.getByTestId('freight-input').setInputFiles({ name: `${phase}.gif`, mimeType: 'image/gif', buffer: GIF });
-    await expect(page.getByTestId('crew-chat').locator('img')).toHaveCount(1);
+    await expect(page.getByTestId('crew-chat').locator('img')).toHaveCount(shared);
     // No stop is open, so there is no stop strip to show it in.
     await expect(page.getByTestId('freight-strip')).toHaveCount(0);
-  });
-}
+  }
+});

@@ -1,5 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
-import { clearRoutes, login, seedLockedCrawl, openTab } from './helpers';
+import { clearRoutes, login, seedLockedCrawl, openTab, sessionFor } from './helpers';
 import { copy } from '../../src/lib/labels';
 import { fmtDateTime } from '../../src/lib/time';
 import type { NextTrip } from '../../src/lib/types';
@@ -33,18 +33,26 @@ async function stubProxy(page: Page) {
   await page.route('**/api/metra/stations**', (r) => r.fulfill({ json: { lines: [] } }));
 }
 
-async function arrive(page: Page) {
+/** The route every test here rides: shared by the storage cases, seeded once for them. */
+async function seedTunnelRoute() {
+  await sessionFor('E2E Tunnel Skipper', true);   // seedLockedCrawl needs the owner to exist
+  await clearRoutes();
+  return seedLockedCrawl({ ownerName: 'E2E Tunnel Skipper', eventDate: DATE, startTime: '12:00', departAt: DEPART, arriveAt: ARRIVE });
+}
+
+/** Per page: stubbed Metra, a session, the event-day clock, and Live with its board up. */
+async function openRoute(page: Page) {
   await stubProxy(page);
   await login(page, 'E2E Tunnel Skipper', ADMIN);
-  await clearRoutes();
-  const seeded = await seedLockedCrawl({
-    ownerName: 'E2E Tunnel Skipper', eventDate: DATE, startTime: '12:00',
-    departAt: DEPART, arriveAt: ARRIVE
-  });
   await page.clock.install({ time: new Date(NOW) });
   await page.goto('/live');
   await expect(page.getByTestId('departure-board')).toContainText('min walk from The Whistle Stop');
   await expect(page.getByTestId('departure-board')).toContainText('2:34 PM');
+}
+
+async function arrive(page: Page) {
+  const seeded = await seedTunnelRoute();
+  await openRoute(page);
   return seeded;
 }
 
@@ -114,7 +122,13 @@ test('the route still reads when PocketBase cannot be reached', async ({ page })
   await expect(page.getByTestId('mirror-notice')).toHaveCount(0);
 });
 
-for (const storage of ['missing', 'getter throws', 'open throws', 'transaction throws', 'transaction aborts', 'cleared'] as const) {
+// Seeded once: no case changes the route. With one worker and files run one at a time, no other
+// file's clearRoutes() runs between this beforeAll and these cases. ("open throws" is gone: it lands
+// in the same catch as "getter throws", src/lib/offline.ts.)
+test.describe('storage failures', () => {
+let shared: Awaited<ReturnType<typeof seedTunnelRoute>>;
+test.beforeAll(async () => { shared = await seedTunnelRoute(); });
+for (const storage of ['missing', 'getter throws', 'transaction throws', 'transaction aborts', 'cleared'] as const) {
   test(`the online route works with storage ${storage}, and an empty tunnel does not crash`, async ({ page }) => {
     const errors: string[] = [];
     page.on('pageerror', (error) => errors.push(error.message));
@@ -132,17 +146,15 @@ for (const storage of ['missing', 'getter throws', 'open throws', 'transaction t
             return tx;
           };
         } else {
-          Object.defineProperty(window, 'indexedDB', { value: mode === 'missing' ? undefined : {
-            open() { throw new DOMException('Storage denied', 'SecurityError'); }
-          } });
+          Object.defineProperty(window, 'indexedDB', { value: undefined });
         }
       }, storage);
     }
-    const seeded = await arrive(page);
+    await openRoute(page);
     await page.goto('/route');
     await expect(page.getByTestId('stop-row-0')).toContainText('The Whistle Stop');
     if (storage === 'cleared') {
-      await expect.poll(() => savedRoute(page)).toMatchObject({ itinerary: { id: seeded.itineraryId } });
+      await expect.poll(() => savedRoute(page)).toMatchObject({ itinerary: { id: shared.itineraryId } });
       // Leave the app first so its poller cannot repopulate the deleted database. The login
       // screen redirects an authenticated browser straight back into the app.
       await page.goto('/icon.svg');
@@ -160,6 +172,7 @@ for (const storage of ['missing', 'getter throws', 'open throws', 'transaction t
     expect(errors).toEqual([]);
   });
 }
+});
 
 test('an acknowledgement with no signal keeps the Bulletin and reports the failure', async ({ page }) => {
   await arrive(page);

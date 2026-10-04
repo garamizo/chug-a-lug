@@ -3,35 +3,26 @@ import { test, expect } from '@playwright/test';
 
 const CREW = process.env.CREW_PASSWORD ?? 'crew-test-password';
 
-test('desktop viewports get a wider column, still capped for readability', async ({ page }) => {
+test('desktop gets a wider, capped column; the header (icon, title, menu, no date) stays pinned while scrolling', async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 800 });
   await login(page, 'E2E Desk', CREW);
   await openHome(page, 'E2E Desk');
   const box = await page.locator('main').boundingBox();
   expect(box?.width).toBeGreaterThan(600);
   expect(box?.width).toBeLessThan(1000);
-});
 
-test('the header with icon, title and menu stays pinned while scrolling', async ({ page }) => {
-  await page.setViewportSize({ width: 1280, height: 300 });
-  await login(page, 'E2E Desk', CREW);
-  await openHome(page, 'E2E Desk');
   const header = page.getByRole('banner');
   await expect(header.locator('img')).toBeVisible();
   await expect(header.getByText('Chug-a-Lug Choo-Choo')).toBeVisible();
   await expect(header.getByTestId('menu')).toBeVisible();
+  // No date: the phone already shows one.
+  await expect(header).not.toContainText(/Sat|Sun|Mon|Dec/);
 
+  await page.setViewportSize({ width: 1280, height: 300 });
   await page.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight));
   expect(await page.evaluate(() => window.scrollY)).toBeGreaterThan(0);
-  const box = await header.boundingBox();
-  expect(box?.y).toBe(0);
+  expect((await header.boundingBox())?.y).toBe(0);
   await expect(header.getByTestId('menu')).toBeInViewport();
-});
-
-test('the header carries no date: the phone already shows one', async ({ page }) => {
-  await login(page, 'E2E Desk', CREW);
-  await openHome(page, 'E2E Desk');
-  await expect(page.getByRole('banner')).not.toContainText(/Sat|Sun|Mon|Dec/);
 });
 
 test('the menu holds logout, opens the Crew Board, and keeps the Drink scoreboard visible but disabled', async ({ page }) => {

@@ -20,7 +20,7 @@ async function attachPhotoPlace(stopId: string) {
   if (!res.ok) throw new Error(`Attach place failed: ${res.status} ${await res.text()}`);
 }
 
-test('stop cards show the venue’s photo while planning and editing', async ({ page }) => {
+test('stop cards show the venue’s photo; return links are a back arrow and editing is a pen, all named for screen readers', async ({ page }) => {
   await login(page, 'E2E Photo Planner', ADMIN);
   await clearRoutes();
   const seeded = await seedLockedCrawl({ ownerName: 'E2E Photo Planner', eventDate: '2026-12-26', startTime: '12:00', departAt: '2026-12-26T20:34:00.000Z', arriveAt: '2026-12-26T20:49:00.000Z' });
@@ -29,15 +29,6 @@ test('stop cards show the venue’s photo while planning and editing', async ({ 
   await page.goto(`/plan/${seeded.itineraryId}`);
   await expect(page.getByTestId('stop-photo-0')).toHaveAttribute('src', /thumb=400x300/);
   await expect(page.getByTestId('stop-photo-1')).toHaveCount(0);
-  await page.goto(`/plan/${seeded.itineraryId}/edit`);
-  await expect(page.getByTestId('stop-photo-0')).toBeVisible();
-});
-
-test('return links are a back arrow and editing is a pen, both named for screen readers', async ({ page }) => {
-  await login(page, 'E2E Icon Links', ADMIN);
-  await clearRoutes();
-  const seeded = await seedLockedCrawl({ ownerName: 'E2E Icon Links', eventDate: '2026-12-26', startTime: '12:00', departAt: '2026-12-26T20:34:00.000Z', arriveAt: '2026-12-26T20:49:00.000Z' });
-  await page.goto(`/plan/${seeded.itineraryId}`);
   const back = page.getByRole('link', { name: copy.backToPlanner });
   await expect(back).toHaveText('');
   await expect(back.locator('svg')).toBeVisible();
@@ -46,6 +37,7 @@ test('return links are a back arrow and editing is a pen, both named for screen 
   await expect(edit.locator('svg')).toBeVisible();
   await edit.click();
   await expect(page).toHaveURL(new RegExp(`/plan/${seeded.itineraryId}/edit$`));
+  await expect(page.getByTestId('stop-photo-0')).toBeVisible();
   // Stop controls are icons with accessible names, not glyphs.
   await expect(page.getByTestId('remove-0')).toHaveAccessibleName(copy.remove);
   await expect(page.getByTestId('remove-0').locator('svg')).toHaveCount(1);

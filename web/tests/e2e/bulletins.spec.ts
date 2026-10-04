@@ -7,7 +7,7 @@ const DATE = '2026-12-26';
 // Pinning everywhere is the event day's behaviour; on a practice day a Bulletin pins only on Live.
 const EVENT_DAY = new Date('2026-12-26T19:00:00Z');
 
-test('a plan change drafts a Bulletin the crew has to tap away', async ({ page, context }) => {
+test('a plan change drafts a Bulletin Save cannot replace while its sheet is open, and the crew has to tap it away', async ({ page, context }) => {
   page.on('dialog', (d) => d.accept());
   await login(page, 'E2E Bulletin Conductor', ADMIN);
   await clearRoutes();
@@ -25,6 +25,9 @@ test('a plan change drafts a Bulletin the crew has to tap away', async ({ page, 
   const sheet = page.getByTestId('bulletin-sheet');
   await expect(sheet).toBeVisible();
   await expect(sheet.getByTestId('bulletin-body')).toHaveValue(/The Second Round is annulled\./);
+  // A second Save while the draft's sheet is still up (a double-click, or another edit made behind
+  // it) must not mint a fresh draft the Conductor never sees: the control is disabled outright.
+  await expect(page.getByTestId('save-plan')).toBeDisabled();
   await sheet.getByTestId('bulletin-send').click();
   await expect(page).toHaveURL(new RegExp(`/plan/${seeded.itineraryId}$`));
 
@@ -44,48 +47,6 @@ test('a plan change drafts a Bulletin the crew has to tap away', async ({ page, 
   // Acknowledged, it is still on the record.
   await crewPage.goto('/notifications');
   await expect(crewPage.getByTestId('bulletin-list')).toContainText('The Second Round is annulled.');
-});
-
-test('Save cannot replace the drafted Bulletin while its sheet is still open', async ({ page }) => {
-  page.on('dialog', (d) => d.accept());
-  await login(page, 'E2E Sheet-Lock Conductor', ADMIN);
-  await clearRoutes();
-  const seeded = await seedLockedCrawl({
-    ownerName: 'E2E Sheet-Lock Conductor', eventDate: DATE, startTime: '12:00',
-    departAt: '2026-12-26T20:34:00.000Z', arriveAt: '2026-12-26T20:49:00.000Z', extraVenueAtFirstStation: true
-  });
-
-  await page.goto(`/plan/${seeded.itineraryId}/edit`);
-  await page.getByTestId('set-here-0').click();
-  await page.getByTestId('remove-1').click();
-  await page.getByTestId('save-plan').click();
-
-  const sheet = page.getByTestId('bulletin-sheet');
-  await expect(sheet).toBeVisible();
-  // A second Save while the first draft's sheet is still up — a double-click, or another edit
-  // made behind it — must not be able to mint a fresh draft the Conductor never sees, leaving the
-  // sheet showing stale words under a new id. The control is disabled outright, so the drafted
-  // Bulletin underneath it cannot be replaced.
-  await expect(page.getByTestId('save-plan')).toBeDisabled();
-  await expect(sheet.getByTestId('bulletin-body')).toHaveValue(/The Second Round is annulled\./);
-});
-
-test('the Conductor can post a Bulletin without changing the plan', async ({ page }) => {
-  await login(page, 'E2E Plain Conductor', ADMIN);
-  await clearRoutes();
-  await seedLockedCrawl({
-    ownerName: 'E2E Plain Conductor', eventDate: DATE, startTime: '12:00',
-    departAt: '2026-12-26T20:34:00.000Z', arriveAt: '2026-12-26T20:49:00.000Z'
-  });
-  await page.clock.install({ time: EVENT_DAY });
-
-  await page.goto('/plan');
-  await page.getByTestId('menu').click();
-  await page.getByTestId('menu-bulletin').click();
-  await page.getByTestId('bulletin-body').fill('Meet under the clock at Union Station.');
-  await page.getByTestId('bulletin-send').click();
-
-  await expect(page.getByTestId('pinned-bulletin')).toContainText('Meet under the clock');
 });
 
 test('retrying a lost save response preserves the edited Bulletin without posting twice', async ({ page }) => {
@@ -132,11 +93,20 @@ async function pinBulletin(page: import('@playwright/test').Page, name: string) 
   await page.getByTestId('menu-bulletin').click();
   await page.getByTestId('bulletin-body').fill('Last call at the Whistle Stop.');
   await page.getByTestId('bulletin-send').click();
-  await expect(page.getByTestId('pinned-bulletin')).toBeVisible();
+  // A Bulletin posted without changing the plan pins at once.
+  await expect(page.getByTestId('pinned-bulletin')).toContainText('Last call at the Whistle Stop.');
 }
 
-test('Got it closes the Bulletin at once, without waiting for the server', async ({ page }) => {
+test('a Got it that cannot be saved puts the Bulletin back; one that can closes it at once, without waiting for the server', async ({ page }) => {
   await pinBulletin(page, 'E2E Snappy Ack');
+  const fail = (route: import('@playwright/test').Route) =>
+    route.request().method() === 'POST' ? route.abort('failed') : route.fallback();
+  await page.route('**/api/collections/broadcast_acks/records', fail);
+  await page.getByTestId('bulletin-ack').click();
+  await expect(page.getByTestId('pinned-bulletin')).toBeVisible();
+  await expect(page.getByRole('alert')).toBeVisible();
+  await page.unroute('**/api/collections/broadcast_acks/records', fail);
+
   let release!: () => void;
   const held = new Promise<void>((r) => (release = r));
   await page.route('**/api/collections/broadcast_acks/records', async (route) => {
@@ -149,13 +119,4 @@ test('Got it closes the Bulletin at once, without waiting for the server', async
   release();
   await page.reload();
   await expect(page.getByTestId('pinned-bulletin')).toBeHidden();
-});
-
-test('a Got it that cannot be saved puts the Bulletin back', async ({ page }) => {
-  await pinBulletin(page, 'E2E Lost Ack');
-  await page.route('**/api/collections/broadcast_acks/records', (route) =>
-    route.request().method() === 'POST' ? route.abort('failed') : route.fallback());
-  await page.getByTestId('bulletin-ack').click();
-  await expect(page.getByTestId('pinned-bulletin')).toBeVisible();
-  await expect(page.getByRole('alert')).toBeVisible();
 });

@@ -5,42 +5,6 @@ import { copy } from '../../src/lib/labels';
 const ADMIN = process.env.ADMIN_PASSWORD ?? 'admin-test-password';
 const DATE = '2026-12-26';
 
-test('one tap logs a drink at the current stop, and Undo takes it back', async ({ page }) => {
-  await page.route('**/api/metra/**', (r) => r.fulfill({ json: { mode: 'schedule_only', fetchedAt: null, trips: [], alerts: [] } }));
-  await login(page, 'E2E Tab Skipper', ADMIN);
-  await clearRoutes();
-  await seedLockedCrawl({
-    ownerName: 'E2E Tab Skipper', eventDate: DATE, startTime: '12:00',
-    departAt: '2026-12-26T20:34:00.000Z', arriveAt: '2026-12-26T20:49:00.000Z'
-  });
-  await page.clock.install({ time: new Date('2026-12-26T19:00:00.000Z') });
-  await page.goto('/live');
-  await openTab(page);
-
-  const beer = page.getByTestId('drink-beer');
-  await expect(beer).toContainText('0');
-  await beer.click();
-  await expect(beer).toContainText('1');
-  await expect(page.getByTestId('tab-total')).toContainText('1');
-
-  await page.getByTestId('tab-undo').click();
-  await expect(beer).toContainText('0');
-});
-
-test('Tab offers five illustrated personal counters and a camera picker', async ({ page }) => {
-  await page.route('**/api/metra/**', r => r.fulfill({ json: { mode: 'schedule_only', fetchedAt: null, trips: [], alerts: [] } }));
-  await login(page, 'E2E Personal Tab', ADMIN);
-  await clearRoutes();
-  await seedLockedCrawl({ ownerName: 'E2E Personal Tab', eventDate: DATE, startTime: '12:00', departAt: '2026-12-26T20:34:00Z', arriveAt: '2026-12-26T20:49:00Z' });
-  await page.clock.install({ time: new Date('2026-12-26T19:00:00Z') });
-  await page.goto('/live');
-  await openTab(page);
-  await expect(page.getByTestId('drink-wine')).toHaveCount(0);
-  await expect(page.getByTestId('drink-water')).toContainText('NA');
-  await expect(page.getByTestId('camera-button')).toBeVisible();
-  await expect(page.getByTestId('freight-camera')).toHaveAttribute('capture', 'environment');
-});
-
 async function tabDay(page: import('@playwright/test').Page, name: string) {
   await page.route('**/api/metra/**', r => r.fulfill({ json: { mode: 'schedule_only', fetchedAt: null, trips: [], alerts: [] } }));
   await login(page, name, ADMIN);
@@ -51,13 +15,20 @@ async function tabDay(page: import('@playwright/test').Page, name: string) {
   await openTab(page);
 }
 
-test('a drink that cannot be saved takes its tap back and says so', async ({ page }) => {
+test('a drink that cannot be saved takes its tap back and says so; one that saved stays counted when the refresh fails', async ({ page }) => {
   await tabDay(page, 'E2E Tab Offline');
   // The create call sends `?expand=...`, so the pattern needs a trailing wildcard to match the query string.
   await page.route('**/api/collections/drink_entries/records**', r => r.request().method() === 'POST' ? r.abort() : r.continue());
   await page.getByTestId('drink-shot').click();
   await expect(page.getByRole('alert')).toHaveText(copy.noSignal);
   await expect(page.getByTestId('drink-shot').locator('.count')).toHaveText('0');
+
+  // A saved drink stays counted when the refresh after it fails.
+  await page.unroute('**/api/collections/drink_entries/records**');
+  await page.route('**/api/collections/drink_entries/records**', r => r.request().method() === 'GET' ? r.abort() : r.continue());
+  await page.getByTestId('drink-cocktail').click();
+  await expect(page.getByTestId('tab-toast')).toBeVisible();
+  await expect(page.getByTestId('drink-cocktail').locator('.count')).toHaveText('1');
 });
 
 test('overlapping taps with a slow server count exactly once each', async ({ page }) => {
@@ -96,14 +67,6 @@ test('overlapping taps with a slow server count exactly once each', async ({ pag
   await expect(beer).toHaveText('2');
   await expect(page.getByTestId('tab-total')).toHaveText('2');
   expect(posts).toBe(2);
-});
-
-test('a saved drink stays counted when the refresh after it fails', async ({ page }) => {
-  await tabDay(page, 'E2E Tab Read Fails');
-  await page.route('**/api/collections/drink_entries/records**', r => r.request().method() === 'GET' ? r.abort() : r.continue());
-  await page.getByTestId('drink-cocktail').click();
-  await expect(page.getByTestId('tab-toast')).toBeVisible();
-  await expect(page.getByTestId('drink-cocktail').locator('.count')).toHaveText('1');
 });
 
 test('a failed Undo keeps its button so it can be retried', async ({ page }) => {
@@ -157,17 +120,7 @@ test('a repeat Undo tap while one is in flight is ignored, not sent twice', asyn
   await expect(page.getByTestId('drink-beer').locator('.count')).toHaveText('0');
 });
 
-test('after the toast is gone, your newest drink here can still be undone', async ({ page }) => {
-  await tabDay(page, 'E2E Tab Undo Last');
-  await page.getByTestId('drink-food').click();
-  await expect(page.getByTestId('tab-toast')).toBeVisible();
-  await page.clock.runFor(5_000);
-  await expect(page.getByTestId('tab-toast')).toBeHidden();
-  await page.getByTestId('tab-undo-last').click();
-  await expect(page.getByTestId('drink-food').locator('.count')).toHaveText('0');
-});
-
-test('the undo-last fallback never targets a tap that has not saved yet', async ({ page }) => {
+test('after the toast is gone the newest drink can be undone, but never a tap that has not saved yet', async ({ page }) => {
   // Regression: showUndoLast used to gate only on the toast, but the toast is cleared the instant a
   // new tap starts, so the fallback could briefly target the unsaved draft itself — deleting a row
   // that doesn't exist yet 404s while the tap goes on to save anyway.
@@ -191,6 +144,12 @@ test('the undo-last fallback never targets a tap that has not saved yet', async 
   await expect(page.getByTestId('tab-undo-last')).toBeHidden();
 
   await expect(page.getByTestId('tab-toast')).toBeVisible();
+
+  // Once that toast is gone too, the newest drink here can still be undone.
+  await page.clock.runFor(5_000);
+  await expect(page.getByTestId('tab-toast')).toBeHidden();
+  await page.getByTestId('tab-undo-last').click();
+  await expect(page.getByTestId('drink-beer').locator('.count')).toHaveText('0');
 });
 
 test('a second tap before the first toast fades retargets Undo, not the earlier one', async ({ page }) => {
@@ -206,8 +165,13 @@ test('a second tap before the first toast fades retargets Undo, not the earlier 
   await expect(page.getByTestId('drink-beer').locator('.count')).toHaveText('1');
 });
 
-test('the tab bar opens the Tab over Live from any screen, and it closes without losing the count', async ({ page }) => {
+test('the Tab offers five counters and a camera; the tab bar opens it from any screen, and it closes without losing the count', async ({ page }) => {
   await tabDay(page, 'E2E Tab Sheet');
+  // Five illustrated personal counters (no wine; water is NA) and a camera picker.
+  await expect(page.getByTestId('drink-wine')).toHaveCount(0);
+  await expect(page.getByTestId('drink-water')).toContainText('NA');
+  await expect(page.getByTestId('camera-button')).toBeVisible();
+  await expect(page.getByTestId('freight-camera')).toHaveAttribute('capture', 'environment');
   await page.getByTestId('drink-beer').click();
   await expect(page.getByTestId('tab-toast')).toBeVisible();
   await page.keyboard.press('Escape');

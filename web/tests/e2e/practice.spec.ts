@@ -35,10 +35,20 @@ async function practise(page: Page, name: string) {
   return ids;
 }
 
-test('on a practice day Live runs the route at today’s time with timetable trains', async ({ page }) => {
+test('on a practice day Live runs the route at today’s time with timetable trains, showing only today’s activity', async ({ page }) => {
   const next: string[] = [];
   page.on('request', (r) => { if (r.url().includes('/api/metra/next')) next.push(r.url()); });
-  await practise(page, 'E2E Practice Board');
+  const ids = await practise(page, 'E2E Practice Board');
+  // Yesterday's activity is not on today's Live. A superuser backdates a chat line to yesterday:
+  // the server stamps real time, so it is written directly.
+  const token = await superuserToken();
+  const user = (await (await fetch(`${PB}/api/collections/users/records?filter=${encodeURIComponent('name_key="e2e practice board"')}`, { headers: { Authorization: token } })).json()).items[0];
+  const post = (body: string, at?: string) => fetch(`${PB}/api/collections/chat_messages/records`, {
+    method: 'POST', headers: { Authorization: token, 'content-type': 'application/json' },
+    body: JSON.stringify({ itinerary: ids.itineraryId, user: user.id, body, ...(at ? { at } : {}) })
+  });
+  expect((await post('From yesterday', new Date(Date.now() - 86_400_000).toISOString())).ok).toBe(true);
+  expect((await post('From today')).ok).toBe(true);
   await page.goto('/');
   await expect(page.getByTestId('nav-live')).toBeVisible();
   await expect(page).toHaveURL(/\/$/);                       // no event-day auto-landing
@@ -46,6 +56,8 @@ test('on a practice day Live runs the route at today’s time with timetable tra
   await expect(page.getByTestId('practice-badge')).toHaveText(copy.practiceBadge);
   await expect(page.getByTestId('departure-board')).toBeVisible();
   await expect(page.getByTestId('strip-stop-0')).toHaveAttribute('aria-current', 'step');
+  await expect(page.getByText('From today')).toBeVisible();   // the feed has loaded
+  await expect(page.getByText('From yesterday')).toHaveCount(0);
   await expect.poll(() => next.find((u) => u.includes('practice=1') && u.includes('date=2026-12-26'))).toBeTruthy();
   // Live carries the tab bar on a practice day so the Tab can be opened; practice drinks count.
   await expect(page.getByTestId('tab-bar')).toBeVisible();
@@ -101,23 +113,6 @@ test('the Conductor makes a route current and another phone’s Live follows it'
   await expect(crew.getByTestId('departure-board')).toBeVisible();
   await expect(crew.getByText('The Switchyard')).toHaveCount(0);
   await crew.context().close();
-});
-
-test('yesterday’s activity is not on today’s Live', async ({ page }) => {
-  const ids = await practise(page, 'E2E Yesterday');
-  // A superuser backdates a chat line to yesterday. The server stamps real time, so write it directly.
-  const token = await superuserToken();
-  const user = (await (await fetch(`${PB}/api/collections/users/records?filter=${encodeURIComponent('name_key="e2e yesterday"')}`, { headers: { Authorization: token } })).json()).items[0];
-  const post = (body: string, at?: string) => fetch(`${PB}/api/collections/chat_messages/records`, {
-    method: 'POST', headers: { Authorization: token, 'content-type': 'application/json' },
-    body: JSON.stringify({ itinerary: ids.itineraryId, user: user.id, body, ...(at ? { at } : {}) })
-  });
-  expect((await post('From yesterday', new Date(Date.now() - 86_400_000).toISOString())).ok).toBe(true);
-  expect((await post('From today')).ok).toBe(true);
-  await page.goto('/live');
-  await expect(page.getByTestId('departure-board')).toBeVisible();
-  await expect(page.getByText('From today')).toBeVisible();   // the feed has loaded
-  await expect(page.getByText('From yesterday')).toHaveCount(0);
 });
 
 test('a watcher falls back after the Conductor deletes the current route', async ({ page, browser }) => {

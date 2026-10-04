@@ -46,7 +46,7 @@ async function liveChat(page: import('@playwright/test').Page, name: string) {
   await expect(page.getByTestId('route-strip').locator('[aria-current="step"]')).toBeVisible();
 }
 
-test('the chat box sends with Enter, never sends blanks, and inserts emoji at the caret', async ({ page }) => {
+test('the chat box sends with Enter, never sends blanks, inserts emoji at the caret, and never loses typing to a slow or failed send', async ({ page }) => {
   await liveChat(page, 'Chat Box Conductor');
   await page.getByTestId('chat-input').fill('   ');
   await expect(page.getByTestId('camera-button')).toBeVisible();
@@ -61,10 +61,8 @@ test('the chat box sends with Enter, never sends blanks, and inserts emoji at th
   await page.getByTestId('chat-input').press('Enter');
   await expect(page.getByTestId('crew-chat')).toContainText('Save me a seat🍕');
   await expect(page.getByTestId('chat-input')).toHaveValue('');
-});
 
-test('typing during a slow send is never lost, and a failed send gives its text back', async ({ page }) => {
-  await liveChat(page, 'Slow Send Conductor');
+  // Typing during a slow send is never lost, and a failed send gives its text back.
   let release!: () => void;
   const held = new Promise<void>((r) => (release = r));
   await page.route('**/api/collections/chat_messages/records', async (route) => {

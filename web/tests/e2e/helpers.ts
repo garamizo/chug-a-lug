@@ -150,9 +150,10 @@ export async function seedLockedCrawl(opts: {
 }
 
 /** The newest Conductor position for the crawl, so a test can assert what a save wrote. */
-export async function latestAnchor(): Promise<{ stop: string; at: string } | null> {
+export async function latestAnchor(itineraryId?: string): Promise<{ stop: string; at: string } | null> {
   const token = await superuserToken();
-  const res = await fetch(`${PB}/api/collections/checkins/records?sort=-at&perPage=1`, { headers: { Authorization: token } });
+  const only = itineraryId ? `&filter=${encodeURIComponent(`stop.itinerary="${itineraryId}"`)}` : '';
+  const res = await fetch(`${PB}/api/collections/checkins/records?sort=-at&perPage=1${only}`, { headers: { Authorization: token } });
   const items = (await res.json()).items as { stop: string; at: string }[];
   return items[0] ?? null;
 }

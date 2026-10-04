@@ -26,26 +26,15 @@ async function liveDay(page: Page, name: string) {
   return ids;
 }
 
-test('a Freight photo opens in the viewer and back closes it without leaving Live', async ({ page }) => {
-  await liveDay(page, 'E2E Lightbox');
-  await page.getByTestId('freight-input').setInputFiles({ name: 'bar.gif', mimeType: 'image/gif', buffer: GIF });
-  await page.getByTestId('freight-open-0').click();
-  await expect(page.getByTestId('lightbox')).toBeVisible();
-  await page.goBack();
-  await expect(page.getByTestId('lightbox')).toBeHidden();
-  await expect(page).toHaveURL(/\/live$/);
-  await expect(page.getByTestId('departure-board')).toBeVisible();
-});
-
-test('the ticket\'s station opens walking directions back to it', async ({ page }) => {
-  await liveDay(page, 'E2E Station Link');
-  const link = page.getByTestId('departure-board').getByTestId('station-walk');
-  await expect(link).toHaveAttribute('href', /destination=.*Metra\+Station&travelmode=walking/);
-  await expect(link).toHaveAttribute('target', '_blank');
-});
-
-test('tapping the current stop opens its sheet over Live; back closes it', async ({ page }) => {
+test('the route strip shows where the crew is; a stop, tapped or shared, opens its sheet over Live and back closes it', async ({ page }) => {
   const ids = await liveDay(page, 'E2E Stop Sheet');
+  // The route strip shows where the crew is. The seeded crawl rides a train to its second bar: track,
+  // not a walking line, and a beer for a bar.
+  await expect(page.getByTestId('strip-stop-0')).toHaveAttribute('aria-current', 'step');
+  await expect(page.getByTestId('strip-stop-1')).not.toHaveAttribute('aria-current', 'step');
+  await expect(page.getByTestId('strip-stop-1')).toHaveAttribute('data-arrive', 'train');
+  await expect(page.getByTestId('strip-stop-0')).toHaveAttribute('data-leave', 'train');
+  await expect(page.getByTestId('strip-stop-1').locator('.dot')).toHaveText('🍺');
   await page.getByTestId('route-strip').locator('[aria-current="step"]').click();
   await expect(page).toHaveURL(new RegExp(`/live\\?stop=${ids.firstStopId}$`));
   await expect(page.getByTestId('sheet-name')).toHaveText('The Whistle Stop');
@@ -65,6 +54,15 @@ test('tapping the current stop opens its sheet over Live; back closes it', async
   await expect(page.getByTestId('stop-sheet')).toBeHidden();
   await expect(page).toHaveURL(/\/live$/);
   await expect(page.getByTestId('departure-board')).toBeVisible();
+
+  // The strip opens any stop, and a shared stop link opens the sheet; closing it stays on Live.
+  await page.getByTestId('strip-stop-1').click();
+  await expect(page.getByTestId('sheet-name')).toHaveText('Berwyn Beer Hall');
+  await page.goto(`/live?stop=${ids.secondStopId}`);
+  await expect(page.getByTestId('sheet-name')).toHaveText('Berwyn Beer Hall');
+  await page.getByTestId('sheet-close').click();
+  await expect(page).toHaveURL(/\/live$/);
+  await expect(page.getByTestId('stop-sheet')).toBeHidden();
 });
 
 test('a photo opened from the sheet sits above it, and back steps out one layer at a time', async ({ page }) => {
@@ -86,33 +84,18 @@ test('a photo opened from the sheet sits above it, and back steps out one layer 
   await expect(page).toHaveURL(/\/live$/);
 });
 
-test('a shared stop link opens the sheet, and closing it stays on Live', async ({ page }) => {
-  const ids = await liveDay(page, 'E2E Sheet Link');
-  await page.goto(`/live?stop=${ids.secondStopId}`);
-  await expect(page.getByTestId('sheet-name')).toHaveText('Berwyn Beer Hall');
-  await page.getByTestId('sheet-close').click();
-  await expect(page).toHaveURL(/\/live$/);
-  await expect(page.getByTestId('stop-sheet')).toBeHidden();
-});
-
-test('on the event day The Route opens stops in the sheet, not the planner', async ({ page }) => {
-  await liveDay(page, 'E2E Route Sheet');
+test('on the event day The Route opens stops in the sheet, and the Conductor reaches the locked-route editor from there', async ({ page }) => {
+  const ids = await liveDay(page, 'E2E Route Sheet');
   await page.getByTestId('tab-route').click();
   await page.getByTestId('stop-link-1').click();
   await expect(page.getByTestId('sheet-name')).toHaveText('Berwyn Beer Hall');
   await expect(page).toHaveURL(/\/route\?stop=/);
-});
-
-test('the route strip shows where the crew is and opens any stop', async ({ page }) => {
-  await liveDay(page, 'E2E Route Strip');
-  await expect(page.getByTestId('strip-stop-0')).toHaveAttribute('aria-current', 'step');
-  await expect(page.getByTestId('strip-stop-1')).not.toHaveAttribute('aria-current', 'step');
-  // The seeded crawl rides a train to its second bar: track, not a walking line, and a beer for a bar.
-  await expect(page.getByTestId('strip-stop-1')).toHaveAttribute('data-arrive', 'train');
-  await expect(page.getByTestId('strip-stop-0')).toHaveAttribute('data-leave', 'train');
-  await expect(page.getByTestId('strip-stop-1').locator('.dot')).toHaveText('🍺');
-  await page.getByTestId('strip-stop-1').click();
-  await expect(page.getByTestId('sheet-name')).toHaveText('Berwyn Beer Hall');
+  await page.getByTestId('sheet-close').click();
+  await expect(page.getByTestId('stop-sheet')).toBeHidden();
+  // Not a direct link to the planner: the locked-route editor, with its warning.
+  await page.getByTestId('edit-route').click();
+  await expect(page).toHaveURL(new RegExp(`/plan/${ids.itineraryId}/edit$`));
+  await expect(page.getByTestId('live-route-warning')).toBeVisible();
 });
 
 test('the crew can talk and Cheers each other across phones', async ({ page, browser }) => {
@@ -151,22 +134,17 @@ test('the crew can talk and Cheers each other across phones', async ({ page, bro
   } finally { await context.close(); }
 });
 
-test('a photo shared in chat gets an accessible open label', async ({ page }) => {
-  await liveDay(page, 'E2E Chat Photo Label');
-  await page.getByTestId('freight-input').setInputFiles({ name: 'bar.gif', mimeType: 'image/gif', buffer: GIF });
-  await expect(page.getByTestId('crew-chat').getByRole('button', { name: copy.openFreightPhoto })).toBeVisible();
-});
-
-test('the crew chat celebrates the first beer', async ({ page }) => {
-  await liveDay(page, 'E2E Milestone');
-  await openTab(page);
-  await page.getByTestId('drink-beer').click();
-  await expect(page.getByTestId('crew-chat').locator('article.milestone')).toContainText('First of the day: Beer · E2E Milestone');
-});
-
-test('a fast double tap on close never pops past Live', async ({ page }) => {
+test('a Freight photo is labelled in chat, back closes its viewer, and a fast double tap on close never pops past Live', async ({ page }) => {
   await liveDay(page, 'E2E Double Close');
   await page.getByTestId('freight-input').setInputFiles({ name: 'bar.gif', mimeType: 'image/gif', buffer: GIF });
+  await expect(page.getByTestId('crew-chat').getByRole('button', { name: copy.openFreightPhoto })).toBeVisible();
+  await page.getByTestId('freight-open-0').click();
+  await expect(page.getByTestId('lightbox')).toBeVisible();
+  await page.goBack();
+  await expect(page.getByTestId('lightbox')).toBeHidden();
+  await expect(page).toHaveURL(/\/live$/);
+  await expect(page.getByTestId('departure-board')).toBeVisible();
+
   await page.getByTestId('freight-open-0').click();
   await expect(page.getByTestId('lightbox')).toBeVisible();
   await page.getByTestId('lightbox-close').dblclick();
@@ -182,18 +160,11 @@ test('a fast double tap on close never pops past Live', async ({ page }) => {
   await expect(page.getByTestId('departure-board')).toBeVisible();
 });
 
-test('the Conductor reaches the locked-route editor from Live, not a direct link to the planner', async ({ page }) => {
-  const ids = await liveDay(page, 'E2E Route Edit');
-  await page.getByTestId('tab-route').click();
-  await page.getByTestId('edit-route').click();
-  await expect(page).toHaveURL(new RegExp(`/plan/${ids.itineraryId}/edit$`));
-  await expect(page.getByTestId('live-route-warning')).toBeVisible();
-});
-
-test('the leaderboard line puts me on the podium and opens the Crew Board', async ({ page }) => {
+test('the first beer is celebrated in chat, and the leaderboard line puts me on the podium and opens the Crew Board', async ({ page }) => {
   await liveDay(page, 'E2E Podium');
   await openTab(page);
   await page.getByTestId('drink-beer').click();
+  await expect(page.getByTestId('crew-chat').locator('article.milestone')).toContainText('First of the day: Beer · E2E Podium');
   await page.getByTestId('tab-close').click();
   await expect(page.getByTestId('leaderboard')).toContainText('you 1');
   await expect(page.getByRole('link', { name: /Leaderboard: .*you 1/ })).toBeVisible();

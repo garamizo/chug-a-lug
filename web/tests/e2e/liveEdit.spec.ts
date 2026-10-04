@@ -18,7 +18,7 @@ async function openEditor(page: import('@playwright/test').Page, name: string, p
   return seeded;
 }
 
-test('Save waits until the Conductor says where the crew is', async ({ page }) => {
+test('Save waits until the Conductor says where the crew is, and while the staged plan is checked', async ({ page }) => {
   const seeded = await openEditor(page, 'E2E Editor Conductor', ADMIN);
 
   // The editor says up front that this is a live route, before anything is touched.
@@ -31,15 +31,29 @@ test('Save waits until the Conductor says where the crew is', async ({ page }) =
   await expect(save).toBeDisabled();
   await expect(page.getByTestId('save-blockers')).toContainText('Set where the crew is');
 
-  await page.getByTestId('set-here-1').click();
+  await page.getByTestId('set-here-0').click();
   await expect(save).toBeEnabled();
   await expect(page.getByTestId('save-blockers')).toBeHidden();
+
+  // Save is disabled while the staged plan is checked, not just when it is broken. Gate the next
+  // check so the in-flight window is observable rather than racing past it.
+  let release: (() => void) | undefined;
+  const gate = new Promise<void>((resolve) => { release = resolve; });
+  await page.route('**/api/plan/preview', async (route) => {
+    await gate;
+    await route.continue();
+  });
+  await page.getByTestId('set-here-1').click();
+  await expect(save).toBeDisabled();
+  await expect(page.getByTestId('preview-status')).toContainText('Checking the route');
+  release?.();
+  await expect(save).toBeEnabled();
 
   await save.click();
   await page.getByTestId('bulletin-skip').click();
   await expect(page).toHaveURL(new RegExp(`/plan/${seeded.itineraryId}$`));
 
-  const anchor = await latestAnchor();
+  const anchor = await latestAnchor(seeded.itineraryId);
   expect(anchor?.stop).toBe(seeded.middleStopId);
 });
 
@@ -67,25 +81,6 @@ test('a staged change reaches the crew only when it is saved', async ({ page, co
   await expect(crewPage.getByText('The Second Round')).toBeHidden();
 });
 
-test('Save is disabled while the staged plan is checked, not just when it is broken', async ({ page }) => {
-  await openEditor(page, 'E2E Pending Conductor', ADMIN);
-  await page.getByTestId('set-here-0').click();
-  await expect(page.getByTestId('save-plan')).toBeEnabled();
-
-  // Gate the next check so the in-flight window is observable rather than racing past it.
-  let release: (() => void) | undefined;
-  const gate = new Promise<void>((resolve) => { release = resolve; });
-  await page.route('**/api/plan/preview', async (route) => {
-    await gate;
-    await route.continue();
-  });
-  await page.getByTestId('set-here-1').click(); // a harmless second edit, still triggers a fresh check
-  await expect(page.getByTestId('save-plan')).toBeDisabled();
-  await expect(page.getByTestId('preview-status')).toContainText('Checking the route');
-  release?.();
-  await expect(page.getByTestId('save-plan')).toBeEnabled();
-});
-
 test('a 409 stale after someone else edits The Route survives a reload without resurrecting the old plan', async ({ page }) => {
   const seeded = await openEditor(page, 'E2E Stale Conductor', ADMIN);
   await page.getByTestId('set-here-0').click();
@@ -104,26 +99,24 @@ test('a 409 stale after someone else edits The Route survives a reload without r
   await expect(page.getByText('Berwyn Beer Hall')).toBeHidden();
 });
 
-test('a failed preview warns but still allows the server to accept Save', async ({ page }) => {
+test('a failed preview warns but Save stays possible; a transport failure says No signal beside Save, and a retry lands', async ({ page }) => {
   const seeded = await openEditor(page, 'E2E Preview Failure Conductor', ADMIN);
   await page.route('**/api/plan/preview', (route) => route.abort('failed'));
   await page.getByTestId('set-here-0').click();
   await expect(page.getByTestId('preview-status')).toContainText(copy.checkFailed);
   await expect(page.getByTestId('save-plan')).toBeEnabled();
-  await page.getByTestId('save-plan').click();
-  await page.getByTestId('bulletin-skip').click();
-  await expect(page).toHaveURL(new RegExp(`/plan/${seeded.itineraryId}$`));
-});
 
-test('a transport failure shows No signal beside Save', async ({ page }) => {
-  await openEditor(page, 'E2E Offline Save Conductor', ADMIN);
-  await page.getByTestId('set-here-0').click();
-  await expect(page.getByTestId('save-plan')).toBeEnabled();
   await page.route('**/api/plan/commit', (route) => route.abort('failed'));
   await page.getByTestId('save-plan').click();
   await page.getByTestId('bulletin-skip').click();
   await expect(page.locator('.savebar').getByRole('alert')).toHaveText(copy.noSignal);
   await expect(page.getByTestId('save-plan')).toBeEnabled();
+
+  // The server still accepts the plan once the signal is back, with the preview still failing.
+  await page.unroute('**/api/plan/commit');
+  await page.getByTestId('save-plan').click();
+  await page.getByTestId('bulletin-skip').click();
+  await expect(page).toHaveURL(new RegExp(`/plan/${seeded.itineraryId}$`));
 });
 
 test('edits made before adding a stop survive the trip to the venue picker', async ({ page }) => {
