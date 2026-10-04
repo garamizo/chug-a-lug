@@ -15,7 +15,7 @@ export async function layoutViolations(page: Page, skip: LayoutRule[] = []): Pro
   const found = await page.evaluate(() => {
     const out: [string, string][] = [];
     const CONTROLS = 'button, a[href], input, select, textarea, [role=button], summary';
-    const FREE_TEXT = new Set(['', 'text', 'email', 'password', 'search', 'tel', 'url']);
+    const FREE_TEXT = new Set(['text', 'email', 'password', 'search', 'tel', 'url']);
 
     const describe = (el: Element) => {
       const r = el.getBoundingClientRect();
@@ -36,7 +36,10 @@ export async function layoutViolations(page: Page, skip: LayoutRule[] = []): Pro
       const hit = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
       return !!hit && m.contains(hit) && !modals.some((o) => o !== m && m.contains(o) && o.contains(hit));
     });
-    const layers: ParentNode[] = modals.length ? onTop : [document];
+    // An open modal that no hit-test reaches is itself a bug (hidden under an overlay, off-screen):
+    // report it, and still check the controls of the last one rather than checking nothing.
+    const hiddenModals = modals.length && !onTop.length ? modals.slice(-1) : [];
+    const layers: ParentNode[] = modals.length ? (onTop.length ? onTop : hiddenModals) : [document];
 
     const srOnly = (el: Element) => {
       const r = el.getBoundingClientRect(), s = getComputedStyle(el);
@@ -46,19 +49,30 @@ export async function layoutViolations(page: Page, skip: LayoutRule[] = []): Pro
     const hidden = (el: Element) =>
       !el.checkVisibility({ visibilityProperty: true }) || !!el.closest('[hidden], [inert], [aria-hidden="true"]') ||
       (el instanceof HTMLInputElement && el.type === 'hidden') || srOnly(el);
-    /** The tap area: a stretched link's absolutely positioned ::before/::after covers its containing block. */
+    /**
+     * The tap area: a stretched link's absolutely positioned ::before/::after covers its containing
+     * block (the nearest positioned box, the control itself included). A pseudo that does not cover
+     * that box (a badge dot, a notch) is decoration and changes nothing.
+     */
     const target = (el: Element) => {
       for (const pseudo of ['::after', '::before']) {
         const p = getComputedStyle(el, pseudo);
-        if (p.content !== 'none' && p.position === 'absolute') {
-          let box = el.parentElement;
-          while (box && getComputedStyle(box).position === 'static') box = box.parentElement;
-          if (box) return box.getBoundingClientRect();
-        }
+        if (p.content === 'none' || p.position !== 'absolute') continue;
+        let box: Element | null = el;
+        while (box && getComputedStyle(box).position === 'static') box = box.parentElement;
+        if (!box) continue;
+        const b = box.getBoundingClientRect();
+        if (parseFloat(p.width) >= b.width - 1 && parseFloat(p.height) >= b.height - 1) return b;
       }
       return el.getBoundingClientRect();
     };
     const controls = layers.flatMap((l) => [...l.querySelectorAll(CONTROLS)]).filter((el) => !hidden(el));
+
+    for (const m of hiddenModals) {
+      const r = m.getBoundingClientRect();
+      const hit = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
+      out.push(['covered', `${describe(m)} is under ${hit ? describe(hit) : 'nothing (off-screen)'}`]);
+    }
 
     // page-overflow. The layout viewport is the root's clientWidth: on a phone, content wider than the
     // screen zooms the page out and widens innerWidth with it, so innerWidth cannot reveal overflow.
@@ -74,7 +88,8 @@ export async function layoutViolations(page: Page, skip: LayoutRule[] = []): Pro
     for (const el of controls) {
       const r = el.getBoundingClientRect(), s = getComputedStyle(el);
       // narrow-field: free-text fields only; time/date/number/select are compact by design.
-      const freeText = el instanceof HTMLTextAreaElement || (el instanceof HTMLInputElement && FREE_TEXT.has(el.getAttribute('type') ?? ''));
+      // The type property, as the browser resolves it: "TEXT" and unknown types are text.
+      const freeText = el instanceof HTMLTextAreaElement || (el instanceof HTMLInputElement && FREE_TEXT.has(el.type));
       if (freeText && r.width < 120) out.push(['narrow-field', `${describe(el)} (min 120)`]);
       // small-target: WCAG 2.5.8 minimum; text links in running text are exempt.
       const inlineText = (el.tagName === 'A' && s.display === 'inline') || el.matches('button.link');

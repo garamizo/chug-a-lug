@@ -61,7 +61,9 @@ test('overlapping taps with a slow server count exactly once each', async ({ pag
   await expect(beer).toHaveText('2');            // instantly, from the pending taps
   await expect(page.getByTestId('tab-toast')).toBeVisible();
   await expect.poll(() => answered).toBe(2);       // both saved
-  await expect.poll(() => after.some((r) => r.url().includes('/drink_entries/'))).toBe(true);
+  // loadFeed() reads these four together and applies nothing until all have answered.
+  const feed = ['/drink_entries/', '/media/', '/chat_messages/', '/reactions/'];
+  await expect.poll(() => feed.every((c) => after.some((r) => r.url().includes(c)))).toBe(true);
   await Promise.all(after.map(async (r) => (await r.response())?.finished()));
   await page.evaluate(() => new Promise((r) => setTimeout(r, 0)));   // the reload has been applied
   await expect(beer).toHaveText('2');

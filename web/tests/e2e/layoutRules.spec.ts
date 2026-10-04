@@ -89,8 +89,19 @@ test('an aria-modal sheet is a layer too; controls behind its scrim are not cove
   await page390(page, `<button style="width:100%;height:48px">Behind</button>
     <div style="position:fixed;inset:0;background:#0008"></div>
     <div role="dialog" aria-modal="true" style="position:fixed;left:0;right:0;bottom:0;height:300px;background:#222">
-    <button style="width:100%;height:48px">Beer</button></div>`);
-  expect(await layoutViolations(page)).toEqual([]);
+    <button style="width:100%;height:48px">Beer</button><button id="tinySheet" style="width:10px;height:10px;padding:0">x</button></div>`);
+  const v = await layoutViolations(page);
+  expect(v.join()).not.toContain('Behind');
+  expect(v.join()).toContain('small-target: button#tinySheet');   // a control inside the sheet is still checked
+});
+
+test('a modal hidden under something else is reported, and its controls are still checked', async ({ page }) => {
+  await page390(page, `<div role="dialog" aria-modal="true" id="sheet" style="position:fixed;left:0;right:0;bottom:0;height:300px;background:#222;z-index:1">
+    <button id="tinyUnder" style="width:10px;height:10px;padding:0">x</button></div>
+    <div style="position:fixed;inset:0;z-index:2;background:#000"></div>`);
+  const v = (await layoutViolations(page)).join('\n');
+  expect(v).toMatch(/covered: div#sheet\[?.* is under/);
+  expect(v).toContain('small-target: button#tinyUnder');
 });
 
 test('hidden things are skipped: display none, hidden, inert, aria-hidden, closed dialog, sr-only', async ({ page }) => {
@@ -127,4 +138,20 @@ test('a stretched link (an ::after covering its row) is measured by the row it c
   const v = (await layoutViolations(page)).filter((s) => s.startsWith('small-target'));
   expect(v).toHaveLength(1);   // the plain 10 px link still fails; the stretched one does not
   expect(v[0]).toContain('"tiny"');
+});
+
+test('a decorative pseudo on a positioned control does not exempt it; a pseudo that covers its row does', async ({ page }) => {
+  await page390(page, `<style>.badge{position:relative;width:16px;height:16px;padding:0} .badge::after{content:'';position:absolute;top:-4px;right:-4px;width:8px;height:8px}
+    .row{position:relative;padding:16px} .row a{display:block;line-height:20px} .row a::after{content:'';position:absolute;top:0;left:0;width:20px;height:20px}</style>
+    <button id="badge" class="badge">1</button><div class="row"><a id="half" href="#h">Not stretched</a></div>`);
+  const v = (await layoutViolations(page)).filter((s) => s.startsWith('small-target')).join();
+  expect(v).toContain('button#badge');   // its notch is decoration, not a bigger target
+  expect(v).toContain('a#half');         // a pseudo that does not cover the row is no stretched link
+});
+
+test('narrow-field reads the field type as the browser does: TEXT and unknown types are free text', async ({ page }) => {
+  await page390(page, `<input id="upper" type="TEXT" style="width:40px;height:44px"><input id="odd" type="nonsense" style="width:40px;height:44px">`);
+  const v = (await layoutViolations(page)).filter((s) => s.startsWith('narrow-field')).join();
+  expect(v).toContain('input#upper');
+  expect(v).toContain('input#odd');
 });

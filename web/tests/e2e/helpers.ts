@@ -81,8 +81,11 @@ async function create(collection: string, body: unknown, token: string) {
 export async function clearRoutes(): Promise<void> {
   const token = await superuserToken();
   const res = await fetch(`${PB}/api/collections/itineraries/records?perPage=200&fields=id`, { headers: { Authorization: token } });
-  await Promise.all(((await res.json()).items as { id: string }[]).map((row) =>
-    fetch(`${PB}/api/collections/itineraries/records/${row.id}`, { method: 'DELETE', headers: { Authorization: token } })));
+  await Promise.all(((await res.json()).items as { id: string }[]).map(async (row) => {
+    const del = await fetch(`${PB}/api/collections/itineraries/records/${row.id}`, { method: 'DELETE', headers: { Authorization: token } });
+    // A route that survives could become the next test's current route.
+    if (!del.ok && del.status !== 404) throw new Error(`Delete itinerary ${row.id} failed: ${del.status}`);
+  }));
 }
 
 /**

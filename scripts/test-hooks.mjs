@@ -1,7 +1,13 @@
-import { spawn } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import { once } from 'node:events';
 import { setTimeout } from 'node:timers/promises';
 import { createServer } from 'node:net';
+import { existsSync } from 'node:fs';
+
+// Both passes start PocketBase at once: fetch the binary first so they never download it together.
+if (!existsSync('pocketbase/pocketbase') && spawnSync('bash', ['scripts/pb-download.sh'], { stdio: 'inherit' }).status !== 0) {
+  throw new Error('PocketBase download failed');
+}
 
 const fakes = spawn(process.execPath, ['web/scripts/test-fakes.mjs'], { stdio: ['ignore', 'ignore', 'inherit'] });
 for (let attempt = 0; ; attempt++) {
@@ -37,7 +43,8 @@ async function pass(sim, port) {
   const server = spawn(process.execPath, ['scripts/pb-test-server.mjs', String(port)], { stdio: ['ignore', 'ignore', 'inherit'], env });
   const serverExit = once(server, 'exit');
   let test;
-  stops.push((signal) => { test?.kill(signal); server.kill(signal); });
+  // npm runs vitest as a grandchild: kill the test's whole process group, not just npm.
+  stops.push((signal) => { try { if (test) process.kill(-test.pid, signal); } catch {} server.kill(signal); });
   try {
     let healthy = false;
     for (let attempt = 0; attempt < 100; attempt++) {
@@ -49,7 +56,7 @@ async function pass(sim, port) {
     if (!healthy) throw new Error(`Test PocketBase on ${port} did not become healthy`);
     if (aborted) throw new Error(`Pass on ${port} stopped before its tests ran`);
     test = spawn('npm', sim ? ['exec', '--', 'vitest', 'run', 'tests/hooks/simulationEvents.test.ts', 'tests/hooks/rehearsalLogin.test.ts'] : ['run', 'test:hooks'], {
-      cwd: 'web', stdio: 'inherit', env: {
+      cwd: 'web', stdio: 'inherit', detached: true, env: {
         ...env, PB_URL: `http://127.0.0.1:${port}`, PB_ADMIN_EMAIL: 'tests@chugalug.invalid',
         PB_ADMIN_PASSWORD: 'local-test-password-only', CREW_PASSWORD: 'crew-test-password', ADMIN_PASSWORD: 'admin-test-password',
         CONDUCTOR_EMAIL: 'conductor@test.invalid', MAIL_SINK_URL: 'http://127.0.0.1:12526'
@@ -64,7 +71,9 @@ async function pass(sim, port) {
 }
 
 try {
-  const failFast = (p) => p.catch((error) => { stopAll('SIGTERM'); throw error; });
+  // Either pass failing (to start, or its tests) stops the other at once: the run has failed anyway.
+  const failFast = (p) => p.then((code) => { if (code !== 0) stopAll('SIGTERM'); return code; },
+    (error) => { stopAll('SIGTERM'); throw error; });
   const results = await Promise.allSettled([failFast(pass(false, 18090)), failFast(pass(true, 18091))]);
   // One pass failing to start must not leave the other running: report it, then stop everything.
   for (const r of results) if (r.status === 'rejected') console.error(r.reason);

@@ -330,9 +330,10 @@ test('a slow first comments load does not wipe a newer one', async ({ page }) =>
   await page.getByTestId('comment-post').click();
   await expect(page.getByTestId('comments')).toContainText('Right on time');
   release();
-  // Barrier: the stale response fully delivered to the page, then one task for its handler to run.
+  // Barrier: the stale response fully delivered, then a task for its handler and two frames for the
+  // render it would cause, so the check below sees the page after the stale answer was applied.
   await (await staleRequest!.response())!.finished();
-  await page.evaluate(() => new Promise((r) => setTimeout(r, 0)));
+  await page.evaluate(() => new Promise<void>((r) => setTimeout(() => requestAnimationFrame(() => requestAnimationFrame(() => r())), 0)));
   await expect(page.getByTestId('comments')).toContainText('Right on time');
 });
 

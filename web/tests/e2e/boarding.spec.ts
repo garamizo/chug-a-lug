@@ -40,44 +40,52 @@ test('a visitor boards by email with a password, waits, is let aboard and signs 
   await expect(page.getByTestId('name')).toHaveText(`Visitor ${n}`);
 });
 
-test('a status poll answered after the code is confirmed cannot send the page back to the code step', async ({ page }) => {
-  const n = Math.floor(Math.random() * 1e6), email = `poller${n}@test.invalid`;
-  await clearMails(); await stubTurnstile(page);
-  await page.clock.install();   // advances with real time; runFor fires the 5 s poll on demand
-  await page.goto('/join');
-  await page.getByTestId('name-input').fill(`Poller ${n}`);
-  await page.getByTestId('email-input').fill(email);
-  await page.getByTestId('password-input').fill('boarding-pass-1');
-  await page.getByTestId('send-code').click();
-  await expect(page.getByTestId('code-input')).toBeVisible();
-  // Google is off in e2e: the hint offers only another code, and the button confirms, not signs in.
-  await expect(page.getByText(copy.noCodeHintNoGoogle)).toBeVisible();
-  await expect(page.getByTestId('verify')).toHaveText(copy.confirmCode);
-  // Catch the next 5 s poll and hold it until the code is confirmed; then answer with the old state.
-  let release!: () => void, caught!: () => void;
-  const held = new Promise<void>((r) => (release = r)), polled = new Promise<void>((r) => (caught = r));
-  await page.route('**/api/crawl/join/status', async (route) => {
-    caught(); await held;
-    await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ status: 'unverified' }) });
-  }, { times: 1 });
-  await page.clock.runFor(5000);
-  await polled;
-  await page.getByTestId('code-input').fill(await codeFor(email));
-  await page.getByTestId('verify').click();
-  await expect(page.getByTestId('waiting')).toBeVisible();
-  const answered = page.waitForResponse('**/api/crawl/join/status');
-  release();
-  await answered;
-  await page.waitForTimeout(500);
-  // Checked once, not retried: the next real poll would answer 'waiting' and hide a flip.
-  expect(await page.getByTestId('code-input').count()).toBe(0);
-  expect(await page.getByTestId('waiting').isVisible()).toBe(true);
-
-  // Leave nobody waiting: a waiting request puts the boarding popup over every later crew page.
+async function turnAwayWaiting(email: string, n: number) {
   const su = await superuserToken();
   const req = (await (await fetch(`${PB}/api/collections/boarding_requests/records?filter=${encodeURIComponent(`email="${email}"`)}`, { headers: { Authorization: su } })).json()).items[0];
+  if (req?.status !== 'waiting') return;
   const boss = await sessionFor(`E2E Poll Cleaner ${n}`, true);
   expect((await fetch(`${PB}/api/crawl/boarding/${req.id}/turn-away`, { method: 'POST', headers: { Authorization: boss.token } })).status).toBe(200);
+}
+
+test('a status poll answered after the code is confirmed cannot send the page back to the code step', async ({ page }) => {
+  const n = Math.floor(Math.random() * 1e6), email = `poller${n}@test.invalid`;
+  try {
+    await clearMails(); await stubTurnstile(page);
+    await page.clock.install();   // advances with real time; runFor fires the 5 s poll on demand
+    await page.goto('/join');
+    await page.getByTestId('name-input').fill(`Poller ${n}`);
+    await page.getByTestId('email-input').fill(email);
+    await page.getByTestId('password-input').fill('boarding-pass-1');
+    await page.getByTestId('send-code').click();
+    await expect(page.getByTestId('code-input')).toBeVisible();
+    // Google is off in e2e: the hint offers only another code, and the button confirms, not signs in.
+    await expect(page.getByText(copy.noCodeHintNoGoogle)).toBeVisible();
+    await expect(page.getByTestId('verify')).toHaveText(copy.confirmCode);
+    // Catch the next 5 s poll and hold it until the code is confirmed; then answer with the old state.
+    let release!: () => void, caught!: () => void;
+    const held = new Promise<void>((r) => (release = r)), polled = new Promise<void>((r) => (caught = r));
+    await page.route('**/api/crawl/join/status', async (route) => {
+      caught(); await held;
+      await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ status: 'unverified' }) });
+    }, { times: 1 });
+    await page.clock.runFor(5000);
+    await polled;
+    await page.getByTestId('code-input').fill(await codeFor(email));
+    await page.getByTestId('verify').click();
+    await expect(page.getByTestId('waiting')).toBeVisible();
+    const answered = page.waitForResponse('**/api/crawl/join/status');
+    release();
+    await answered;
+    await page.waitForTimeout(500);
+    // Checked once, not retried: the next real poll would answer 'waiting' and hide a flip.
+    expect(await page.getByTestId('code-input').count()).toBe(0);
+    expect(await page.getByTestId('waiting').isVisible()).toBe(true);
+  } finally {
+    // Leave nobody waiting, even when the test fails part-way: a waiting request puts the boarding
+    // popup over every later crew page.
+    await turnAwayWaiting(email, n);
+  }
 });
 
 test('crew get a popup; when one approver answers, the other popup clears; put off ends a session', async ({ browser }) => {

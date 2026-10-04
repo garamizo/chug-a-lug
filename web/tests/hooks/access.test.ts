@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it } from 'vitest';
-import { ADMIN_LOGIN_PASSWORD, PB, clearMails, codeFor, get, loginToken, mails, post, postFrom, randomIp, superuserToken } from './setup';
+import { ADMIN_LOGIN_PASSWORD, PB, clearMails, codeFor, get, loginToken, mails, post, postFrom, randomIp, superuserToken, mailBarrier } from './setup';
 
 const emailOf = (key: string) => `${Buffer.from(key).toString('hex')}@test.invalid`;
 const su = async () => ({ Authorization: await superuserToken(), 'content-type': 'application/json' });
@@ -26,7 +26,7 @@ describe('sign-in by email code and the guards', () => {
   it('a non-member asks for a code and nothing is sent', async () => {
     const res = await post('/api/collections/users/request-otp', { email: 'nobody@test.invalid' });
     expect(res.status).toBe(200);
-    await new Promise((r) => setTimeout(r, 200));
+    await mailBarrier();
     expect(await mails('nobody@test.invalid')).toEqual([]);
   });
 
@@ -65,7 +65,7 @@ describe('sign-in by email code and the guards', () => {
     const res = await post('/api/collections/users/request-otp', { email });
     expect(res.status).toBe(200);
     expect(typeof (await res.json()).otpId).toBe('string');
-    await new Promise((r) => setTimeout(r, 200));
+    await mailBarrier();
     expect(await mails(email)).toEqual([]);
     expect((await logRows(`user = "${id}" && event = "code_sent"`)).length).toBe(0);
   });
@@ -81,14 +81,13 @@ describe('sign-in by email code and the guards', () => {
     expect((await logRows(`user = "${id}" && event = "sign_in_refused" && method = "password"`)).length).toBe(1);
   });
 
-
   it('crew cannot change their own email through PocketBase\'s email-change flow', async () => {
     const { token } = await loginToken(`Mover ${Math.floor(Math.random() * 1e6)}`);
     const newEmail = `moved${Math.floor(Math.random() * 1e6)}@test.invalid`;
     const res = await post('/api/collections/users/request-email-change', { newEmail }, token);
     expect(res.status).toBe(403);
     expect((await res.json()).message).toBe('Ask the Conductor to change your email.');
-    await new Promise((r) => setTimeout(r, 200));
+    await mailBarrier();
     expect(await mails(newEmail)).toEqual([]);
   });
 

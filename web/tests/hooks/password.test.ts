@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it } from 'vitest';
-import { PB, clearMails, get, loginToken, mails, post, postFrom, randomIp, resetLinkFor, superuserToken, waitFor } from './setup';
+import { PB, clearMails, get, loginToken, mails, post, postFrom, randomIp, resetLinkFor, superuserToken, waitFor, mailBarrier } from './setup';
 
 const uid = () => Math.floor(Math.random() * 1e6);
 const emailOf = (name: string) => `${Buffer.from(name.toLowerCase()).toString('hex')}@test.invalid`;
@@ -78,7 +78,7 @@ describe('password reset (spec §3.2)', () => {
       expect(res.status, email).toBe(204);
       expect(await res.text(), email).toBe('');
     }
-    await new Promise((r) => setTimeout(r, 200));
+    await mailBarrier();
     expect(await mails(m.email)).toEqual([]);
   });
 

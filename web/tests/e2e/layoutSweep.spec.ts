@@ -62,26 +62,30 @@ async function eventDay(page: Page, name: string, when = EVENT_DAY) {
 
 test('crew pages on the event day', async ({ page, browser }) => {
   const ids = await eventDay(page, 'E2E Sweep Owner');
-  const crew = await (await browser.newContext()).newPage();
-  await stubDepartures(crew);
-  await crew.clock.install({ time: EVENT_DAY });
-  await login(crew, 'E2E Sweep Crew', CREW);
-  await sweep(crew, [
-    { name: 'live', open: (p) => p.goto('/live'), ready: (p) => p.getByTestId('departure-board') },
-    { name: 'live, Tab open', open: (p) => openTab(p), ready: (p) => p.getByTestId('drink-beer') },
-    { name: 'live, stop sheet', open: (p) => p.goto(`/live?stop=${ids.secondStopId}`), ready: (p) => p.getByTestId('sheet-name') },
-    // Lightbox stacks over StopSheet: two native modals, only the top one is checked.
-    { name: 'live, photo over the stop sheet', open: (p) => openSheetPhoto(p), ready: (p) => p.getByTestId('lightbox') },
-    { name: 'route', open: (p) => p.goto('/route'), ready: (p) => p.getByTestId('locked-on') },
-    { name: 'crew board', open: (p) => p.goto('/crew'), ready: (p) => p.getByTestId('crew-row') },
-    { name: 'notifications', open: (p) => p.goto('/notifications'), ready: (p) => p.getByRole('heading', { name: copy.bulletins }) },
-    { name: 'account', open: (p) => p.goto('/account'), ready: (p) => p.getByTestId('account-save') },
-    { name: 'plan list', open: (p) => p.goto('/plan'), ready: (p) => p.getByTestId('draft-title') },
-    // current-route renders only for admins; crew see the stops.
-    { name: 'route view', open: (p) => p.goto(`/plan/${ids.itineraryId}`), ready: (p) => p.getByText('The Whistle Stop') },
-    { name: 'stop page', open: (p) => p.goto(`/plan/${ids.itineraryId}/stops/${ids.firstStopId}`), ready: (p) => p.getByTestId('notes') }
-  ]);
-  await crew.context().close();
+  const context = await browser.newContext();
+  const crew = await context.newPage();
+  try {
+    await stubDepartures(crew);
+    await crew.clock.install({ time: EVENT_DAY });
+    await login(crew, 'E2E Sweep Crew', CREW);
+    await sweep(crew, [
+      { name: 'live', open: (p) => p.goto('/live'), ready: (p) => p.getByTestId('departure-board') },
+      { name: 'live, Tab open', open: (p) => openTab(p), ready: (p) => p.getByTestId('drink-beer') },
+      { name: 'live, stop sheet', open: (p) => p.goto(`/live?stop=${ids.secondStopId}`), ready: (p) => p.getByTestId('sheet-name') },
+      // Lightbox stacks over StopSheet: two native modals, only the top one is checked.
+      { name: 'live, photo over the stop sheet', open: (p) => openSheetPhoto(p), ready: (p) => p.getByTestId('lightbox') },
+      { name: 'route', open: (p) => p.goto('/route'), ready: (p) => p.getByTestId('locked-on') },
+      { name: 'crew board', open: (p) => p.goto('/crew'), ready: (p) => p.getByTestId('crew-row') },
+      { name: 'notifications', open: (p) => p.goto('/notifications'), ready: (p) => p.getByRole('heading', { name: copy.bulletins }) },
+      { name: 'account', open: (p) => p.goto('/account'), ready: (p) => p.getByTestId('account-save') },
+      { name: 'plan list', open: (p) => p.goto('/plan'), ready: (p) => p.getByTestId('draft-title') },
+      // current-route renders only for admins; crew see the stops.
+      { name: 'route view', open: (p) => p.goto(`/plan/${ids.itineraryId}`), ready: (p) => p.getByText('The Whistle Stop') },
+      { name: 'stop page', open: (p) => p.goto(`/plan/${ids.itineraryId}/stops/${ids.firstStopId}`), ready: (p) => p.getByTestId('notes') }
+    ]);
+  } finally {
+    await context.close();
+  }
 });
 
 test('Conductor pages', async ({ page }) => {

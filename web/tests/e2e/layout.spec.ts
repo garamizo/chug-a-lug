@@ -3,10 +3,14 @@ import { test, expect } from '@playwright/test';
 
 const CREW = process.env.CREW_PASSWORD ?? 'crew-test-password';
 
-test('desktop gets a wider, capped column; the header (icon, title, menu, no date) stays pinned while scrolling', async ({ page }) => {
-  await page.setViewportSize({ width: 1280, height: 800 });
+test('the header carries no date on the phone; desktop gets a wider, capped column and the header stays pinned while scrolling', async ({ page }) => {
   await login(page, 'E2E Desk', CREW);
   await openHome(page, 'E2E Desk');
+  // No date in the header: the phone already shows one.
+  await expect(page.getByRole('banner').getByTestId('menu')).toBeVisible();
+  await expect(page.getByRole('banner')).not.toContainText(/Sat|Sun|Mon|Dec/);
+
+  await page.setViewportSize({ width: 1280, height: 800 });
   const box = await page.locator('main').boundingBox();
   expect(box?.width).toBeGreaterThan(600);
   expect(box?.width).toBeLessThan(1000);
@@ -15,8 +19,6 @@ test('desktop gets a wider, capped column; the header (icon, title, menu, no dat
   await expect(header.locator('img')).toBeVisible();
   await expect(header.getByText('Chug-a-Lug Choo-Choo')).toBeVisible();
   await expect(header.getByTestId('menu')).toBeVisible();
-  // No date: the phone already shows one.
-  await expect(header).not.toContainText(/Sat|Sun|Mon|Dec/);
 
   await page.setViewportSize({ width: 1280, height: 300 });
   await page.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight));

@@ -87,8 +87,10 @@ export async function truncate(collection: string): Promise<void> {
   const token = await superuserToken();
   const list = await fetch(`${PB}/api/collections/${collection}/records?perPage=500&fields=id`, { headers: { Authorization: token } });
   if (!list.ok) throw new Error(`List ${collection} failed: ${list.status}`);
-  await Promise.all(((await list.json()).items as Array<{ id: string }>).map((record) =>
-    fetch(`${PB}/api/collections/${collection}/records/${record.id}`, { method: 'DELETE', headers: { Authorization: token } })));
+  await Promise.all(((await list.json()).items as Array<{ id: string }>).map(async (record) => {
+    const del = await fetch(`${PB}/api/collections/${collection}/records/${record.id}`, { method: 'DELETE', headers: { Authorization: token } });
+    if (!del.ok && del.status !== 404) throw new Error(`Delete ${collection} ${record.id} failed: ${del.status}`);
+  }));
 }
 
 export const MAIL = process.env.MAIL_SINK_URL ?? 'http://127.0.0.1:12526';
@@ -119,6 +121,19 @@ export const resetLinkFor = (to: string): Promise<{ url: string; token: string }
   const hit = (await mails(to)).map((m) => /(https?:\/\/[^\s"<]+\/reset-password#([\w.-]+))/.exec(`${m.text}\n${m.html}`)).filter(Boolean).at(-1);
   return hit ? { url: hit[1], token: hit[2] } : undefined;
 }, `No reset link mailed to ${to}`);
+/**
+ * Proof that mail sent before now has had its chance to arrive: a code requested for a fresh member
+ * goes through the same asynchronous mailer, so once it lands, an earlier mail would have too. Use it
+ * before asserting that something was NOT mailed.
+ */
+export async function mailBarrier(): Promise<void> {
+  const name = `Mail Barrier ${Math.floor(Math.random() * 1e9)}`;
+  await loginToken(name);
+  const email = hexEmail(name.toLowerCase());
+  const res = await post('/api/collections/users/request-otp', { email });
+  if (!res.ok) throw new Error(`Barrier code request failed: ${res.status}`);
+  await codeFor(email);
+}
 /** A fresh documentation-range IP, so each test owns its own rate-limit buckets. */
 export const randomIp = () => `10.${Math.floor(Math.random() * 250)}.${Math.floor(Math.random() * 250)}.${1 + Math.floor(Math.random() * 250)}`;
 /** POST as if through the tunnel from `ip`; PocketBase trusts CF-Connecting-IP once Task 2's migration runs. */
