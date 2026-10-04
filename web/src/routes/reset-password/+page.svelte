@@ -11,6 +11,7 @@
   // afterNavigate never fires. A fragment that will not decode is a dead link; reload without it.
   let token = '', malformed = false;
   try { token = decodeURIComponent(location.hash.slice(1)); } catch { malformed = true; }
+  const accountEmail = resetTokenEmail(token) ?? ''; // for the hidden username field; token is final here
   if (malformed) location.replace(location.pathname + location.search);
   let password = $state(''), error = $state(''), busy = $state(false);
   let phase = $state<'form' | 'dead' | 'set'>(token ? 'form' : 'dead');
@@ -50,7 +51,7 @@
   <p><a href="/login">{copy.signIn}</a></p>
 {:else}
   <form onsubmit={submit} aria-busy={busy}>
-    <input class="sr-only" type="email" autocomplete="username" readonly tabindex="-1" aria-hidden="true" value={resetTokenEmail(token) ?? ''} />
+    <input class="sr-only" type="email" autocomplete="username" readonly tabindex="-1" aria-hidden="true" value={accountEmail} />
     <label for="new-password">{copy.newPasswordField}</label>
     <PasswordInput id="new-password" autocomplete="new-password" bind:value={password} disabled={busy} testid="password-input" />
     <small class="hint">{copy.passwordHint}</small>
