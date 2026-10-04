@@ -87,7 +87,7 @@
       <label for="code">{copy.codeLabel}</label>
       <input id="code" inputmode="numeric" autocomplete="one-time-code" maxlength="6" bind:value={code} data-testid="code-input" disabled={busy} />
       <button type="submit" disabled={busy} data-testid="sign-in">{busy ? copy.working : copy.signIn}</button>
-      <p class="hint">{google ? copy.noCodeHint : copy.noCodeHintNoGoogle} <button type="button" class="link" onclick={() => { otpId = ''; code = ''; }}>{copy.sendAgain}</button></p>
+      <p class="hint">{google ? copy.noCodeHint : copy.noCodeHintNoGoogle} <button type="button" class="link" onclick={() => { otpId = ''; code = ''; }}>{copy.sendAgain}</button> <button type="button" class="link" onclick={toPassword} data-testid="use-password">{copy.usePasswordInstead}</button></p>
     </form>
   {/if}
   <p><a href="/join" data-testid="to-join">{copy.newHereBoard}</a></p>

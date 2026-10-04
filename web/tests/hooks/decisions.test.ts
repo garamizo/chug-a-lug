@@ -65,7 +65,7 @@ describe('deciding boarding requests (spec §2.6–2.7)', () => {
       body: JSON.stringify({ name: `Old ${n}`, name_key: `old ${n}`, email, method: 'email', status: 'waiting', ip: randomIp(),
         status_at: new Date().toISOString().replace('T', ' '), code_sent_at: new Date().toISOString().replace('T', ' ') }) })).json();
     expect((await decide(seeded.id, 'let-aboard', crew.token)).status).toBe(200);
-    expect((await mails(email)).at(-1)?.text).toContain('this email address or Google');
+    expect((await mails(email)).at(-1)?.text).toContain('an emailed code or Google');
   });
 
   it('turning a request away clears its hash', async () => {

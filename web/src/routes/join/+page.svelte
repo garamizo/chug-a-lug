@@ -99,7 +99,7 @@
     <input id="name" type="text" autocomplete="nickname" placeholder={copy.namePlaceholder} bind:value={name} data-testid="name-input" maxlength="32" disabled={busy} />
     {#if google}<SignInButton provider="google" label={copy.continueGoogle} onclick={withGoogle} disabled={busy} testid="google" /><p>{copy.orEmail}</p>{/if}
     <label for="email">{copy.emailLabel}</label>
-    <input id="email" type="email" autocomplete="email" placeholder={copy.emailPlaceholder} bind:value={email} data-testid="email-input" disabled={busy} />
+    <input id="email" type="email" autocomplete="username" placeholder={copy.emailPlaceholder} bind:value={email} data-testid="email-input" disabled={busy} />
     <label for="join-password">{copy.passwordField}</label>
     <PasswordInput id="join-password" autocomplete="new-password" bind:value={password} disabled={busy} testid="password-input" />
     <small class="hint">{copy.passwordHint}</small>

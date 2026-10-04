@@ -63,6 +63,19 @@ test('email me a code instead still signs in', async ({ page }) => {
   await expect(page.getByTestId('name')).toHaveText(name);
 });
 
+test('the code step has a way back to the password form', async ({ page }) => {
+  const name = `Pw Back ${uid()}`, email = emailOf(name);
+  await sessionFor(name); await clearMails();
+  await page.goto('/login');
+  await page.getByTestId('use-code').click();
+  await page.getByTestId('email-input').fill(email);
+  await page.getByTestId('send-code').click();
+  await expect(page.getByTestId('code-input')).toBeVisible();
+  await page.getByTestId('use-password').click();
+  await expect(page.getByTestId('password-input')).toBeVisible();
+  await expect(page.getByTestId('code-input')).toHaveCount(0);
+});
+
 test('Your ticket emails a link to set a password', async ({ page }) => {
   const name = `Pw Ticket ${uid()}`, email = emailOf(name);
   await clearMails();

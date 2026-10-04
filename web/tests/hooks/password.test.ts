@@ -41,6 +41,19 @@ describe('password sign-in (spec §3.2)', () => {
     const capped = await signIn(m.email, SEED);
     expect(capped.status).toBe(429);
     expect((await capped.json()).message).toContain('email code or Google');
+    // The Conductor sees whose address was targeted. logEvent runs after the answer.
+    const rows = await waitFor(async () => { const r = await logRows(`event="rate_limited" && detail="password" && email=${JSON.stringify(m.email)}`); return r.length ? r : null; });
+    expect(rows[0].method).toBe('password');
+  });
+
+  it('the 11th try on an address with no seat gets the same 429 and message as for a member', async () => {
+    const ghost = `nobody-${uid()}-${uid()}@test.invalid`;
+    for (let i = 0; i < 10; i++) expect((await signIn(ghost, `wrong-password-${i}`)).status).toBe(400);
+    const capped = await signIn(ghost, SEED);
+    expect(capped.status).toBe(429);
+    expect((await capped.json()).message).toBe('Too many tries for this address. Use an email code or Google, or try again in 15 minutes.');
+    const rows = await waitFor(async () => { const r = await logRows(`event="rate_limited" && email=${JSON.stringify(ghost)}`); return r.length ? r : null; });
+    expect(rows[0].detail).toBe('password');
   });
 
   it('a put-off seat cannot sign in with its password', async () => {
@@ -103,6 +116,7 @@ describe('password reset (spec §3.2)', () => {
     const rename = await fetch(`${PB}/api/collections/users/records/${m.id}`, { method: 'PATCH', headers: { Authorization: session, 'content-type': 'application/json' }, body: JSON.stringify({ name: `Pw Renamed ${uid()}` }) });
     expect(rename.status).toBe(200);
     expect((await signIn(m.email, 'brand-new-pass-1')).status).toBe(200);
+    expect((await signIn(m.email, SEED)).status).toBe(400); // the old password stays dead after the rename
     const set = await fetch(`${PB}/api/collections/users/records/${m.id}`, { method: 'PATCH', headers: await su(), body: JSON.stringify({ password: 'admin-set-pass-1', passwordConfirm: 'admin-set-pass-1' }) });
     expect(set.status).toBe(200);
     expect((await signIn(m.email, 'admin-set-pass-1')).status).toBe(200);
@@ -122,12 +136,13 @@ describe('password reset (spec §3.2)', () => {
     const m = await member();
     await requestReset(m.email);
     const { token } = await resetLinkFor(m.email);
-    await Promise.all([confirm(token, 'race-pass-one-1'), block(m.id)]);
+    const [confirmed] = await Promise.all([confirm(token, 'race-pass-one-1'), block(m.id)]);
     const user = await (await fetch(`${PB}/api/collections/users/records/${m.id}`, { headers: await su() })).json();
     expect(user.blocked).toBe(true);
     expect((await get('/api/crawl/me', m.token)).status).toBe(401);
-    // 403 if the confirmation landed first (guard), 400 if the put-off did (the link died first).
-    expect([400, 403]).toContain((await signIn(m.email, 'race-pass-one-1')).status);
+    // 403 if the confirmation landed first (the new password is set, the guard refuses the seat);
+    // 400 if the put-off did (the link was refused, so the new password never existed).
+    expect((await signIn(m.email, 'race-pass-one-1')).status).toBe(confirmed.status === 204 ? 403 : 400);
   });
 
   it('a rename sent together with a confirmation never brings the old password back', async () => {

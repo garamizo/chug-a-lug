@@ -1,7 +1,8 @@
 // Sign-in guards (spec §2.8). A refresh also fires onRecordAuthRequest with an empty authMethod,
 // so only real sign-ins are guarded and logged here; refreshes have their own hook. Every non-empty
-// method is guarded, including one this app does not offer (password auth switched on in the admin
-// UI, say): it is logged with the method left empty, because access_log only knows ours.
+// method is guarded, including one this app does not offer (a new auth method
+// switched on in the admin UI, say): it is logged with the method left empty, because access_log
+// only knows ours. Password, email code and Google are the three it offers.
 onRecordAuthRequest((e) => {
   if (e.authMethod) {
     const crew = require(`${__hooks}/crew.js`)
@@ -36,7 +37,7 @@ onRecordAuthWithPasswordRequest((e) => {
   const crew = require(`${__hooks}/crew.js`)
   const identity = String(e.identity || '').trim().toLowerCase()
   if (!require(`${__hooks}/limits.js`).consume('password:' + identity, 10, 900)) {
-    crew.logEvent($app, { event: 'rate_limited', method: 'password', detail: 'password' }, crew.clientInfo(e))
+    crew.logEvent($app, { event: 'rate_limited', method: 'password', detail: 'password', email: identity }, crew.clientInfo(e))
     return e.json(429, { message: 'Too many tries for this address. Use an email code or Google, or try again in 15 minutes.' })
   }
   e.next()

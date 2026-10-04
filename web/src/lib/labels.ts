@@ -106,7 +106,7 @@ export const copy = {
   loginTitle: 'Welcome aboard',
   loginIntro: 'Sign in with Google or with your email and password.',
   loginIntroNoGoogle: 'Sign in with your email and password.',
-  passwordMismatch: "That email and password don't match.",
+  passwordMismatch: "That email and password don't match. No password yet? Use Email me a code, or Forgot password to set one.",
   passwordMissing: 'Enter your password.',
   forgotPassword: 'Forgot password?',
   useCodeInstead: 'Email me a code instead',

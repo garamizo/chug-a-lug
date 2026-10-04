@@ -330,7 +330,7 @@ exports.decide = function (e, verdict) {
   })
   if (result) return e.json(result[0], { message: result[1] })
   if (user) {
-    const how = installed ? 'with your email and the password you chose' : method === 'google' ? 'with Google' : 'with this email address or Google'
+    const how = installed ? 'with your email and the password you chose' : method === 'google' ? 'with Google' : 'with an emailed code or Google'
     try { crew.sendMail($app, { to: [user.email()], subject: "You're aboard the Chug-a-Lug", text: `You're aboard! Sign in at ${$app.settings().meta.appURL}/login ${how}.` }) }
     catch (err) { crew.logEvent($app, { event: 'mail_failed', user: user.id, detail: 'aboard notice: ' + String(err).slice(0, 180) }) }
     return e.json(200, { user_id: user.id })

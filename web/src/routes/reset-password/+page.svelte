@@ -50,6 +50,7 @@
   <p><a href="/login">{copy.signIn}</a></p>
 {:else}
   <form onsubmit={submit} aria-busy={busy}>
+    <input class="sr-only" type="email" autocomplete="username" readonly tabindex="-1" aria-hidden="true" value={resetTokenEmail(token) ?? ''} />
     <label for="new-password">{copy.newPasswordField}</label>
     <PasswordInput id="new-password" autocomplete="new-password" bind:value={password} disabled={busy} testid="password-input" />
     <small class="hint">{copy.passwordHint}</small>
@@ -57,3 +58,8 @@
   </form>
 {/if}
 {#if error}<p class="error" role="alert" data-testid="error">{error}</p>{/if}
+
+<style>
+  /* Carries the account's email for the password manager only; never seen or focused. */
+  .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
+</style>

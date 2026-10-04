@@ -57,10 +57,9 @@ has a seat, a link is on its way. It works for 30 minutes." A link back to sign 
 
 The emailed link. The token is in the fragment, so it never reaches the server, Cloudflare logs or a
 `Referer`. On load the page reads `location.hash`, then strips it once SvelteKit's router is ready
-  (`afterNavigate`, then `replaceState` from `$app/navigation`). A fragment that will not decode counts
-  as a dead link. A fragment that will not decode is caught as the page loads, before SvelteKit's router
-  (whose first navigation would throw on it): the page shows the dead-link state and reloads itself
-  without the fragment (`location.replace`).
+(`afterNavigate`, then `replaceState` from `$app/navigation`). A fragment that will not decode is
+caught as the page loads, before SvelteKit's router (whose first navigation would throw on it): the
+page shows the dead-link state and reloads itself without the fragment (`location.replace`).
 
 - A **New password** field (with Show) and **Set password**. Client-side check: `passwordProblem` (§3.2), the same rule as the server.
 - On success the page signs in with the email in the token's payload and the new password, then goes
@@ -106,7 +105,7 @@ type, and one email flow covers both cases.
   captured before the request's hash is cleared:
   - "Sign in at …/login with your email and the password you chose." when one was installed;
   - "… with Google." for a Google request;
-  - today's "… with this email address or Google." for an email request without a hash, which is
+  - "… with an emailed code or Google." for an email request without a hash, which is
     any request filed before this deploy.
 
 ## 3. Server

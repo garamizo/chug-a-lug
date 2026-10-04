@@ -220,6 +220,12 @@ all personal activity (likes, comments, Tab, acks), keeps routes, and refuses to
 crew access. Reverting the code alone leaves email required on every user with no password route,
 so nobody can sign in.
 
+**Rollback of password sign-in** (migration `1759000000_password_sign_in.js`): run
+`pocketbase/pocketbase migrate down 1` (or restore a backup), then deploy the old code. Open boarding
+requests lose their password hashes and fall back to the "emailed code or Google" notice. Existing
+passwords stay in `users.password` but cannot be used while password auth is off; email code and
+Google keep working.
+
 ### Manual acceptance
 
 The harness cannot prove these:
@@ -238,6 +244,10 @@ The harness cannot prove these:
   6. Put off works.
   7. The Manifest shows real visitor IPs and countries.
   8. Cloudflare Security Insights clears the chugalug.app findings after the checklist.
+- **Password reset mail, real Resend:** a reset mail arrives and its link opens
+  `APP_URL/reset-password` through the tunnel.
+- **iPhone password path:** Safari sets the password from the emailed link, then the home-screen app
+  signs in with it.
 
 ## Cloudflare checklist
 

@@ -1,5 +1,5 @@
 // POST /api/crawl/login {name, password} — rehearsal stacks only (SIM=1), which have no mail.
-// Production signs in by email code or Google (access.pb.js); here the route does not exist.
+// Production signs in by email and password, email code or Google (access.pb.js); here the route does not exist.
 // A Conductor name always needs the admin password: the crew password never yields an admin token.
 routerAdd('POST', '/api/crawl/login', (e) => {
   if ($os.getenv('SIM') !== '1') return e.json(404, { message: 'Not found.' })
