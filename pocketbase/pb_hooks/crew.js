@@ -19,6 +19,21 @@ exports.normalizeEmail = function (x) {
   return v.length <= 254 && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v) ? v : null
 }
 
+// Password spec §3.2. Counted in code points, as PocketBase's password field counts min and max, and
+// capped at bcrypt's 72 bytes: /join installs its hash by SQL, skipping field validation, so it must
+// accept exactly what a reset would. web/src/lib/password.ts mirrors this.
+exports.passwordProblem = function (p) {
+  const refusal = 'Pick a password of 8 to 64 characters.'
+  if (typeof p !== 'string') return refusal
+  let points = 0, bytes = 0
+  for (const ch of p) {
+    const c = ch.codePointAt(0)
+    points++
+    bytes += c < 0x80 ? 1 : c < 0x800 ? 2 : c < 0x10000 ? 3 : 4
+  }
+  return points < 8 || points > 64 || bytes > 72 ? refusal : null
+}
+
 // Denials are throttled per IP and event, so a flood writes one row per 15 min, not one per hit.
 // Never call this with a denial event inside a transaction: limits.consume opens its own.
 exports.logEvent = function (app, fields, info) {

@@ -138,6 +138,13 @@ export const copy = {
   name: 'Your name',
   namePlaceholder: 'How the crew knows you',
   password: 'Crew password',
+  /** Password sign-in (password spec). `password` above is the rehearsal crew password. */
+  passwordField: 'Password',
+  newPasswordField: 'New password',
+  passwordHint: 'At least 8 characters',
+  passwordRule: 'Pick a password of 8 to 64 characters.',
+  showPassword: 'Show',
+  hidePassword: 'Hide',
   login: 'Climb aboard',
   working: 'Please wait…',
   nameError: "Enter a name: 2 to 32 letters, numbers, spaces, or . ' -",
