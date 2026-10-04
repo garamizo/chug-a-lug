@@ -46,30 +46,44 @@ Decisions taken with the user (2026-10-04):
   1. **Signed out:** `/login` (password step), `/login` (code step, via `use-code`), `/login/forgot`,
      `/reset-password#x` (form), `/reset-password` (dead link), `/join` (start).
   2. **Crew on the event day:** seed one locked route (`seedLockedCrawl`, clock at
-     `2026-12-26T19:00Z`, Metra stubbed as `layout.spec.ts` does). Visit `/live`, `/live` with the Tab
+     `2026-12-26T19:00Z`). Only the live-departure endpoints are stubbed (`/api/metra/next`,
+     `/status`, `/alerts`); `/api/metra/stations` stays real (fixture GTFS), because the station picker
+     reads its `.lines`. `layout.spec.ts`'s catch-all `/api/metra/**` stub would break the picker. Visit `/live`, `/live` with the Tab
      sheet open, `/live?stop=<id>` (stop sheet), `/route`, `/crew`, `/notifications`, `/account`,
      `/plan`, `/plan/<id>`, `/plan/<id>/stops/<stopId>`.
   3. **Conductor:** `/plan/<id>/edit` (locked-route staging), `/plan/<id>/add` (station picker),
      `/crew/access`, a new draft's `/plan/<draft>/edit` (via `create-draft`).
   4. **Practice day:** the same route with the clock on `2026-12-20`; `/live` (practice banner).
+- Each state waits for a control that proves its content rendered (e.g. a station button on the
+  picker, the Tab's counters), not just a heading.
 - Adding a page later means adding one line to the relevant group's list. Nothing in app code changes
   to make a page checkable.
 
 ### 2.2 Rules
 
-Every rule considers only rendered elements: non-zero box, `visibility` not hidden, not inside a
-closed `<dialog>`/`[hidden]`/`aria-hidden="true"` subtree, and intersecting the document (not
-clipped away by an ancestor's `overflow`).
+**Which elements are checked.**
+
+- **Active layer.** If a modal is open — a native `dialog:modal` (StopSheet, VenueSheet and Lightbox
+  use `showModal()`) or an element with `aria-modal="true"` (TabSheet) — only controls inside the
+  topmost one are checked. Everything behind it is inert by design. The non-modal `BoardingPopup`
+  (`role="dialog"` without `aria-modal`) is not a layer; it is a fixed overlay like the tab bar.
+- **Hidden** elements are skipped: `display: none` on the element or an ancestor, `visibility:
+  hidden`, `[hidden]`, `inert`, `aria-hidden="true"`, a closed `<dialog>`, `input[type=hidden]`, and
+  visually-hidden text-for-screen-readers (a 1×1 box with `clip`/`clip-path`, the `.sr-only` pattern).
+- **Scroll-reachable** elements are checked even when an ancestor's `overflow` clips them today
+  (RouteStrip, FreightStrip, galleries): `covered` scrolls them into view first.
+- A rendered control with a **zero-size box** is not skipped; `small-target` reports it.
 
 | Rule | Fails when | Catches |
 |---|---|---|
 | `page-overflow` | `document.documentElement.scrollWidth > innerWidth + 1` | Something wider than the phone: sideways scrolling. Intentional scrollers (`RouteStrip`, `FreightStrip`, galleries, `Lightbox`) scroll inside their own `overflow-x: auto` box and do not widen the page. |
-| `narrow-field` | A text-entry control (`input` other than checkbox/radio/file/hidden/range, `textarea`, `select`) is narrower than 120 px | The 30 px password field. |
+| `narrow-field` | A free-text field (`textarea`, or `input` of type `text`, `email`, `password`, `search`, `tel`, `url`, or no type) is narrower than 120 px | The 30 px password field. Compact controls (`time`, `date`, `number`, `select`) are left to `small-target`: the draft editor caps its `type=time` input at 110 px on purpose (`ItineraryView.svelte:237`). |
 | `small-target` | A control (`button`, `a[href]`, form field, `[role=button]`, `summary`) is smaller than 24×24 px | Collapsed or squashed controls. 24 px is WCAG 2.5.8's minimum, not the app's 44–48 px aim, because the app has deliberate 30–36 px icon buttons and pills (§2.3). **Exempt:** text links in running text: an `a` whose computed `display` is `inline`, and `button.link`, the app's inline text-link button. |
 | `covered` | After `scrollIntoView({ block: 'center', inline: 'nearest' })`, `document.elementFromPoint` at the control's centre is neither the control nor inside it | A control hidden under a fixed or sticky layer (tab bar, save bar, popup, banner), or two controls overlapping. |
 | `text-spill` | A `button` whose children are all text has `scrollWidth > clientWidth + 2` and `text-overflow` is not `ellipsis` | A label that no longer fits its button. |
 
-The sweep restores scroll position after `covered` and reports each violation once per page.
+After `covered`, the sweep restores the scroll position of the page and of every nested scroller it
+moved, and it reports each violation once per page.
 
 ### 2.3 What it will not catch, and exemptions
 
@@ -100,10 +114,17 @@ the same browser path.
 
 - **`login(page, name, password)` only signs in.** It sets the session cookie and returns. It no
   longer opens `/` and waits for the home screen; in about 85 of 114 tests the next step is a `goto`
-  anyway, and the extra full load costs roughly 0.3–0.8 s on the Vite dev server. Tests that do want
-  the home screen `goto('/')` and assert what they need. The existing comment about the event-day race
-  on `/` moves to the one or two tests that still land there. This applies to `tests/sim/*.spec.ts`
-  too, which import the same helper.
+  anyway, and the extra full load costs roughly 0.3–0.8 s on the Vite dev server. The contract a test
+  author needs is one sentence: *sign in, then open the page you want.*
+  - `CookieAuthStore` reads the cookie once, when the app boots (`src/lib/pb.ts:15`). So if the page
+    already shows the app when `login` is called, `login` reloads it, and the new session takes effect
+    either way. A page still on `about:blank` is left alone.
+  - Every caller is migrated explicitly, not only the ones that land on `/`. Callers whose next step
+    is not a `goto` get a `goto` plus a wait for that page's content. That covers the `planning.spec.ts`
+    tests from L31 on and `cloneRoute`'s `makeDraft()`, several `layout.spec.ts` tests, `login.spec.ts:9`
+    (it reloads), the approver pages in `boarding.spec.ts:80-99`, and `tests/sim/rehearsal.spec.ts:23-33`
+    and `tests/sim/offline.spec.ts:4`.
+  - The comment about the event-day race on `/` moves with the tests that still land there.
 - **The superuser token is fetched once per worker** (`superuserToken()` memoised in
   `tests/e2e/helpers.ts`), instead of a password login on every helper call (2–4 per test).
 - **`clearLockedCrawls()` deletes in parallel** (`Promise.all`) instead of one request at a time. Its
@@ -120,13 +141,14 @@ the same browser path.
 | Where | Today | Instead |
 |---|---|---|
 | `liveUx.spec.ts:14` long press | `waitForTimeout(600)` ×4 | `page.clock.runFor(500)` between `mouse.down` and `mouse.up` (`HOLD_MS = 450`; both pages already install the clock) |
-| `tab.spec.ts:81` | `waitForTimeout(1500)` | wait for the two POST responses, then `expect.poll(() => posts).toBe(2)` |
+| `tab.spec.ts:81` | `waitForTimeout(1500)` | wait for the feed reload the app starts after the second save (`live/+page.svelte:87`): the `drink_entries` list response that begins after the second POST response. Then assert the count and `posts === 2` |
 | `tab.spec.ts:138` | `waitForTimeout(700)` | `waitForResponse` on the DELETE, then assert one DELETE |
 | `tab.spec.ts:176` | `waitForTimeout(1200)` | drop it; the following `toBeVisible` auto-waits |
-| `planning.spec.ts:310,319` | 1500 ms route delay + 300 ms sleep | hold the stale response on a promise and release it after the fresh one renders |
+| `planning.spec.ts:310,319` | 1500 ms route delay + 300 ms sleep | hold the stale response on a promise and release it after the fresh one renders. Await `route.fulfill()`, then wait until the page has processed it (`page.evaluate` over two animation frames), then assert the fresh comment is still shown |
 | `boarding.spec.ts:33, 53-60` | waits for the real 5 s status poll | `page.clock.install()` before `goto`, then `page.clock.runFor(5000)` |
 
-`boarding.spec.ts:67` (a deliberate negative wait) and `cloneRoute.spec.ts:217` (guards a late
+Rule for every replacement: wait for the response the app actually processes, then assert the end state.
+Request arrival or response release alone is not a barrier. `boarding.spec.ts:67` (a deliberate negative wait) and `cloneRoute.spec.ts:217` (guards a late
 navigation) stay.
 
 ### 3.3 Flaky and vacuous tests
@@ -147,7 +169,7 @@ navigation) stay.
 - **Fixed draft titles in `planning.spec.ts`** collide with title uniqueness when Playwright retries a
   test. They get the per-run suffix `cloneRoute.spec.ts:7` already uses.
 
-### 3.4 Deletions and merges (114 → about 95 tests)
+### 3.4 Deletions and merges (114 → about 97 tests)
 
 Merges only join tests that share the same setup and still read as one story; tests that would become
 grab-bags stay separate.
@@ -162,15 +184,21 @@ grab-bags stay separate.
 | liveEdit | merge L70 into L21; L107 + L118 (preview/commit failures) | — |
 | bulletins | delete L92 "post a Bulletin without changing plan" | the `pinBulletin` helper's own steps and assertions, used by L157/L173 |
 | bulletins | merge L68 into L10; L157 + L173 (Got it, ok and failing) | — |
-| offline | delete L164 "ack with no signal" | bulletins L173 (same failed-ack path) |
 | offline | seed once for the six storage-failure cases (L117-162); drop "open throws" | it lands in the same `catch` as "getter throws" (`src/lib/offline.ts:43` vs `:60`) |
-| cloneRoute | delete L78 "Conductor renames The Route through Save" | L96's second half and L149 |
 | crew | delete L6 | layout L34 (menu → Crew Board → own row) |
 | layout | merge L6, L14, L29 (desktop width, pinned header, no date) | — |
 | freight | merge L67 + L89 (chat photo before/after the crawl) | — |
 | chat | merge L49 + L66 | — |
 | practice | merge L106 into L38 | — |
 | controls | merge L23 + L36 | — |
+
+Kept on review, though the audit proposed deleting them:
+
+- **`offline.spec.ts:164`** blocks all PocketBase traffic on Live and asserts the exact `copy.noSignal`
+  text. `bulletins.spec.ts:173` aborts only the ack POST on `/plan` and checks for any alert.
+- **`cloneRoute.spec.ts:78`** is the only successful locked-route rename through the *real*
+  title-check endpoint. It presses Enter and asserts that Clone is unavailable in that editor; L96 and
+  L149 mock the title check.
 
 No hooks or unit test alone justifies deleting an e2e test: those check rules and logic, not browser
 wiring.
@@ -184,7 +212,9 @@ wiring.
   listener to receive the event, then gives the blocked one 100 ms. The "no mail was sent" waits at
   `access.test.ts:29,68,97` and `password.test.ts:87` drop to 200 ms. The 300 ms sleep at
   `boarding.test.ts:167` goes: `/resend` mails synchronously inside the request. About 3.5 s.
-- **Polling** in `codeFor`, `resetLinkFor` and `waitFor` every 25 ms instead of 100 ms. About 1 s.
+- **Polling** in `codeFor`, `resetLinkFor` and `waitFor` every 25 ms instead of 100 ms, all with a
+  5 s deadline. `codeFor` and `resetLinkFor` count 50 attempts today, so a shorter interval alone would
+  cut their allowance to 1.25 s. About 1 s.
 - **Seed and truncate in parallel** (`Promise.all`) in `seedRequests` and `truncate`. About 1 s.
 - **SIM pass runs concurrently** with the normal pass in `scripts/test-hooks.mjs`, on its own
   PocketBase at port **18091**. Its two files use no mail, no boarding and no truncation. Its
@@ -224,9 +254,15 @@ Already fast. Three redundant tests go:
   each task, the full gate is green: `cd web && npm test && npm run check && npm run test:e2e`, plus
   `bash scripts/test-hooks.sh`, plus `npm run test:sim` and `npm run test:sim:offline` (they share
   `login()` and the browser config).
-- The layout rules get their own proof: a test page or fixture state that breaks each rule makes
-  `layoutViolations` report it (for `narrow-field`, the pre-fix `PasswordInput` CSS reproduces the
-  original bug through a `page.addStyleTag`), and a clean page reports nothing.
+- The layout rules get their own proof: a fixture state that breaks each rule makes
+  `layoutViolations` report it, and a clean page reports nothing.
+  - For `narrow-field`, the test recreates the original cascade on `/login` with `page.addStyleTag`:
+    `.password button` gets `width: 100%`, `flex: 0 1 auto` and `padding: 14px` back, as the global
+    `button` rule gave it before `button.link` existed.
+  - It first asserts that the password input really measures under 120 px, then that the violation is
+    reported.
+  - The modal and hidden-element eligibility rules get one case each: the Tab sheet open, and a stop
+    sheet over Live. Neither reports background controls, and a control inside each layer is still checked.
 - Timing is measured again with the same commands as §1 and reported against the table there.
 - The `tab.spec.ts` 404 fix is checked by running that test 20 times (`--repeat-each 20`).
 
