@@ -5,6 +5,7 @@
   import { auth, pb, rehearsalLogin, requestCode, signInWithCode } from '$lib/pb';
   import { GOOGLE_KEY, buildAuthUrl } from '$lib/google';
   import { copy } from '$lib/labels';
+  import SignInButton from '$lib/components/SignInButton.svelte';
 
   const rehearsal = env.PUBLIC_SIM === '1';
   const google = env.PUBLIC_GOOGLE_ENABLED === '1';
@@ -51,12 +52,12 @@
   </form>
 {:else}
   <p>{google ? copy.loginIntro : copy.loginIntroNoGoogle}</p>
-  {#if google}<button type="button" onclick={withGoogle} disabled={busy} data-testid="google">{copy.continueGoogle}</button>{/if}
+  {#if google}<SignInButton provider="google" label={copy.continueGoogle} onclick={withGoogle} disabled={busy} testid="google" />{/if}
   {#if !otpId}
     <form onsubmit={sendCode} aria-busy={busy}>
       <label for="email">{copy.emailLabel}</label>
       <input id="email" type="email" autocomplete="email" placeholder={copy.emailPlaceholder} bind:value={email} data-testid="email-input" disabled={busy} />
-      <button type="submit" disabled={busy} data-testid="send-code">{busy ? copy.working : copy.emailMeCode}</button>
+      <SignInButton provider="email" type="submit" label={busy ? copy.working : copy.emailMeCode} disabled={busy} testid="send-code" />
     </form>
   {:else}
     <form onsubmit={checkCode} aria-busy={busy}>

@@ -7,6 +7,7 @@
   import { GOOGLE_KEY, buildAuthUrl } from '$lib/google';
   import { copy } from '$lib/labels';
   import Turnstile from '$lib/components/Turnstile.svelte';
+  import SignInButton from '$lib/components/SignInButton.svelte';
   import { onMount } from 'svelte';
 
   const google = env.PUBLIC_GOOGLE_ENABLED === '1';
@@ -93,11 +94,11 @@
   <form onsubmit={start} aria-busy={busy}>
     <label for="name">{copy.name}</label>
     <input id="name" type="text" autocomplete="nickname" placeholder={copy.namePlaceholder} bind:value={name} data-testid="name-input" maxlength="32" disabled={busy} />
-    {#if google}<button type="button" onclick={withGoogle} disabled={busy} data-testid="google">{copy.continueGoogle}</button><p>{copy.orEmail}</p>{/if}
+    {#if google}<SignInButton provider="google" label={copy.continueGoogle} onclick={withGoogle} disabled={busy} testid="google" /><p>{copy.orEmail}</p>{/if}
     <label for="email">{copy.emailLabel}</label>
     <input id="email" type="email" autocomplete="email" placeholder={copy.emailPlaceholder} bind:value={email} data-testid="email-input" disabled={busy} />
     <Turnstile bind:this={turnstile} ontoken={(t) => (token = t)} />
-    <button type="submit" disabled={busy || !token} data-testid="send-code">{busy ? copy.working : token ? copy.sendCode : copy.humanCheck}</button>
+    <SignInButton provider="email" type="submit" label={busy ? copy.working : token ? copy.sendCode : copy.humanCheck} disabled={busy || !token} testid="send-code" />
   </form>
   <p><a href="/login">{copy.haveSeatSignIn}</a></p>
 {:else if step === 'code'}
