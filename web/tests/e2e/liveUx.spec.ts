@@ -11,7 +11,7 @@ async function longPress(page: Page, target: Locator) {
   const box = (await target.boundingBox())!;
   await page.mouse.move(box.x + 12, box.y + 8);
   await page.mouse.down();
-  await page.waitForTimeout(600);
+  await page.clock.runFor(500);   // past HOLD_MS (450) on the page's own clock
   await page.mouse.up();
 }
 

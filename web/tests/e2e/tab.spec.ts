@@ -73,12 +73,26 @@ test('overlapping taps with a slow server count exactly once each', async ({ pag
     await new Promise(res => setTimeout(res, 800));
     await r.fulfill({ response });
   });
+  // Barrier: the feed reload the app starts after a save (live/+page.svelte:85-87). loadFeed() reads four
+  // collections and applies them together (day.svelte.ts:269), so wait for every collection read that
+  // STARTED after the second POST answered to finish, then let the page apply them.
+  let answered = 0;
+  const after: import('@playwright/test').Request[] = [];
+  page.on('requestfinished', (req) => {
+    if (req.method() === 'POST' && req.url().includes('/api/collections/drink_entries/records')) answered++;
+  });
+  page.on('request', (req) => {
+    if (answered >= 2 && req.method() === 'GET' && req.url().includes('/api/collections/')) after.push(req);
+  });
   const beer = page.getByTestId('drink-beer').locator('.count');
   await page.getByTestId('drink-beer').click();
   await page.getByTestId('drink-beer').click();
   await expect(beer).toHaveText('2');            // instantly, from the pending taps
   await expect(page.getByTestId('tab-toast')).toBeVisible();
-  await page.waitForTimeout(1500);                // both saved; realtime reloads have landed
+  await expect.poll(() => answered).toBe(2);       // both saved
+  await expect.poll(() => after.some((r) => r.url().includes('/drink_entries/'))).toBe(true);
+  await Promise.all(after.map(async (r) => (await r.response())?.finished()));
+  await page.evaluate(() => new Promise((r) => setTimeout(r, 0)));   // the reload has been applied
   await expect(beer).toHaveText('2');
   await expect(page.getByTestId('tab-total')).toHaveText('2');
   expect(posts).toBe(2);
@@ -113,9 +127,11 @@ test('a 404 on Undo (already removed elsewhere) is treated as done, not a failur
   await tabDay(page, 'E2E Tab Undo Already Gone');
   await page.getByTestId('drink-beer').click();
   await expect(page.getByTestId('tab-toast')).toBeVisible();
-  await page.route('**/api/collections/drink_entries/records/**', r => r.request().method() === 'DELETE'
-    ? r.fulfill({ status: 404, contentType: 'application/json', body: JSON.stringify({ code: 404, message: 'not found', data: {} }) })
-    : r.continue());
+  await page.route('**/api/collections/drink_entries/records/**', async (r) => {
+    if (r.request().method() !== 'DELETE') return r.continue();
+    await r.fetch();   // the row really goes, as when someone else removed it first
+    await r.fulfill({ status: 404, contentType: 'application/json', body: JSON.stringify({ code: 404, message: 'not found', data: {} }) });
+  });
   await page.getByTestId('tab-undo').click();
   await expect(page.getByTestId('tab-toast')).toBeHidden();
   await expect(page.getByRole('alert')).toHaveCount(0);
@@ -133,9 +149,10 @@ test('a repeat Undo tap while one is in flight is ignored, not sent twice', asyn
     await new Promise((res) => setTimeout(res, 500));
     await r.continue();
   });
+  const deleted = page.waitForResponse((res) => res.request().method() === 'DELETE' && res.url().includes('/api/collections/drink_entries/records/'));
   await page.getByTestId('tab-undo').click();
   await page.getByTestId('tab-undo').click();
-  await page.waitForTimeout(700);
+  await deleted;
   expect(deletes).toBe(1);
   await expect(page.getByTestId('drink-beer').locator('.count')).toHaveText('0');
 });
@@ -173,7 +190,6 @@ test('the undo-last fallback never targets a tap that has not saved yet', async 
   await expect(page.getByTestId('tab-toast')).toBeHidden();
   await expect(page.getByTestId('tab-undo-last')).toBeHidden();
 
-  await page.waitForTimeout(1200);
   await expect(page.getByTestId('tab-toast')).toBeVisible();
 });
 

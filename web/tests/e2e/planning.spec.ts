@@ -2,6 +2,9 @@ import { test, expect } from '@playwright/test';
 import { clearRoutes, login, seedLockedCrawl, openHome } from './helpers';
 import { copy } from '../../src/lib/labels';
 
+// Titles are unique: a Playwright retry must not collide with its own first attempt's draft.
+const RUN = Math.random().toString(36).slice(2, 6);
+
 const ADMIN = process.env.ADMIN_PASSWORD ?? 'admin-test-password';
 
 // Both venues are about 100 m from their BNSF station (a 2-minute walk).
@@ -31,7 +34,7 @@ test('draft with real train times, layover change, card edits, votes, comments, 
   await login(page, 'E2E Skipper', ADMIN);
   await openHome(page, 'E2E Skipper');
   await page.getByTestId('nav-plan').click();
-  await page.getByTestId('draft-title').fill('E2E Crawl');
+  await page.getByTestId('draft-title').fill(`E2E Crawl ${RUN}`);
   await page.getByTestId('create-draft').click();
   // A new draft opens on its edit screen; the view screen is one level up.
   await expect(page).toHaveURL(/\/plan\/[a-z0-9]{15}\/edit$/);
@@ -165,7 +168,7 @@ test('draft with real train times, layover change, card edits, votes, comments, 
   page.once('dialog', (d) => d.accept());
   await page.getByTestId('lock-route').click();
   await expect(page).toHaveURL(/\/route$/);
-  await expect(page.getByRole('heading', { name: 'E2E Crawl' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: `E2E Crawl ${RUN}` })).toBeVisible();
   await expect(page.getByTestId('stop-row-1')).toContainText('Test Tavern');
   await expect(page.getByTestId('leg-0')).toContainText('2:05 PM');
   await expect(page.getByTestId('locked-on')).toBeVisible();
@@ -179,7 +182,7 @@ test('Board at counts the ride in to the first stop', async ({ page }) => {
   await login(page, 'E2E Skipper', ADMIN);
   await openHome(page, 'E2E Skipper');
   await page.getByTestId('nav-plan').click();
-  await page.getByTestId('draft-title').fill('Board At');
+  await page.getByTestId('draft-title').fill(`Board At ${RUN}`);
   await page.getByTestId('create-draft').click();
   await expect(page).toHaveURL(/\/edit$/);
   await page.getByTestId('station-dot-LAGRANGE').click();
@@ -203,7 +206,7 @@ test('Back from the editor after an add does not reopen the venue sheet', async 
   await login(page, 'E2E Skipper', ADMIN);
   await openHome(page, 'E2E Skipper');
   await page.getByTestId('nav-plan').click();
-  await page.getByTestId('draft-title').fill('No Double Add');
+  await page.getByTestId('draft-title').fill(`No Double Add ${RUN}`);
   await page.getByTestId('create-draft').click();
   await expect(page).toHaveURL(/\/edit$/);
   await page.getByTestId('station-dot-LAGRANGE').click();
@@ -226,7 +229,7 @@ test('a stored venue shows its photos in the sheet on Add Stop', async ({ page }
   await login(page, 'E2E Skipper', ADMIN);
   await openHome(page, 'E2E Skipper');
   await page.getByTestId('nav-plan').click();
-  await page.getByTestId('draft-title').fill('Photo Peek');
+  await page.getByTestId('draft-title').fill(`Photo Peek ${RUN}`);
   await page.getByTestId('create-draft').click();
   await expect(page).toHaveURL(/\/plan\/[a-z0-9]{15}\/edit$/);
   await page.goto(page.url().replace(/\/edit$/, '/add?station=LAGRANGE&side=left'));
@@ -243,7 +246,7 @@ test('a failed add shows its error inside the venue sheet', async ({ page }) => 
   await login(page, 'E2E Skipper', ADMIN);
   await openHome(page, 'E2E Skipper');
   await page.getByTestId('nav-plan').click();
-  await page.getByTestId('draft-title').fill('Add Fails');
+  await page.getByTestId('draft-title').fill(`Add Fails ${RUN}`);
   await page.getByTestId('create-draft').click();
   await expect(page).toHaveURL(/\/plan\/[a-z0-9]{15}\/edit$/);
   await page.goto(page.url().replace(/\/edit$/, '/add?station=NAPERVILLE&side=left'));
@@ -257,7 +260,7 @@ test('another crew member can read and cheer a draft but not change it, even by 
   await login(page, 'E2E Builder', process.env.CREW_PASSWORD ?? 'crew-test-password');
   await openHome(page, 'E2E Builder');
   await page.getByTestId('nav-plan').click();
-  await page.getByTestId('draft-title').fill('Builder Only');
+  await page.getByTestId('draft-title').fill(`Builder Only ${RUN}`);
   await page.getByTestId('create-draft').click();
   await expect(page).toHaveURL(/\/plan\/[a-z0-9]{15}\/edit$/);
   const draftUrl = page.url().replace(/\/edit$/, '');
@@ -301,29 +304,35 @@ test('a slow first comments load does not wipe a newer one', async ({ page }) =>
   await login(page, 'E2E Latecomer', process.env.CREW_PASSWORD ?? 'crew-test-password');
   await openHome(page, 'E2E Latecomer');
   await page.getByTestId('nav-plan').click();
-  await page.getByTestId('draft-title').fill('E2E Slow Chat');
+  await page.getByTestId('draft-title').fill(`E2E Slow Chat ${RUN}`);
   await page.getByTestId('create-draft').click();
   await expect(page).toHaveURL(/\/plan\/[a-z0-9]{15}\/edit$/);
   const draftUrl = page.url().replace(/\/edit$/, '');
   // The view screen's first comments load answers (empty) at once but reaches the page late, after
   // the comment posted meanwhile has already been shown.
-  let stale: (() => void) | undefined;
-  const staleLanded = new Promise<void>((resolve) => { stale = resolve; });
+  let release!: () => void, captured!: () => void;
+  const fresh = new Promise<void>((r) => (release = r));
+  const staleCaptured = new Promise<void>((r) => (captured = r));
+  let staleRequest: import('@playwright/test').Request | undefined;
   let first = true;
   await page.route(/\/api\/collections\/comments\/records\?.*itineraries/, async (route) => {
     if (!first) return route.continue();
     first = false;
-    const response = await route.fetch();
-    await new Promise((r) => setTimeout(r, 1500));
-    await route.fulfill({ response }).catch(() => {});
-    stale!();
+    staleRequest = route.request();
+    const response = await route.fetch();   // the empty snapshot, taken before the post below
+    captured();
+    await fresh;
+    await route.fulfill({ response });       // no .catch: a failed delivery must fail the test
   });
   await page.goto(draftUrl);
+  await staleCaptured;                       // capture-before-post: the stale answer predates the comment
   await page.getByTestId('comment-input').fill('Right on time');
   await page.getByTestId('comment-post').click();
   await expect(page.getByTestId('comments')).toContainText('Right on time');
-  await staleLanded;
-  await page.waitForTimeout(300);
+  release();
+  // Barrier: the stale response fully delivered to the page, then one task for its handler to run.
+  await (await staleRequest!.response())!.finished();
+  await page.evaluate(() => new Promise((r) => setTimeout(r, 0)));
   await expect(page.getByTestId('comments')).toContainText('Right on time');
 });
 
@@ -331,7 +340,7 @@ test('the builder deletes their draft from the board with the trash icon', async
   await login(page, 'E2E Tidy', process.env.CREW_PASSWORD ?? 'crew-test-password');
   await openHome(page, 'E2E Tidy');
   await page.getByTestId('nav-plan').click();
-  await page.getByTestId('draft-title').fill('Short Lived');
+  await page.getByTestId('draft-title').fill(`Short Lived ${RUN}`);
   await page.getByTestId('create-draft').click();
   await expect(page).toHaveURL(/\/edit$/);
   const id = page.url().match(/plan\/([a-z0-9]{15})/)![1];
@@ -374,7 +383,7 @@ test('the route board drops its load error once a later reload succeeds', async 
   await login(other, 'E2E Fixer', process.env.CREW_PASSWORD ?? 'crew-test-password');
   await openHome(other, 'E2E Fixer');
   await other.getByTestId('nav-plan').click();
-  await other.getByTestId('draft-title').fill('Back Online');
+  await other.getByTestId('draft-title').fill(`Back Online ${RUN}`);
   await other.getByTestId('create-draft').click();
   await expect(other).toHaveURL(/\/edit$/);
   const id = other.url().match(/plan\/([a-z0-9]{15})/)![1];

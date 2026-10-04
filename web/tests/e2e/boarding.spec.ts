@@ -30,7 +30,9 @@ test('a visitor boards by email with a password, waits, is let aboard and signs 
   const list = await (await fetch(`${pb}/api/collections/boarding_requests/records?filter=${encodeURIComponent(`email="${email}"`)}`, { headers: { Authorization: crew.token } })).json();
   expect((await fetch(`${pb}/api/crawl/boarding/${list.items[0].id}/let-aboard`, { method: 'POST', headers: { Authorization: crew.token } })).status).toBe(200);
 
-  await expect(page.getByTestId('aboard')).toBeVisible({ timeout: 10_000 });
+  // Reopening resumes and fetches the status at once; the poll → aboard transition is the three-phone test's.
+  await page.reload();
+  await expect(page.getByTestId('aboard')).toBeVisible();
   await page.getByTestId('go-sign-in').click();
   await page.getByTestId('email-input').fill(email.toUpperCase());
   await page.getByTestId('password-input').fill('boarding-pass-1');
@@ -41,6 +43,7 @@ test('a visitor boards by email with a password, waits, is let aboard and signs 
 test('a status poll answered after the code is confirmed cannot send the page back to the code step', async ({ page }) => {
   const n = Math.floor(Math.random() * 1e6), email = `poller${n}@test.invalid`;
   await clearMails(); await stubTurnstile(page);
+  await page.clock.install();   // advances with real time; runFor fires the 5 s poll on demand
   await page.goto('/join');
   await page.getByTestId('name-input').fill(`Poller ${n}`);
   await page.getByTestId('email-input').fill(email);
@@ -57,6 +60,7 @@ test('a status poll answered after the code is confirmed cannot send the page ba
     caught(); await held;
     await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ status: 'unverified' }) });
   }, { times: 1 });
+  await page.clock.runFor(5000);
   await polled;
   await page.getByTestId('code-input').fill(await codeFor(email));
   await page.getByTestId('verify').click();
@@ -68,6 +72,12 @@ test('a status poll answered after the code is confirmed cannot send the page ba
   // Checked once, not retried: the next real poll would answer 'waiting' and hide a flip.
   expect(await page.getByTestId('code-input').count()).toBe(0);
   expect(await page.getByTestId('waiting').isVisible()).toBe(true);
+
+  // Leave nobody waiting: a waiting request puts the boarding popup over every later crew page.
+  const su = await superuserToken();
+  const req = (await (await fetch(`${PB}/api/collections/boarding_requests/records?filter=${encodeURIComponent(`email="${email}"`)}`, { headers: { Authorization: su } })).json()).items[0];
+  const boss = await sessionFor(`E2E Poll Cleaner ${n}`, true);
+  expect((await fetch(`${PB}/api/crawl/boarding/${req.id}/turn-away`, { method: 'POST', headers: { Authorization: boss.token } })).status).toBe(200);
 });
 
 test('crew get a popup; when one approver answers, the other popup clears; put off ends a session', async ({ browser }) => {

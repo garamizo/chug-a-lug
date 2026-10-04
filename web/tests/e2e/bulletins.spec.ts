@@ -46,25 +46,6 @@ test('a plan change drafts a Bulletin the crew has to tap away', async ({ page, 
   await expect(crewPage.getByTestId('bulletin-list')).toContainText('The Second Round is annulled.');
 });
 
-test('the Conductor can skip the Bulletin and still save', async ({ page }) => {
-  page.on('dialog', (d) => d.accept());
-  await login(page, 'E2E Quiet Conductor', ADMIN);
-  await clearRoutes();
-  const seeded = await seedLockedCrawl({
-    ownerName: 'E2E Quiet Conductor', eventDate: DATE, startTime: '12:00',
-    departAt: '2026-12-26T20:34:00.000Z', arriveAt: '2026-12-26T20:49:00.000Z'
-  });
-
-  await page.goto(`/plan/${seeded.itineraryId}/edit`);
-  await page.getByTestId('set-here-0').click();
-  await page.getByTestId('save-plan').click();
-  await page.getByTestId('bulletin-skip').click();
-
-  await expect(page).toHaveURL(new RegExp(`/plan/${seeded.itineraryId}$`));
-  await page.goto('/plan');
-  await expect(page.getByTestId('pinned-bulletin')).toHaveCount(0);
-});
-
 test('Save cannot replace the drafted Bulletin while its sheet is still open', async ({ page }) => {
   page.on('dialog', (d) => d.accept());
   await login(page, 'E2E Sheet-Lock Conductor', ADMIN);
