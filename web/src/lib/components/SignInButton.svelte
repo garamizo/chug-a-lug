@@ -25,10 +25,11 @@
 </button>
 
 <style>
-  .signin { display: flex; align-items: center; justify-content: center; gap: 12px; font-weight: 600; }
+  .signin { display: flex; align-items: center; justify-content: center; gap: 10px; font-weight: 600; }
   .mark { flex: none; }
-  /* Google's light button: white, #747775 outline, #1f1f1f text. */
-  .google { background: #fff; color: #1f1f1f; border: 1px solid #747775; }
+  /* Google's light button: white, #747775 outline, #1f1f1f medium-weight text, 10px after the G. It keeps
+     the app's 18px text and 48px height, scaled up from Google's 14px/40px for the phone's thumb. */
+  .google { background: #fff; color: #1f1f1f; border: 1px solid #747775; font-weight: 500; }
   .google:hover:not(:disabled) { background: #f2f2f2; }
   .email { background: #202020; color: #fff; border: 1px solid #666; }
   .email:hover:not(:disabled) { background: #2a2a2a; }
