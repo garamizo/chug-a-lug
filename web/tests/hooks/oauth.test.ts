@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
-import { PB, clearMails, loginToken, mails, oidcCode, post, postFrom, randomIp, superuserToken, truncate } from './setup';
+import { PB, clearMails, loginToken, mails, oidcCode, post, postFrom, randomIp, superuserToken, truncate, turnstileToken } from './setup';
 
 const uid = () => Math.floor(Math.random() * 1e6);
 const su = async () => ({ Authorization: await superuserToken(), 'content-type': 'application/json' });
@@ -46,6 +46,22 @@ describe('the OAuth2 hook (spec §2.5), at runtime', () => {
     expect(await count('boarding_requests', `email = "${email}" && status = "waiting"`)).toBe(1);
     expect(await count('users', `email = "${email}"`)).toBe(0);
     expect((await mails(email)).at(-1)?.text).toContain('already waiting');
+  });
+
+  it('a Google sign-up for an address with an open email request wipes the planted password', async () => {
+    const email = `plant${uid()}@test.invalid`;
+    const joined = await postFrom(randomIp(), '/api/crawl/join', { name: `Planter ${uid()}`, email, password: 'planted-pass-1', turnstile: turnstileToken() });
+    expect(joined.status).toBe(200);
+    const g = await postFrom(randomIp(), '/api/collections/users/auth-with-oauth2', { provider: 'oidc', code: oidcCode({ sub: `s${uid()}`, email }),
+      codeVerifier: 'v'.repeat(43), redirectURL: 'http://127.0.0.1:15173/auth/google', createData: { name: `Real Owner ${uid()}` } });
+    expect(g.status).toBe(202);
+    const q = new URLSearchParams({ filter: `email = "${email}"` });
+    const rows = (await (await fetch(`${PB}/api/collections/boarding_requests/records?${q}`, { headers: await su() })).json()).items;
+    expect(rows.map((x: { method: string; status: string; password_hash: string }) => [x.method, x.status, x.password_hash])).toEqual([['google', 'waiting', '']]);
+    const crew = await loginToken(`Plant Voucher ${uid()}`);
+    expect((await post(`/api/crawl/boarding/${rows[0].id}/let-aboard`, {}, crew.token)).status).toBe(200);
+    const signIn = await postFrom(randomIp(), '/api/collections/users/auth-with-password', { identity: email, password: 'planted-pass-1' });
+    expect(signIn.status).toBe(400);
   });
 
   it('a new identity from the login page is refused', async () => {
