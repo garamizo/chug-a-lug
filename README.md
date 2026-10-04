@@ -33,8 +33,8 @@ with an album and a scoreboard to argue about at dinner.
 - **Web only, no app stores.** Installable PWA is encouraged, never required.
 - **Works on a phone in a loud bar with one bar of signal.** Big buttons, cached plan, degrades gracefully.
 - **Private.** Everyone has their own account, keyed by email. A newcomer asks to board at
-  `/join`, any approved crew member lets them aboard, and from then on they sign in with Google or
-  an emailed code. No shared password.
+  `/join`, any approved crew member lets them aboard, and from then on they sign in with email and
+  password, an emailed code or Google. No shared password.
 - **Lines:** UP-W (Ogilvie), MD-W (Union Station, turns at Elgin on weekends), BNSF (Union Station).
   Ogilvie and Union are a 6 min walk apart, so the plan can switch lines downtown.
 - **The crawl is settled on the BNSF line** (Aurora to Union Station). The planner shows only that line;
@@ -362,7 +362,7 @@ Recommendation, not yet decided. See the references doc for the alternatives con
 - **Metra proxy**: SvelteKit server routes using `gtfs-realtime-bindings` and a pure-TypeScript GTFS loader
   (the feed is 700 KB; the three lines fit in memory). Polls Metra every 30 s, caches, computes "next train
   from station A to B", and serves the recorded replay in sim mode. The only component that talks to Metra.
-- **Auth**: per-person accounts keyed by email. Sign-in is an emailed one-time code (PocketBase OTP, sent
+- **Auth**: per-person accounts keyed by email. Sign-in is email and password, an emailed one-time code (PocketBase OTP, sent
   through Resend SMTP) or Google. A newcomer asks to board at `/join` (Cloudflare Turnstile guards the
   form, the email is verified by code) and any approved crew member lets them aboard; only then does a
   user record exist. The Conductor is the account minted from `CONDUCTOR_EMAIL`, and only the Conductor
@@ -424,7 +424,7 @@ Numbered to match the earlier review; each is reversible.
    location lookup. Admin retagging is permitted by the collection rules; the album UI belongs to M5.
 6. **Boarding is peer-approved, and accounts are keyed by email.** A newcomer asks to board at `/join`;
    any approved crew member can Let them aboard or Turn them away, and from then on they sign in with
-   Google or an emailed code. There is no shared password and no SMS. Trade-off: the crew can let
+   email and password, an emailed code or Google. There is no shared password and no SMS. Trade-off: the crew can let
    anyone aboard, so one careless approval admits a stranger, and only the Conductor can put someone
    off (and let them back on). That fits ten relatives who know each other and removes Twilio, SMS
    costs and PIN resets entirely.

@@ -98,7 +98,7 @@ rebuild.
 - **Seeding stops fires the recompute hook.** The planner replaces seeded leg times with its own
   answer. A test clock based on the fixture's hand-written departure may be watching the wrong train.
 
-- **Users are keyed by email.** Production signs in only by OTP or Google, and every session passes
+- **Users are keyed by email.** Production signs in only by OTP, password or Google, and every session passes
   `crew.signInGuard`; boarding requests are not users, and a decoy request must stay
   indistinguishable from a real one. Tests mint sessions by impersonation (`loginToken`,
   `sessionFor`), never through a backdoor route.

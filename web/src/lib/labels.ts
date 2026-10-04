@@ -164,6 +164,8 @@ export const copy = {
   working: 'Please wait…',
   nameError: "Enter a name: 2 to 32 letters, numbers, spaces, or . ' -",
   passwordError: 'Enter the crew password.',
+  accountPasswordHint: 'Set or change your password',
+  linkSentTo: 'Link sent to',
   genericError: 'Something went wrong. Please try again.',
   welcome: 'Welcome aboard,',
   comingSoon: 'Coming soon',

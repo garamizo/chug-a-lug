@@ -43,8 +43,8 @@ New here? Board the Chug-a-Lug
 - **Email me a code instead** swaps the password form for today's code form (email → code → sign
   in), unchanged. A "Use a password instead" link swaps back. People who have not set a password yet
   (everyone at deploy time, and anyone who boarded with Google) still have this path.
-- **Forgot password?** opens `/login/forgot`, carrying the typed email in memory (SvelteKit
-  navigation state), never in the URL.
+- **Forgot password?** opens `/login/forgot`, carrying the typed email in an in-memory store
+  (`$lib/signInEmail.ts`), never in the URL.
 - When Google is off, the intro reads "Sign in with your email and password." and the Google button
   and "or use your email" are hidden.
 
@@ -58,7 +58,9 @@ has a seat, a link is on its way. It works for 30 minutes." A link back to sign 
 The emailed link. The token is in the fragment, so it never reaches the server, Cloudflare logs or a
 `Referer`. On load the page reads `location.hash`, then strips it once SvelteKit's router is ready
   (`afterNavigate`, then `replaceState` from `$app/navigation`). A fragment that will not decode counts
-  as a dead link.
+  as a dead link. A fragment that will not decode is caught as the page loads, before SvelteKit's router
+  (whose first navigation would throw on it): the page shows the dead-link state and reloads itself
+  without the fragment (`location.replace`).
 
 - A **New password** field (with Show) and **Set password**. Client-side check: `passwordProblem` (§3.2), the same rule as the server.
 - On success the page signs in with the email in the token's payload and the new password, then goes

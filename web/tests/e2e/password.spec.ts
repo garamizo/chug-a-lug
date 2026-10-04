@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test';
-import { clearMails, codeFor, resetLinkFor, sessionFor } from './helpers';
+import { clearMails, codeFor, login, resetLinkFor, sessionFor } from './helpers';
 import { copy } from '../../src/lib/labels';
 
 const uid = () => Math.floor(Math.random() * 1e6);
@@ -61,4 +61,14 @@ test('email me a code instead still signs in', async ({ page }) => {
   await page.getByTestId('code-input').fill(await codeFor(email));
   await page.getByTestId('sign-in').click();
   await expect(page.getByTestId('name')).toHaveText(name);
+});
+
+test('Your ticket emails a link to set a password', async ({ page }) => {
+  const name = `Pw Ticket ${uid()}`, email = emailOf(name);
+  await clearMails();
+  await login(page, name, 'crew-test-password');
+  await page.goto('/account');
+  await page.getByTestId('account-password-link').click();
+  await expect(page.getByTestId('account-note')).toHaveText(`${copy.linkSentTo} ${email}`);
+  expect(await resetLinkFor(email)).toContain('/reset-password#');
 });

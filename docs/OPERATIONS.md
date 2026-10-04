@@ -121,18 +121,24 @@ dev (the PocketBase hook calls the SvelteKit server with that secret and URL aft
 
 ## Crew access
 
-Everyone has their own account, keyed by email. There is no shared password.
+Everyone has their own account, keyed by email. There is no shared password; each person may set their own.
 
 - **Boarding.** A newcomer opens `/join` (Board), enters a name and email, passes Cloudflare Turnstile
-  and confirms the emailed code. That creates a boarding request, not a user. Any approved crew member
+  picks a password and confirms the emailed code. That creates a boarding request, not a user. Any approved crew member
   can Let aboard or Turn away, from the popup or the Crew Board section. Once let aboard, the person
-  signs in at `/login` with an emailed code, or with Google when `PUBLIC_GOOGLE_ENABLED=1`. Conductors get
+  signs in at `/login` with email and that password, an emailed code, or Google when `PUBLIC_GOOGLE_ENABLED=1`. Conductors get
   a batched email about waiting requests (at most one per 10 minutes).
+- **Passwords.** "Forgot password?" and Your ticket email a link that works once, for 30 minutes.
+  Setting a password signs out every other session. There are 10 tries per address per 15 minutes;
+  when they are spent, the emailed code and Google still work. Reset mails are capped at 3 per
+  address per hour, and PocketBase limits each IP too. A person who is put off gets no reset mail and
+  cannot use a link. People who boarded before passwords existed, or with Google, set one through
+  "Forgot password?". The Conductor should use a long, unique password.
 - **The Manifest** (`/crew/access`, Conductor only) lists people, their emails, status, when they came
   aboard and who let them, last seen, and the access log (kept 90 days, at most 10,000 rows).
 - **Put off / Let back on** (Manifest, Conductor only) blocks or unblocks a person. Blocking from the
   PocketBase admin UI (`users` -> the record -> `blocked`) also ends that user's sessions.
-- **Your ticket** (`/account`) lets a person rename themselves. Nobody can change their own email; a
+- **Your ticket** (`/account`) lets a person rename themselves and email themselves a link to set a password. Nobody can change their own email; a
   superuser does it in the admin UI.
 - **Sessions** last 90 days and renew whenever the app is opened online with a session more than a day
   old. Someone who boards in October and next opens the app on the event day is still aboard, but
@@ -147,9 +153,10 @@ Everyone has their own account, keyed by email. There is no shared password.
   at every start. If mail is down, a join answers an error: its request is created and at once expired,
   so nobody waits on it. Google sign-up still works. After a decision the decision stands and the
   notification retries.
-- **Conductor without mail.** Never switch on password auth for `users` to get in. Instead:
-  1. If your Google account has the same email as your seat, sign in with Google.
-  2. Otherwise mint a session on the box (the admin UI and superuser API answer only there):
+- **Conductor without mail.**
+  1. Sign in with your password, if you set one.
+  2. If your Google account has the same email as your seat, sign in with Google.
+  3. Otherwise mint a session on the box (the admin UI and superuser API answer only there):
      http://127.0.0.1:8090/_/ -> Collections -> `users` -> your record -> Impersonate, with a duration
      such as 86400 (a day), or the same by API:
 
