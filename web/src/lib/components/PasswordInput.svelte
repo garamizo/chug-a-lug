@@ -17,5 +17,5 @@
 <style>
   .password { display: flex; gap: 8px; align-items: center; }
   .password input { flex: 1; min-width: 0; }
-  .password button { flex: none; min-height: 48px; margin-top: 8px; padding: 0 8px; }
+  .password button { flex: none; min-height: 48px; margin-top: 8px; padding: 0 8px; font-size: 18px; }
 </style>
