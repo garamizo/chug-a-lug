@@ -23,7 +23,9 @@
   .body { flex: 1; min-width: 0; }
   .t { display: block; font-family: var(--mono, ui-monospace, SFMono-Regular, Menlo, monospace); font-size: 17px; font-weight: 700;
     color: var(--gold-soft, #ffce5c); text-transform: uppercase; text-decoration: none; overflow-wrap: anywhere;
-    animation: flip .35s ease-out both; transform-origin: top; }
+    animation: flip .35s ease-out backwards; transform-origin: top; }
+  /* backwards, not both: a held transform would make the link the ::after's containing block and shrink
+     the row-wide tap target to the title. */
   a.t::after { content: ''; position: absolute; inset: 0; } /* whole row is the tap target */
   .acts { position: relative; z-index: 1; display: flex; gap: 6px; margin-top: 8px; }
   .acts:empty { display: none; }
