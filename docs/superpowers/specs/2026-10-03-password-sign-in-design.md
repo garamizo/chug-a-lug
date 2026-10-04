@@ -58,7 +58,7 @@ has a seat, a link is on its way. It works for 30 minutes." A link back to sign 
 The emailed link. The token is in the fragment, so it never reaches the server, Cloudflare logs or a
 `Referer`. On load the page reads `location.hash` and strips it with `history.replaceState`.
 
-- A **New password** field (with Show) and **Set password**. Client-side check: 8 to 64 characters.
+- A **New password** field (with Show) and **Set password**. Client-side check: `passwordProblem` (§3.2), the same rule as the server.
 - On success the page signs in with the email in the token's payload and the new password, then goes
   to `/`. The note before leaving says "Password set." If that sign-in is refused (a seat put off
   meanwhile), the message shows with a link to `/login`.
@@ -98,8 +98,12 @@ type, and one email flow covers both cases.
   Chug-a-Lug password". The body says the link works for 30 minutes and links to
   `{APP_URL}/reset-password#{TOKEN}`, plus "If you did not ask for it, ignore this email." The default
   template links to `/_/`, which the tunnel blocks, so overriding it is required.
-- **Aboard notice** (`boarding.decide`): "Sign in at …/login with your email and the password you
-  chose." for an email request, and "… with Google." for a Google request.
+- **Aboard notice** (`boarding.decide`) is chosen by whether approval actually installed a password,
+  captured before the request's hash is cleared:
+  - "Sign in at …/login with your email and the password you chose." when one was installed;
+  - "… with Google." for a Google request;
+  - today's "… with this email address or Google." for an email request without a hash, which is
+    any request filed before this deploy.
 
 ## 3. Server
 
@@ -116,9 +120,11 @@ Self-contained (migration tests run with an empty hooks directory), reversible, 
 - Rate-limit rules, added idempotently like the crew-access ones: `users:authWithPassword` 20 per 600 s
   (a crew on one bar's Wi-Fi shares an IP), `users:requestPasswordReset` 5 per 600 s,
   `users:confirmPasswordReset` 10 per 600 s.
-- Down: password auth off, field limits back to PocketBase's defaults, default reset template, the
-  three rules removed, `password_hash` dropped, select values removed. The down migration must clear
-  `access_log` rows that use the removed values, or the select change fails to save.
+- Down: password auth off, field limits back to PocketBase's defaults, the default reset template,
+  the three rules removed, `password_hash` dropped. The new `access_log` select values stay. History
+  is kept, and PocketBase validates select values only when a record is saved, not when the
+  collection changes, so the extra values cost nothing. Codex corrected an earlier draft that deleted
+  those rows.
 
 `config.pb.js` (onBootstrap) does not touch any of these, so nothing re-applies them on boot.
 
@@ -129,13 +135,17 @@ Self-contained (migration tests run with an empty hooks directory), reversible, 
 - `METHODS.password = 'password'`. Password sign-ins then pass `signInGuard` (blocked → 403,
   `last_seen`, `signed_in` logged with method `password`) through the existing `onRecordAuthRequest`.
 - `exports.passwordProblem(p)` returns `null` or the message "Pick a password of 8 to 64 characters."
-  It requires a string of 8 to 64 characters (JS length) and at most 72 UTF-8 bytes (bcrypt's limit).
-  The client mirrors it in `$lib/password.ts`.
+  It requires a string of 8 to 64 **Unicode code points** (`[...p].length`, which is how PocketBase's
+  password field counts its `min` and `max`) and at most 72 UTF-8 bytes (bcrypt's limit). Sign-up and
+  reset therefore accept exactly the same passwords. Sign-up must call it itself, because the hash is
+  installed by SQL and bypasses field validation. The client mirrors it in `$lib/password.ts`.
 - `exports.hashPassword(app, p)` returns the bcrypt hash PocketBase would store. It builds a
-  throwaway, unsaved `users` record, calls `setPassword(p)` and returns `getRaw('password').hash`. This
-  was verified on PocketBase 0.40.4 on 2026-10-03: a 60-character `$2a$10$` hash, written to a user's
-  `password` column by SQL, passes `validatePassword` for the original and fails for others.
-  `setRaw('password', hash)` is rejected ("Invalid or unsupported value type"), so SQL is the only way.
+  throwaway, unsaved `users` record, calls `setPassword(p)` and returns `getRaw('password').hash`.
+  Verified on PocketBase 0.40.4 on 2026-10-03: the hash is a 60-character `$2a$10$` string. Written to
+  a user's `password` column by SQL, it passes `validatePassword` for the original password and fails
+  for any other. A raw string through `setRaw('password', hash)` is rejected ("Invalid or unsupported
+  value type"). `PasswordField.prepareValue` might be a cleaner alternative, but it is untested, so
+  the plan uses the SQL write unless its first test proves `prepareValue` works.
 
 **`access.pb.js`**
 
@@ -145,17 +155,38 @@ Self-contained (migration tests run with an empty hooks directory), reversible, 
   or try again in 15 minutes." This runs before the password is checked and keys on the typed
   identity whether or not it has a seat, so it reveals nothing about which addresses exist. Locking
   out the real person only costs them the password path; code and Google stay open.
-- `onRecordRequestPasswordResetRequest` (users): `limits.consume('reset:' + email, 3, 3600)`. When
-  spent, or when the record is blocked, answer 204 without `e.next()`, which is the same answer as a
-  sent link, so no mail goes out and nothing is revealed. The hook must answer exactly as PocketBase's
-  own success does (verify the status and body in the hook test).
+- `onRecordRequestPasswordResetRequest` (users) runs only for an address that has a record, and only
+  after PocketBase's own two-minute resend cooldown. An unknown address, or a repeat within two
+  minutes, gets PocketBase's empty 204 before the hook. The hook calls
+  `limits.consume('reset:' + record.email(), 3, 3600)`. When the limit is spent, or the record is
+  blocked, it answers the same empty 204 without `e.next()`. No mail goes out, and the answer matches
+  a sent link exactly.
 - `onMailerRecordPasswordResetSend` (users): skip the send when blocked (defence in depth), otherwise
   `e.next()` and then log `password_reset_sent`.
-- `onRecordConfirmPasswordResetRequest` (users): a blocked record gets 403 "Your seat was taken
-  away. Ask the Conductor." Otherwise `e.next()`, then log `password_set`. PocketBase changes the
-  token key with the password, which ends every other session. The hook test pins this: an old token
-  is refused by `/api/crawl/me` after a reset.
-- The existing `onRecordUpdateRequest` and the `updateRule` keep `password` locked for crew self-updates.
+- `onRecordConfirmPasswordResetRequest` (users). PocketBase validates the token against a record it
+  loaded earlier, and after `e.next()` it saves that same instance (`e.record`). A put-off, or a second
+  confirmation, that commits between the load and the save would be overwritten: the blocked flag
+  reverts, or an older token key comes back. The hook therefore follows the pattern of the
+  existing `onRecordUpdateRequest`:
+  - Inside `$app.runInTransaction`, with `e.app = tx` and restored in `finally`, read a fresh copy of
+    the user.
+  - If the fresh `tokenKey` differs from `e.record.original().tokenKey()`, the token was signed with a
+    key that no longer exists, because of a put-off, an earlier reset or a password change. Answer 400
+    "That link expired or was already used." This makes a reset link single-use under concurrency too.
+  - If the fresh copy is blocked, answer 403 "Your seat was taken away. Ask the Conductor."
+  - Otherwise copy the fresh `blocked`, `is_admin`, `name`, `name_key`, `approved_by`, `email`,
+    `emailVisibility`, `verified` and `last_seen` onto `e.record`, the instance PocketBase will save.
+    Then call `e.next()` inside the transaction. Write transactions are serialised, so nothing can
+    land between the check and the save.
+  - After the commit, log `password_set`. PocketBase rotates the token key with the password, which
+    ends every other session.
+- The existing `onRecordUpdateRequest` (access.pb.js) refreshes some fields and the token key from a
+  fresh read, but not the password hash. A crew name change that PocketBase loaded before a reset and
+  saved after it would therefore write the **old** hash back, and the compromised password would work
+  again. The hook gains one rule: when the request body does not name `password`, the fresh row's raw
+  password value is copied onto `e.record` (`e.record.setRaw('password', fresh.getRaw('password'))`;
+  the plan's test confirms `setRaw` accepts the field-value object). The `updateRule` keeps
+  `password` locked for crew self-updates.
 
 **`boarding.js`**
 
@@ -169,8 +200,10 @@ Self-contained (migration tests run with an empty hooks directory), reversible, 
   `tx.db().newQuery('UPDATE users SET password = {:h} WHERE id = {:id}')` inside the same
   transaction. Then clear `password_hash` on the request. A user whose request had no hash keeps
   today's random unusable password.
-- `decide('away')`, and every place the sweep expires a request, clear `password_hash`. The daily job
-  also blanks `password_hash` on any row whose status is not `unverified` or `waiting` (belt and braces).
+- Every transition into a closed state clears `password_hash`. That means `decide('away')`, every
+  place the sweep expires a request, and `fileRequest`'s mail-failure expiry, which keeps its existing
+  secret and status check so a concurrent re-signup is not touched. The daily job also blanks
+  `password_hash` on any row whose status is not `unverified` or `waiting`, as a backstop.
 
 ### 3.3 Client
 
@@ -198,7 +231,8 @@ Self-contained (migration tests run with an empty hooks directory), reversible, 
   address.
 - **Stored hashes.** `password_hash` is hidden, so no API response carries it, whoever lists requests.
   It lives only while a request is open. Backups carry it, as they carry `users.password`.
-- **Reset.** Single-use, expires in 30 minutes, kept in the fragment, and it ends other sessions.
+- **Reset.** Expires in 30 minutes, kept in the fragment, single-use even under concurrency (the fresh
+  token-key check in §3.2), and it ends other sessions.
 - **The Conductor.** The same rules apply. OPERATIONS.md tells the Conductor to use a long, unique
   password, and adds "Forgot password?" to Conductor recovery while mail works.
 
@@ -213,24 +247,43 @@ caps, decoys, Conductor batching, put-off and let-back-on, and the Manifest.
 Tests first, per task. Each task ends with the full gate: `cd web && npm test && npm run check &&
 npm run test:e2e`, then `bash scripts/test-hooks.sh`.
 
-- **Unit:** `passwordProblem` (7, 8, 64 and 65 characters, 73 bytes of multi-byte text, non-string);
+- **Unit:** `passwordProblem` (7, 8, 64 and 65 code points; four emoji, which is 8 UTF-16 units but
+  4 code points and must be refused; 72 and 73 UTF-8 bytes; non-string);
   `resetTokenEmail` (a valid payload, garbage, no claim); `PasswordInput` toggles the type and `aria-pressed`.
-- **Migration test:** up applies every setting in §3.1. Down restores the previous ones, including
-  when `access_log` holds a `password_set` row.
+- **Migration test:** up applies every setting in §3.1, including the three rate-limit rules. Down
+  restores the previous settings and keeps an `access_log` row with method `password`. The hook
+  harness runs with `PB_RATE_LIMITS=off` (scripts/pb-test-server.mjs), so the per-IP rules are
+  checked as installed settings, not exercised live.
+- **Existing test to change:** web/tests/hooks/access.test.ts, "every sign-in method is guarded".
+  It now expects `method = "password"`. Its `finally` stops switching password auth off and restores
+  whatever setting it found, because password auth is on by default now.
 - **Hook tests:**
   - Password sign-in for a user with a set password: 200, and `signed_in` logged with method `password`.
   - A wrong password and an unknown address give the same 400 body.
   - The 11th try on one address within 15 minutes gets 429 (the per-address limit in `_crawl_limits`
     is ours, so it applies even with `PB_RATE_LIMITS=off`). A blocked user gets 403.
   - Reset for a member sends a mail whose link is `<APP_URL>/reset-password#<token>`.
-  - Reset gives an identical 204 and sends no mail for an unknown address, a blocked member, and the
-    fourth request in an hour.
-  - Confirm sets the password, the new password signs in, an old token is refused, and a blocked user
-    gets 403.
+  - An unknown address and a blocked member each get an identical empty 204 and no mail.
+  - Confirm sets the password, and the new password signs in.
+  - Confirm: an old session token is refused by `/api/crawl/me`, and a second confirmation with the
+    same reset token gets 400.
+  - A reset token issued before a put-off gets 400. The put-off rotated the key, so PocketBase refuses
+    it before the hook runs.
+  - A crew name change after a reset leaves the new password working and the old one refused.
+- **Not automated, argued instead.** The JS hooks offer no point at which a test could pause between
+  PocketBase's load and its save, so the races in §3.2 cannot be staged. They are closed because
+  PocketBase serialises write transactions, the same argument the existing update hook rests on. The
+  3-per-hour reset cap cannot be reached quickly either, because PocketBase's two-minute cooldown
+  answers before the hook. Its single `limits.consume` call is reviewed, not tested.
   - `/join` without a password, or with a short one, gets 400.
   - A decoy sign-up for a member stores a hash and leaves the member's password unchanged.
-  - Let aboard copies the hash so the chosen password signs in, and clears it on the request.
-  - Turning a request away clears its hash. Google sign-up still works with no password.
+  - Let aboard copies the hash so the chosen password signs in, clears it on the request, and mails
+    "the password you chose".
+  - Let aboard for an email request with no hash (filed before the deploy) mails "this email address
+    or Google".
+  - Turning a request away clears its hash, and so does a mail failure at sign-up, for real requests
+    and for decoys. A password of four emoji is refused at `/join`.
+  - Google sign-up still works with no password.
 - **E2E:**
   - Sign in with email and password.
   - Forgot → read the link from the SMTP sink → set password → land signed in.
