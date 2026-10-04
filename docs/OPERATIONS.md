@@ -123,11 +123,13 @@ dev (the PocketBase hook calls the SvelteKit server with that secret and URL aft
 
 Everyone has their own account, keyed by email. There is no shared password; each person may set their own.
 
-- **Boarding.** A newcomer opens `/join` (Board), enters a name and email, passes Cloudflare Turnstile
-  picks a password and confirms the emailed code. That creates a boarding request, not a user. Any approved crew member
-  can Let aboard or Turn away, from the popup or the Crew Board section. Once let aboard, the person
-  signs in at `/login` with email and that password, an emailed code, or Google when `PUBLIC_GOOGLE_ENABLED=1`. Conductors get
-  a batched email about waiting requests (at most one per 10 minutes).
+- **Boarding.** A newcomer opens `/join` (Board), enters a name, an email and a password, passes
+  Cloudflare Turnstile and confirms the emailed code. That creates a boarding request, not a user. Any
+  approved crew member can Let aboard or Turn away, from the popup or the Crew Board section. The chosen
+  password is installed when a crew member lets them aboard; until then the person cannot sign in.
+  Conductors get a batched email about waiting requests (at most one per 10 minutes).
+- **Signing in.** `/login` offers Google (when `PUBLIC_GOOGLE_ENABLED=1`), email and password,
+  "Forgot password?" and "Email me a code instead".
 - **Passwords.** "Forgot password?" and Your ticket email a link that works once, for 30 minutes.
   Setting a password signs out every other session. There are 10 tries per address per 15 minutes;
   when they are spent, the emailed code and Google still work. Reset mails are capped at 3 per
