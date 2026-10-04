@@ -2,7 +2,7 @@ import { test, expect } from '@playwright/test';
 import { PB, clearMails, codeFor, login, sessionFor, stubTurnstile, superuserToken } from './helpers';
 import { copy } from '../../src/lib/labels';
 
-test('a visitor boards by email, waits, is let aboard and signs in with a code', async ({ page }) => {
+test('a visitor boards by email with a password, waits, is let aboard and signs in with it', async ({ page }) => {
   const n = Math.floor(Math.random() * 1e6), email = `visitor${n}@test.invalid`;
   await clearMails(); await stubTurnstile(page);
   await page.goto('/login');
@@ -31,12 +31,10 @@ test('a visitor boards by email, waits, is let aboard and signs in with a code',
   expect((await fetch(`${pb}/api/crawl/boarding/${list.items[0].id}/let-aboard`, { method: 'POST', headers: { Authorization: crew.token } })).status).toBe(200);
 
   await expect(page.getByTestId('aboard')).toBeVisible({ timeout: 10_000 });
-  await clearMails();
   await page.getByTestId('go-sign-in').click();
   await page.getByTestId('email-input').fill(email.toUpperCase());
-  await page.getByTestId('send-code').click();
-  await page.getByTestId('code-input').fill(await codeFor(email));
-  await page.getByTestId('sign-in').click();
+  await page.getByTestId('password-input').fill('boarding-pass-1');
+  await page.getByTestId('password-sign-in').click();
   await expect(page.getByTestId('name')).toHaveText(`Visitor ${n}`);
 });
 

@@ -181,6 +181,16 @@ export async function codeFor(to: string): Promise<string> {
   }
   throw new Error(`No code mailed to ${to}`);
 }
+export async function resetLinkFor(to: string): Promise<string> {
+  for (let i = 0; i < 50; i++) {
+    const all = (await (await fetch(`${MAIL}/messages`)).json()) as { to: string[]; text: string; html?: string }[];
+    // The text part renders links as [url](url): keep the match out of the brackets.
+    const url = all.filter((m) => m.to.includes(to.toLowerCase())).map((m) => /(https?:\/\/[^\s"<>()\[\]]+\/reset-password#[\w.-]+)/.exec(`${m.text}\n${m.html ?? ''}`)?.[1]).filter(Boolean).at(-1);
+    if (url) return url;
+    await new Promise((r) => setTimeout(r, 100));
+  }
+  throw new Error(`No reset link mailed to ${to}`);
+}
 /** Turnstile without the network: the widget script is replaced by one that passes at once. */
 export async function stubTurnstile(page: Page) {
   await page.route('https://challenges.cloudflare.com/**', (route) => route.fulfill({ contentType: 'text/javascript',

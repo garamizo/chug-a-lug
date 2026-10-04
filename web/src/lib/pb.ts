@@ -60,6 +60,17 @@ export async function requestCode(email: string): Promise<string> {
 export async function signInWithCode(otpId: string, code: string): Promise<void> {
   await pb.collection('users').authWithOTP(otpId, code.trim());
 }
+/** Email + password sign-in (password spec §2.1). Lowercased like requestCode: addresses are stored lowercased. */
+export async function signInWithPassword(email: string, password: string): Promise<void> {
+  await pb.collection('users').authWithPassword(email.trim().toLowerCase(), password);
+}
+/** Always resolves the same way for any address (PocketBase answers 204), so nothing is revealed. */
+export async function requestPasswordReset(email: string): Promise<void> {
+  await pb.collection('users').requestPasswordReset(email.trim().toLowerCase());
+}
+export async function confirmPasswordReset(token: string, password: string): Promise<void> {
+  await pb.collection('users').confirmPasswordReset(token, password, password);
+}
 export const joinCrew = (name: string, email: string, password: string, turnstile: string) =>
   pb.send<{ request_id: string; secret: string }>('/api/crawl/join', { method: 'POST', body: { name, email, password, turnstile } });
 export const verifyJoin = (request_id: string, secret: string, code: string) =>

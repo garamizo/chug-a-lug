@@ -52,4 +52,11 @@ describe('labels', () => {
     for (const v of added('event')) expect(accessEventLabels[v], v).toBeTruthy();
     for (const v of added('method')) expect(signInMethodLabels[v], v).toBeTruthy();
   });
+  it('has copy for password sign-in and reset', () => {
+    for (const k of ['passwordMismatch', 'passwordMissing', 'forgotPassword', 'useCodeInstead', 'usePasswordInstead', 'forgotTitle', 'forgotIntro',
+      'emailMeLink', 'linkMaybeSent', 'backToSignIn', 'resetTitle', 'setPassword', 'passwordSetSignIn', 'resetLinkDead', 'askNewLink']) {
+      expect((copy as Record<string, string>)[k], k).toBeTruthy();
+    }
+    expect(copy.loginIntro).toBe('Sign in with Google or with your email and password.');
+  });
 });
