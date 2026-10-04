@@ -197,8 +197,51 @@ it('crew access can be rolled back and applied again', async () => {
     const run = (...args: string[]) => execFileSync(resolve('../pocketbase/pocketbase'), ['migrate', ...args, '--dir', join(dir, 'data'),
       '--migrationsDir', migrations, '--hooksDir', hooks], { encoding: 'utf8', timeout: 15000, input: 'y\n', stdio: 'pipe', env: { ...process.env, CONDUCTOR_EMAIL: 'conductor@test.invalid' } });
     run('up');
-    expect(run('down', '1')).toContain('Reverted 1758900000_crew_access');
+    const down = run('down', '2');
+    expect(down).toContain('Reverted 1759000000_password_sign_in');
+    expect(down).toContain('Reverted 1758900000_crew_access');
     expect(run('up')).toContain('1758900000_crew_access');
+  } finally { await rm(dir, { recursive: true, force: true }); }
+});
+
+it('password sign-in applies its settings, rolls back keeping history, and applies again', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'chugalug-password-'));
+  try {
+    const migrations = join(dir, 'migrations'), hooks = join(dir, 'hooks');
+    await mkdir(migrations); await mkdir(hooks);
+    for (const name of await readdir('../pocketbase/pb_migrations')) await copyFile(`../pocketbase/pb_migrations/${name}`, join(migrations, name));
+    // Runs after the migration under test: checks the up state and leaves one history row behind.
+    await writeFile(join(migrations, '1759000001_check_up.js'), `migrate(app => {
+      const u = app.findCollectionByNameOrId('users');
+      if (!u.passwordAuth.enabled || JSON.stringify(u.passwordAuth.identityFields) !== '["email"]') throw new Error('password auth');
+      const f = u.fields.getByName('password');
+      if (f.min !== 8 || f.max !== 64) throw new Error('password limits ' + f.min + '/' + f.max);
+      if (u.resetPasswordTemplate.body.indexOf('{APP_URL}/reset-password#{TOKEN}') < 0) throw new Error('reset link');
+      if (u.passwordResetToken.duration !== 1800) throw new Error('reset duration');
+      const h = app.findCollectionByNameOrId('boarding_requests').fields.getByName('password_hash');
+      if (!h || !h.hidden) throw new Error('password_hash');
+      const labels = app.settings().rateLimits.rules.map((r) => r.label + '=' + r.maxRequests + '/' + r.duration);
+      for (const want of ['users:authWithPassword=20/600', 'users:requestPasswordReset=5/600', 'users:confirmPasswordReset=10/600'])
+        if (labels.indexOf(want) < 0) throw new Error('rule ' + want);
+      const r = new Record(app.findCollectionByNameOrId('access_log'));
+      r.set('event', 'password_set'); r.set('method', 'password'); app.save(r);
+    }, app => {})`);
+    const run = (...args: string[]) => execFileSync(resolve('../pocketbase/pocketbase'), ['migrate', ...args, '--dir', join(dir, 'data'),
+      '--migrationsDir', migrations, '--hooksDir', hooks], { encoding: 'utf8', timeout: 15000, input: 'y\n', stdio: 'pipe', env: { ...process.env, CONDUCTOR_EMAIL: 'conductor@test.invalid' } });
+    expect(run('up')).toContain('1759000001_check_up');
+    expect(run('down', '2')).toContain('Reverted 1759000000_password_sign_in');
+    // An older, unapplied file runs first on the next `up`, so it sees the rolled-back state.
+    await writeFile(join(migrations, '1758999999_check_down.js'), `migrate(app => {
+      const u = app.findCollectionByNameOrId('users');
+      if (u.passwordAuth.enabled) throw new Error('password auth still on');
+      if (u.resetPasswordTemplate.body.indexOf('/reset-password#') >= 0) throw new Error('template kept');
+      if (app.findCollectionByNameOrId('boarding_requests').fields.getByName('password_hash')) throw new Error('password_hash kept');
+      if (app.settings().rateLimits.rules.some((r) => r.label === 'users:authWithPassword')) throw new Error('rule kept');
+      if (app.findRecordsByFilter('access_log', "method = 'password'", '', 0, 0).length !== 1) throw new Error('history lost');
+    }, app => {})`);
+    const again = run('up');
+    expect(again).toContain('1758999999_check_down');
+    expect(again).toContain('1759000000_password_sign_in');
   } finally { await rm(dir, { recursive: true, force: true }); }
 });
 

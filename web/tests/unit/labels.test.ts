@@ -44,4 +44,12 @@ describe('labels', () => {
       for (const v of stored) expect(map[v], `${field}=${v}`).toBeTruthy();
     }
   });
+  it('names the sign-in method and events the password migration adds', () => {
+    const migration = readFileSync('../pocketbase/pb_migrations/1759000000_password_sign_in.js', 'utf8');
+    const added = (field: string) => JSON.parse(new RegExp(`ADDED_${field.toUpperCase()} = (\\[[^\\]]*\\])`).exec(migration)![1].replace(/'/g, '"')) as string[];
+    expect(added('event')).toEqual(['password_reset_sent', 'password_set']);
+    expect(added('method')).toEqual(['password']);
+    for (const v of added('event')) expect(accessEventLabels[v], v).toBeTruthy();
+    for (const v of added('method')) expect(signInMethodLabels[v], v).toBeTruthy();
+  });
 });

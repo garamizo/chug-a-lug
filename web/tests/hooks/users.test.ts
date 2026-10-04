@@ -21,6 +21,8 @@ it('lets a member edit their own preferences, and nothing else of the collection
   expect((await post('/api/collections/users/records', { name: 'Sneaky', name_key: 'sneaky', email: 'sneaky@test.invalid',
     password: 'abcdefgh', passwordConfirm: 'abcdefgh' }, token)).status).toBe(403);
   expect((await fetch(resource, { method: 'DELETE', headers: { Authorization: token } })).status).toBe(403);
-  // Password auth stays disabled: the random stored password cannot be used.
-  expect((await post('/api/collections/users/auth-with-password', { identity: `${Buffer.from(n.toLowerCase()).toString('hex')}@test.invalid`, password: 'seed-test-password-1' })).status).toBeGreaterThanOrEqual(400);
+  // Password auth is on (password spec): only the right password signs in.
+  const identity = `${Buffer.from(n.toLowerCase()).toString('hex')}@test.invalid`;
+  expect((await post('/api/collections/users/auth-with-password', { identity, password: 'wrong-password-1' })).status).toBe(400);
+  expect((await post('/api/collections/users/auth-with-password', { identity, password: 'seed-test-password-1' })).status).toBe(200);
 });

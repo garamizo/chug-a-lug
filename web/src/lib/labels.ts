@@ -500,7 +500,8 @@ export const requestStatusLabels: Record<string, string> = {
 export const signInMethodLabels: Record<string, string> = {
   email: 'Email code',
   google: 'Google',
-  rehearsal: 'Rehearsal password'
+  rehearsal: 'Rehearsal password',
+  password: 'Password'
 };
 export const accessEventLabels: Record<string, string> = {
   boarding_requested: 'Asked to board',
@@ -515,5 +516,7 @@ export const accessEventLabels: Record<string, string> = {
   turnstile_failed: 'Failed the human check',
   put_off: 'Put off',
   let_back_on: 'Let back on',
-  name_changed: 'Changed name'
+  name_changed: 'Changed name',
+  password_reset_sent: 'Password link sent',
+  password_set: 'Set a password'
 };

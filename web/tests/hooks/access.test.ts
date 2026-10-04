@@ -75,6 +75,7 @@ describe('sign-in by email code and the guards', () => {
     const { id } = await loginToken(name);
     const email = emailOf(name.toLowerCase());
     const collection = async (enabled: boolean) => fetch(`${PB}/api/collections/users`, { method: 'PATCH', headers: await su(), body: JSON.stringify({ passwordAuth: { enabled } }) });
+    const before = (await (await fetch(`${PB}/api/collections/users`, { headers: await su() })).json()).passwordAuth.enabled as boolean;
     try {
       expect((await collection(true)).status).toBe(200);
       await fetch(`${PB}/api/collections/users/records/${id}`, { method: 'PATCH', headers: await su(),
@@ -82,7 +83,7 @@ describe('sign-in by email code and the guards', () => {
       expect((await post('/api/collections/users/auth-with-password', { identity: email, password: 'recovery-password-1' })).status).toBe(403);
       expect((await logRows(`user = "${id}" && event = "sign_in_refused" && method = ""`)).length).toBe(1);
     } finally {
-      expect((await collection(false)).status).toBe(200);
+      expect((await collection(before)).status).toBe(200);
     }
   });
 
