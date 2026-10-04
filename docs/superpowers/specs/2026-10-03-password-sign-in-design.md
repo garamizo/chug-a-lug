@@ -56,7 +56,9 @@ has a seat, a link is on its way. It works for 30 minutes." A link back to sign 
 ### 2.3 `/reset-password#<token>`
 
 The emailed link. The token is in the fragment, so it never reaches the server, Cloudflare logs or a
-`Referer`. On load the page reads `location.hash` and strips it with `history.replaceState`.
+`Referer`. On load the page reads `location.hash`, then strips it once SvelteKit's router is ready
+  (`afterNavigate`, then `replaceState` from `$app/navigation`). A fragment that will not decode counts
+  as a dead link.
 
 - A **New password** field (with Show) and **Set password**. Client-side check: `passwordProblem` (§3.2), the same rule as the server.
 - On success the page signs in with the email in the token's payload and the new password, then goes
@@ -174,9 +176,12 @@ Self-contained (migration tests run with an empty hooks directory), reversible, 
     key that no longer exists, because of a put-off, an earlier reset or a password change. Answer 400
     "That link expired or was already used." This makes a reset link single-use under concurrency too.
   - If the fresh copy is blocked, answer 403 "Your seat was taken away. Ask the Conductor."
-  - Otherwise copy the fresh `blocked`, `is_admin`, `name`, `name_key`, `approved_by`, `email`,
-    `emailVisibility`, `verified` and `last_seen` onto `e.record`, the instance PocketBase will save.
-    Then call `e.next()` inside the transaction. Write transactions are serialised, so nothing can
+  - Otherwise copy **every** field except `password` and `tokenKey` from the fresh copy onto
+    `e.record`, the instance PocketBase will save (iterate `collection().fields.fieldNames()`). That
+    covers the moderation fields and also preferences such as `share_position`, `home_station` and
+    `left_early`. A reset changes the password and nothing else, so a list kept by hand would drift
+    (Codex, plan review).
+  - Then call `e.next()` inside the transaction. Write transactions are serialised, so nothing can
     land between the check and the save.
   - After the commit, log `password_set`. PocketBase rotates the token key with the password, which
     ends every other session.
@@ -229,8 +234,10 @@ Self-contained (migration tests run with an empty hooks directory), reversible, 
 - **Account takeover through sign-up.** A sign-up with a member's address becomes a decoy and never
   touches the member's password. A sign-up with a non-member's address needs the code mailed to that
   address.
-- **Stored hashes.** `password_hash` is hidden, so no API response carries it, whoever lists requests.
-  It lives only while a request is open. Backups carry it, as they carry `users.password`.
+- **Stored hashes.** `password_hash` is a hidden field: no crew or Conductor response carries it, and
+  neither do realtime events. PocketBase still shows hidden fields to superusers, the on-box admin
+  who already holds the whole database. It lives only while a request is open. Backups carry it, as
+  they carry `users.password`.
 - **Reset.** Expires in 30 minutes, kept in the fragment, single-use even under concurrency (the fresh
   token-key check in §3.2), and it ends other sessions.
 - **The Conductor.** The same rules apply. OPERATIONS.md tells the Conductor to use a long, unique
@@ -270,11 +277,16 @@ npm run test:e2e`, then `bash scripts/test-hooks.sh`.
   - A reset token issued before a put-off gets 400. The put-off rotated the key, so PocketBase refuses
     it before the hook runs.
   - A crew name change after a reset leaves the new password working and the old one refused.
-- **Not automated, argued instead.** The JS hooks offer no point at which a test could pause between
-  PocketBase's load and its save, so the races in §3.2 cannot be staged. They are closed because
-  PocketBase serialises write transactions, the same argument the existing update hook rests on. The
-  3-per-hour reset cap cannot be reached quickly either, because PocketBase's two-minute cooldown
-  answers before the hook. Its single `limits.consume` call is reviewed, not tested.
+  - Races, fired together like the existing double-decision test. These cannot force an interleaving,
+    but every run gives each one a real chance:
+    - two confirmations with one link: exactly one 204;
+    - put-off sent together with a confirmation: the seat ends blocked and the old session is dead;
+    - a rename sent together with a confirmation: whichever password the confirmation set still
+      signs in.
+  - Reset confirmation goes through PocketBase's own field validation. Four emoji, and 37 code points
+    that make 73 bytes, are refused. Eight emoji are accepted, matching `/join`.
+  - A crew member's and the Conductor's list and view of `boarding_requests` never include
+    `password_hash`.
   - `/join` without a password, or with a short one, gets 400.
   - A decoy sign-up for a member stores a hash and leaves the member's password unchanged.
   - Let aboard copies the hash so the chosen password signs in, clears it on the request, and mails
@@ -284,6 +296,12 @@ npm run test:e2e`, then `bash scripts/test-hooks.sh`.
   - Turning a request away clears its hash, and so does a mail failure at sign-up, for real requests
     and for decoys. A password of four emoji is refused at `/join`.
   - Google sign-up still works with no password.
+- **Not automated, reviewed instead.**
+  - A deterministic interleaving of the races. Pausing PocketBase between its load and its save would
+    need a test-only hook in `pb_hooks`, and this repo forbids backdoors. The concurrent tests above
+    and the serialised write transactions (the argument the existing update hook rests on) carry it.
+  - The 3-per-hour reset cap. PocketBase's two-minute cooldown answers before the hook, and the tests
+    cannot reach `_crawl_limits`, which is a raw table that no API exposes.
 - **E2E:**
   - Sign in with email and password.
   - Forgot → read the link from the SMTP sink → set password → land signed in.

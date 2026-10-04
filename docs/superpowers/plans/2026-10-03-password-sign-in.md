@@ -291,7 +291,7 @@ it('password sign-in applies its settings, rolls back keeping history, and appli
 });
 ```
 
-If PocketBase refuses to apply a file older than the newest applied one, do not rename it. Instead check the down state from a `pocketbase serve` started on port 18190 in that scratch directory, queried with the superuser API. Record that ruling in the ledger.
+PocketBase applies any unapplied migration file whatever its timestamp; Codex confirmed this against 0.40.4's runner. That is why the older checker runs on the second `up`.
 
 In `web/tests/unit/labels.test.ts`, add this to the describe block:
 
@@ -445,7 +445,7 @@ In `web/tests/hooks/access.test.ts`, the guard test now expects `method = "passw
 
 ```ts
 import { beforeEach, describe, expect, it } from 'vitest';
-import { PB, clearMails, get, loginToken, mails, post, resetLinkFor, superuserToken } from './setup';
+import { PB, clearMails, get, loginToken, mails, post, resetLinkFor, superuserToken, waitFor } from './setup';
 
 const uid = () => Math.floor(Math.random() * 1e6);
 const emailOf = (name: string) => `${Buffer.from(name.toLowerCase()).toString('hex')}@test.invalid`;
@@ -504,7 +504,8 @@ describe('password reset (spec §3.2)', () => {
     const { url } = await resetLinkFor(m.email);
     expect(url.startsWith('http://127.0.0.1:15173/reset-password#')).toBe(true);
     expect((await mails(m.email)).at(-1)?.subject).toBe('Set your Chug-a-Lug password');
-    expect((await logRows(`user = "${m.id}" && event = "password_reset_sent"`)).length).toBe(1);
+    // Logged only after the send returns, and the sink can publish the message before that.
+    await waitFor(async () => (await logRows(`user = "${m.id}" && event = "password_reset_sent"`)).length === 1);
   });
 
   it('an unknown address and a put-off seat get the same empty 204 and no mail', async () => {
@@ -551,6 +552,47 @@ describe('password reset (spec §3.2)', () => {
     expect(set.status).toBe(200);
     expect((await signIn(m.email, 'admin-set-pass-1')).status).toBe(200);
   });
+
+  // Spec §6, races: fired together, like decisions.test's double decision. These cannot force an
+  // interleaving, but each run gives it a real chance, and every outcome must hold the invariant.
+  it('two confirmations of one link sent together: exactly one wins', async () => {
+    const m = await member();
+    await requestReset(m.email);
+    const { token } = await resetLinkFor(m.email);
+    const codes = (await Promise.all([confirm(token, 'race-pass-one-1'), confirm(token, 'race-pass-two-2')])).map((r) => r.status).sort();
+    expect(codes).toEqual([204, 400]);
+  });
+
+  it('a put-off sent together with a confirmation: the seat ends put off and the old session is dead', async () => {
+    const m = await member();
+    await requestReset(m.email);
+    const { token } = await resetLinkFor(m.email);
+    await Promise.all([confirm(token, 'race-pass-one-1'), block(m.id)]);
+    const user = await (await fetch(`${PB}/api/collections/users/records/${m.id}`, { headers: await su() })).json();
+    expect(user.blocked).toBe(true);
+    expect((await get('/api/crawl/me', m.token)).status).toBe(401);
+    // 403 if the confirmation landed first (guard), 400 if the put-off did (the link died first).
+    expect([400, 403]).toContain((await signIn(m.email, 'race-pass-one-1')).status);
+  });
+
+  it('a rename sent together with a confirmation never brings the old password back', async () => {
+    const m = await member();
+    await requestReset(m.email);
+    const { token } = await resetLinkFor(m.email);
+    const rename = fetch(`${PB}/api/collections/users/records/${m.id}`, { method: 'PATCH', headers: { Authorization: m.token, 'content-type': 'application/json' }, body: JSON.stringify({ name: `Pw Racer ${uid()}` }) });
+    const [set] = await Promise.all([confirm(token, 'race-pass-one-1'), rename]);
+    expect(set.status).toBe(204);
+    expect((await signIn(m.email, 'race-pass-one-1')).status).toBe(200);
+    expect((await signIn(m.email, SEED)).status).toBe(400);
+  });
+
+  it('confirmation applies PocketBase\'s own rule: code points and 72 bytes, like /join', async () => {
+    for (const [password, ok] of [['😀'.repeat(4), false], ['é'.repeat(36) + 'a', false], ['😀'.repeat(8), true]] as const) {
+      const m = await member();
+      await requestReset(m.email);
+      expect((await confirm((await resetLinkFor(m.email)).token, password)).status, password).toBe(ok ? 204 : 400);
+    }
+  });
 });
 ```
 
@@ -559,7 +601,7 @@ The reset tests use a fresh member each time, because PocketBase ignores a secon
 - [ ] **Step 2: Run them and watch them fail**
 
 Run: `bash scripts/test-hooks.sh`
-Expected: FAIL. `signed_in` is logged with an empty method, the 11th try gets 400 instead of 429, and the reset link points at `/reset-password` but blocked seats still get mail.
+Expected: FAIL. `signed_in` is logged with an empty method, the 11th try gets 400 instead of 429, a put-off seat still gets a reset mail, and nothing logs `password_reset_sent` or `password_set`.
 
 - [ ] **Step 3: Implement**
 
@@ -608,7 +650,9 @@ onRecordConfirmPasswordResetRequest((e) => {
       const fresh = tx.findRecordById('users', e.record.id)
       if (fresh.tokenKey() !== e.record.tokenKey()) { refusal = [400, 'That link expired or was already used.']; return }
       if (fresh.getBool('blocked')) { refusal = [403, 'Your seat was taken away. Ask the Conductor.']; return }
-      for (const k of ['blocked', 'is_admin', 'name', 'name_key', 'approved_by', 'email', 'emailVisibility', 'verified', 'last_seen']) e.record.set(k, fresh.get(k))
+      // A reset changes the password and nothing else: every other field comes from the fresh row,
+      // preferences included (share_position, home_station, left_early).
+      for (const k of e.record.collection().fields.fieldNames()) if (k !== 'password' && k !== 'tokenKey') e.record.setRaw(k, fresh.getRaw(k))
       e.next()
     })
   } finally { e.app = app }
@@ -740,7 +784,25 @@ Add these to the `deciding boarding requests` describe in `decisions.test.ts`:
   });
 ```
 
-The hook tests read `password_hash` as superuser. If PocketBase hides hidden fields from superusers too, read the row with `?fields=*,password_hash` and ledger it.
+The hook tests read `password_hash` as superuser. PocketBase 0.40.4 shows hidden fields to superusers, which the spec (§4) accepts. Also add this test, which proves nobody else sees the hash:
+
+```ts
+  it('crew and the Conductor never see a request\'s password hash', async () => {
+    const ip = randomIp(), email = `seen${uid()}@test.invalid`;
+    const r = await (await join(ip, { name: `Seen ${uid()}`, email })).json();
+    await postFrom(ip, '/api/crawl/join/verify', { ...r, code: await codeFor(email) });
+    for (const who of [await loginToken(`Pw Crew ${uid()}`), await loginToken(`Pw Conductor ${uid()}`, ADMIN_LOGIN_PASSWORD)]) {
+      const list = await (await fetch(`${PB}/api/collections/boarding_requests/records?perPage=200`, { headers: { Authorization: who.token } })).json();
+      const view = await (await fetch(`${PB}/api/collections/boarding_requests/records/${r.request_id}`, { headers: { Authorization: who.token } })).json();
+      expect(list.items.some((x: { id: string }) => x.id === r.request_id)).toBe(true);
+      expect(JSON.stringify(list)).not.toContain('password_hash');
+      expect(view.id).toBe(r.request_id);
+      expect(view).not.toHaveProperty('password_hash');
+    }
+  });
+```
+
+Add `ADMIN_LOGIN_PASSWORD` to `boarding.test.ts`'s import from `./setup`.
 
 In `web/tests/e2e/boarding.spec.ts`, after each `getByTestId('email-input').fill(email)` on a `/join` page (three places: about lines 11, 47 and 91), add:
 `await page.getByTestId('password-input').fill('boarding-pass-1');` (use `g.` instead of `page.` in the third). The sign-in at the end of the first test stays on the code path for now; Task 5 changes it.
@@ -802,7 +864,7 @@ export const joinCrew = (name: string, email: string, password: string, turnstil
 ```
 
 In `web/src/routes/join/+page.svelte`:
-- Import `PasswordInput` and `passwordProblem` from `$lib/password`.
+- Import `PasswordInput from '$lib/components/PasswordInput.svelte'` and `{ passwordProblem } from '$lib/password'`.
 - Add `password = $state('')` to the `let name = $state('')…` line.
 - In `start`, after the email check, add `const problem = passwordProblem(password); if (problem) { error = problem; return; }`, and call `joinCrew(cleanName(), email.trim(), password, token)`.
 - After the email input:
@@ -920,6 +982,12 @@ test('a dead reset link says so and offers a new one', async ({ page }) => {
   await page.getByTestId('set-password').click();
   await expect(page.getByTestId('reset-dead')).toHaveText(copy.resetLinkDead);
   await expect(page.getByRole('link', { name: copy.askNewLink })).toHaveAttribute('href', '/login/forgot');
+});
+
+test('a mangled reset link is dead at once, and the fragment is gone', async ({ page }) => {
+  await page.goto('/reset-password#%E0%A4%A');
+  await expect(page.getByTestId('reset-dead')).toBeVisible();
+  await expect(page).toHaveURL(/\/reset-password$/);
 });
 
 test('email me a code instead still signs in', async ({ page }) => {
@@ -1082,8 +1150,7 @@ In `web/src/routes/login/+page.svelte`, keep the rehearsal branch byte for byte.
 ```svelte
 <script lang="ts">
   // Password spec §2.3. The token rides in the fragment: read once, then wiped from the address bar.
-  import { goto, replaceState } from '$app/navigation';
-  import { onMount } from 'svelte';
+  import { afterNavigate, goto, replaceState } from '$app/navigation';
   import { ClientResponseError } from 'pocketbase';
   import { confirmPasswordReset, signInWithPassword } from '$lib/pb';
   import { passwordProblem, resetTokenEmail } from '$lib/password';
@@ -1092,9 +1159,14 @@ In `web/src/routes/login/+page.svelte`, keep the rehearsal branch byte for byte.
   let token = '', password = $state(''), error = $state(''), busy = $state(false);
   let state = $state<'form' | 'dead' | 'set'>('form');
   const message = (e: unknown) => e instanceof ClientResponseError ? e.response?.message || copy.genericError : copy.genericError;
-  onMount(() => {
-    token = decodeURIComponent(location.hash.slice(1));
-    replaceState(location.pathname, {});
+  // afterNavigate, not onMount: it runs once the router is ready (also on the first load), and
+  // replaceState throws or misbehaves before that. A fragment that will not decode is a dead link.
+  let read = false;
+  afterNavigate(() => {
+    if (read) return;
+    read = true;
+    try { token = decodeURIComponent(location.hash.slice(1)); } catch { token = ''; }
+    if (location.hash) replaceState(location.pathname, {});
     if (!token) state = 'dead';
   });
   const submit = (ev: SubmitEvent) => { ev.preventDefault();
@@ -1138,7 +1210,7 @@ In `web/src/routes/login/+page.svelte`, keep the rehearsal branch byte for byte.
 {#if error}<p class="error" role="alert" data-testid="error">{error}</p>{/if}
 ```
 
-`replaceState` from `$app/navigation` is SvelteKit's shallow-routing API. If it throws before the router is ready, call it inside `tick().then(...)`. Never call `history.replaceState` directly: SvelteKit warns against it.
+`replaceState` from `$app/navigation` is SvelteKit's shallow-routing API. Codex found it unsafe inside `onMount` on these versions, because the router may not be initialised yet; `afterNavigate` runs after it is. Never call `history.replaceState` directly: SvelteKit warns against it. The e2e test opens the link with `page.goto`, a full load, so it exercises the first-load path.
 
 - [ ] **Step 4: Run the tests and watch them pass**
 
