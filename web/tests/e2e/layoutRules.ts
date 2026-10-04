@@ -7,6 +7,11 @@ import { expect, type Page } from '@playwright/test';
 export type LayoutRule = 'page-overflow' | 'narrow-field' | 'small-target' | 'covered' | 'text-spill';
 
 export async function layoutViolations(page: Page, skip: LayoutRule[] = []): Promise<string[]> {
+  // Measure the settled page: entrance animations (BoardRow's flip starts at scaleY(0)) would read as
+  // collapsed controls. Infinite animations (spinners, pulses) never finish, so they are not awaited.
+  await page.evaluate(() => Promise.all(document.getAnimations()
+    .filter((a) => a.effect?.getComputedTiming().endTime !== Infinity)
+    .map((a) => a.finished.catch(() => undefined))));
   const found = await page.evaluate(() => {
     const out: [string, string][] = [];
     const CONTROLS = 'button, a[href], input, select, textarea, [role=button], summary';
@@ -41,6 +46,18 @@ export async function layoutViolations(page: Page, skip: LayoutRule[] = []): Pro
     const hidden = (el: Element) =>
       !el.checkVisibility({ visibilityProperty: true }) || !!el.closest('[hidden], [inert], [aria-hidden="true"]') ||
       (el instanceof HTMLInputElement && el.type === 'hidden') || srOnly(el);
+    /** The tap area: a stretched link's absolutely positioned ::before/::after covers its containing block. */
+    const target = (el: Element) => {
+      for (const pseudo of ['::after', '::before']) {
+        const p = getComputedStyle(el, pseudo);
+        if (p.content !== 'none' && p.position === 'absolute') {
+          let box = el.parentElement;
+          while (box && getComputedStyle(box).position === 'static') box = box.parentElement;
+          if (box) return box.getBoundingClientRect();
+        }
+      }
+      return el.getBoundingClientRect();
+    };
     const controls = layers.flatMap((l) => [...l.querySelectorAll(CONTROLS)]).filter((el) => !hidden(el));
 
     // page-overflow. The layout viewport is the root's clientWidth: on a phone, content wider than the
@@ -61,7 +78,8 @@ export async function layoutViolations(page: Page, skip: LayoutRule[] = []): Pro
       if (freeText && r.width < 120) out.push(['narrow-field', `${describe(el)} (min 120)`]);
       // small-target: WCAG 2.5.8 minimum; text links in running text are exempt.
       const inlineText = (el.tagName === 'A' && s.display === 'inline') || el.matches('button.link');
-      if (!inlineText && (r.width < 24 || r.height < 24)) out.push(['small-target', `${describe(el)} (min 24×24)`]);
+      const t = target(el);
+      if (!inlineText && (t.width < 24 || t.height < 24)) out.push(['small-target', `${describe(el)} (min 24×24)`]);
       // text-spill: a text-only button whose label is wider than its box.
       if (el.tagName === 'BUTTON' && el.children.length === 0 && el.scrollWidth > el.clientWidth + 2 && s.textOverflow !== 'ellipsis')
         out.push(['text-spill', `${describe(el)} needs ${el.scrollWidth} px`]);

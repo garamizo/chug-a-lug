@@ -110,3 +110,21 @@ test('the original bug: a Show button taking the row squeezes the password field
   expect((await page.getByTestId('password-input').boundingBox())!.width).toBeLessThan(120);
   expect((await layoutViolations(page)).join('\n')).toMatch(/narrow-field: input#password.* on \/login/);
 });
+
+test('a control mid-way through an entrance animation is measured once the animation has finished', async ({ page }) => {
+  await page390(page, `<style>@keyframes flip { from { transform: scaleY(0) } to { transform: none } }
+    .t { display:block; height:48px; animation: flip .4s ease-out .2s both; transform-origin: top }
+    .spin { width:30px; height:30px; animation: flip 1s infinite }</style>
+    <a href="#r" class="t">Route</a><div class="spin"></div>`);
+  expect(await layoutViolations(page)).toEqual([]);   // the infinite one must not make it wait forever
+});
+
+test('a stretched link (an ::after covering its row) is measured by the row it covers', async ({ page }) => {
+  await page390(page, `<style>.row{position:relative;padding:16px} .row a::after{content:'';position:absolute;inset:0}
+    .bare{position:relative;padding:0} .bare a{font-size:10px;line-height:10px}</style>
+    <div class="row"><a href="#a" style="display:block;line-height:20px">Route title</a></div>
+    <div class="bare"><a href="#b" style="display:block">tiny</a></div>`);
+  const v = (await layoutViolations(page)).filter((s) => s.startsWith('small-target'));
+  expect(v).toHaveLength(1);   // the plain 10 px link still fails; the stretched one does not
+  expect(v[0]).toContain('"tiny"');
+});
