@@ -9,7 +9,7 @@ import { PB, loginToken, post } from './setup';
 const envState = vi.hoisted(() => ({ dataDir: '', googleKey: 'K' }));
 vi.mock('$lib/server/env', () => ({
   serverEnv: {
-    get pbUrl() { return process.env.PB_URL ?? 'http://127.0.0.1:8090'; },
+    get pbUrl() { return process.env.PB_URL; },
     get pbAdminEmail() { return process.env.PB_ADMIN_EMAIL ?? ''; },
     get pbAdminPassword() { return process.env.PB_ADMIN_PASSWORD ?? ''; },
     get dataDir() { return envState.dataDir; },

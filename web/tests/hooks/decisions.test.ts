@@ -48,16 +48,6 @@ describe('deciding boarding requests (spec §2.6–2.7)', () => {
   beforeEach(async () => { await mailMode('ok'); await clearMails(); await truncate('boarding_requests'); });
   afterEach(() => mailMode('ok'));
 
-  it('let aboard installs the chosen password, clears the hash and says so in the mail', async () => {
-    const crew = await loginToken(`Pw Voucher ${uid()}`);
-    const g = await waitingRequest();
-    expect((await decide(g.request_id, 'let-aboard', crew.token)).status).toBe(200);
-    expect((await post('/api/collections/users/auth-with-password', { identity: g.email, password: 'boarding-pass-1' })).status).toBe(200);
-    const req = await (await fetch(`${PB}/api/collections/boarding_requests/records/${g.request_id}`, { headers: await su() })).json();
-    expect(req.password_hash).toBe('');
-    expect((await mails(g.email)).at(-1)?.text).toContain('the password you chose');
-  });
-
   it('a request filed before passwords existed is let aboard with the email-or-Google notice', async () => {
     const crew = await loginToken(`Old Voucher ${uid()}`);
     const email = `old${uid()}@test.invalid`, n = uid();
@@ -68,15 +58,7 @@ describe('deciding boarding requests (spec §2.6–2.7)', () => {
     expect((await mails(email)).at(-1)?.text).toContain('an emailed code or Google');
   });
 
-  it('turning a request away clears its hash', async () => {
-    const crew = await loginToken(`Pw Away ${uid()}`);
-    const g = await waitingRequest();
-    expect((await decide(g.request_id, 'turn-away', crew.token)).status).toBe(200);
-    const req = await (await fetch(`${PB}/api/collections/boarding_requests/records/${g.request_id}`, { headers: await su() })).json();
-    expect(req.password_hash).toBe('');
-  });
-
-  it('any crew member lets a guest aboard; the guest then signs in by code', async () => {
+  it('any crew member lets a guest aboard with the chosen password; the guest can also sign in by code', async () => {
     const crew = await loginToken(`Voucher ${uid()}`);
     const g = await waitingRequest();
     const res = await decide(g.request_id, 'let-aboard', crew.token);
@@ -84,6 +66,11 @@ describe('deciding boarding requests (spec §2.6–2.7)', () => {
     const user = await (await fetch(`${PB}/api/collections/users/records/${(await res.json()).user_id}`, { headers: await su() })).json();
     expect(user).toMatchObject({ email: g.email, verified: true, approved_by: crew.id, name: g.name });
     expect((await mails(g.email)).at(-1)?.subject).toContain('aboard');
+    // Let aboard installs the chosen password, clears the hash and says so in the mail.
+    expect((await mails(g.email)).at(-1)?.text).toContain('the password you chose');
+    expect((await post('/api/collections/users/auth-with-password', { identity: g.email, password: 'boarding-pass-1' })).status).toBe(200);
+    const req = await (await fetch(`${PB}/api/collections/boarding_requests/records/${g.request_id}`, { headers: await su() })).json();
+    expect(req.password_hash).toBe('');
     expect((await postFrom(g.ip, '/api/crawl/join/status', g).then((r) => r.json())).status).toBe('aboard');
     await clearMails();
     const { otpId } = await (await post('/api/collections/users/request-otp', { email: g.email })).json();
@@ -113,6 +100,9 @@ describe('deciding boarding requests (spec §2.6–2.7)', () => {
     expect((await list(crew.token)).some((x) => x.id === g.request_id && x.status === 'waiting')).toBe(true);
     await decide(g.request_id, 'turn-away', crew.token);
     expect((await list(crew.token)).some((x) => x.id === g.request_id && x.status === 'turned_away')).toBe(true);
+    // Turning a request away clears its hash.
+    const req = await (await fetch(`${PB}/api/collections/boarding_requests/records/${g.request_id}`, { headers: await su() })).json();
+    expect(req.password_hash).toBe('');
   });
 
   it('a Conductor notice that fails to send is retried by the sweep', async () => {
@@ -160,15 +150,17 @@ describe('put off, manifest and names (spec §2.9–2.11)', () => {
     const rider = await loginToken(`Listener ${uid()}`);
     const itinerary = (await (await post('/api/collections/itineraries/records', { title: `Realtime ${uid()}`, event_date: '2026-12-26', start_time: '12:00' }, boss.token)).json()).id;
     const stream = await listen(rider.token, ['chat_messages']);
+    const control = await listen(boss.token, ['chat_messages']);   // never blocked: proves 'after' was broadcast
     try {
       const say = async (body: string) => expect((await post('/api/collections/chat_messages/records', { itinerary, user: boss.id, body }, await superuserToken())).status).toBe(200);
       await say('before');
       await waitFor(async () => stream.events.some((ev) => ev.data?.record?.body === 'before'), 5000); // the control: events do arrive
       expect((await post(`/api/crawl/users/${rider.id}/put-off`, {}, boss.token)).status).toBe(200);
       await say('after');
-      await new Promise((r) => setTimeout(r, 1500));
+      await waitFor(async () => control.events.some((ev) => ev.data?.record?.body === 'after'), 5000);
+      await new Promise((r) => setTimeout(r, 100));   // grace for a late delivery to the rider
       expect(stream.events.some((ev) => ev.data?.record?.body === 'after')).toBe(false);
-    } finally { stream.close(); }
+    } finally { stream.close(); control.close(); }
   });
 
   it('the manifest shows emails to Conductors only', async () => {

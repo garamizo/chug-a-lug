@@ -297,12 +297,12 @@ describe('stop_photos', () => {
       f.set('file', new Blob([png], { type: 'image/png' }), 'p.png');
       return f;
     };
-    const asUser = await fetch(`${process.env.PB_URL ?? 'http://127.0.0.1:8090'}/api/collections/stop_photos/records`, { method: 'POST', headers: { Authorization: crew.token }, body: form('user') });
+    const asUser = await fetch(`${PB}/api/collections/stop_photos/records`, { method: 'POST', headers: { Authorization: crew.token }, body: form('user') });
     expect(asUser.status).toBe(200);
-    const asGoogle = await fetch(`${process.env.PB_URL ?? 'http://127.0.0.1:8090'}/api/collections/stop_photos/records`, { method: 'POST', headers: { Authorization: crew.token }, body: form('google') });
+    const asGoogle = await fetch(`${PB}/api/collections/stop_photos/records`, { method: 'POST', headers: { Authorization: crew.token }, body: form('google') });
     expect(asGoogle.status).toBe(400);
     const su = await superuserToken();
-    const bySu = await fetch(`${process.env.PB_URL ?? 'http://127.0.0.1:8090'}/api/collections/stop_photos/records`, { method: 'POST', headers: { Authorization: su }, body: form('google') });
+    const bySu = await fetch(`${PB}/api/collections/stop_photos/records`, { method: 'POST', headers: { Authorization: su }, body: form('google') });
     expect(bySu.status).toBe(200);
   });
 });

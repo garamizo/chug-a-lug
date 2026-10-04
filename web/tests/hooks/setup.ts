@@ -1,4 +1,5 @@
-export const PB = process.env.PB_URL ?? 'http://127.0.0.1:8090';
+if (!process.env.PB_URL) throw new Error('PB_URL is unset: run the hooks through scripts/test-hooks.sh, never against the live stack');
+export const PB = process.env.PB_URL;
 const ADMIN_EMAIL = process.env.PB_ADMIN_EMAIL ?? 'admin@chugalug.app';
 const ADMIN_PASSWORD = process.env.PB_ADMIN_PASSWORD ?? 'change-me-please';
 export const CREW_PASSWORD = process.env.CREW_PASSWORD ?? 'crew-test-password';
@@ -12,12 +13,16 @@ export function post(path: string, body: unknown, token?: string) {
   });
 }
 
-export async function superuserToken(): Promise<string> {
-  const response = await post('/api/collections/_superusers/auth-with-password', {
-    identity: ADMIN_EMAIL, password: ADMIN_PASSWORD
-  });
-  if (!response.ok) throw new Error(`Superuser login failed: ${response.status}`);
-  return (await response.json()).token;
+let superuser: Promise<string> | undefined;
+/** One superuser login per test file (vitest isolates files): each login is a bcrypt check. */
+export function superuserToken(): Promise<string> {
+  superuser ??= (async () => {
+    const response = await post('/api/collections/_superusers/auth-with-password', { identity: ADMIN_EMAIL, password: ADMIN_PASSWORD });
+    if (!response.ok) throw new Error(`Superuser login failed: ${response.status}`);
+    return (await response.json()).token as string;
+  })();
+  superuser.catch(() => { superuser = undefined; });
+  return superuser;
 }
 
 export async function deleteUserByName(name: string): Promise<void> {
@@ -80,11 +85,10 @@ export function del(path: string, token?: string) {
 /** Deletes every record of a collection as superuser (test isolation). */
 export async function truncate(collection: string): Promise<void> {
   const token = await superuserToken();
-  const list = await fetch(`${PB}/api/collections/${collection}/records?perPage=500`, { headers: { Authorization: token } });
+  const list = await fetch(`${PB}/api/collections/${collection}/records?perPage=500&fields=id`, { headers: { Authorization: token } });
   if (!list.ok) throw new Error(`List ${collection} failed: ${list.status}`);
-  for (const record of (await list.json()).items as Array<{ id: string }>) {
-    await fetch(`${PB}/api/collections/${collection}/records/${record.id}`, { method: 'DELETE', headers: { Authorization: token } });
-  }
+  await Promise.all(((await list.json()).items as Array<{ id: string }>).map((record) =>
+    fetch(`${PB}/api/collections/${collection}/records/${record.id}`, { method: 'DELETE', headers: { Authorization: token } })));
 }
 
 export const MAIL = process.env.MAIL_SINK_URL ?? 'http://127.0.0.1:12526';
@@ -97,24 +101,24 @@ export async function clearMails(): Promise<void> { await fetch(`${MAIL}/message
 export async function mailMode(mode: 'ok' | 'fail'): Promise<void> {
   await fetch(`${MAIL}/mode`, { method: 'POST', body: JSON.stringify({ mode }) });
 }
+/** Polls `probe` every 25 ms for up to 5 s. */
+async function poll<T>(probe: () => Promise<T | undefined>, what: string): Promise<T> {
+  const until = Date.now() + 5000;
+  for (;;) {
+    const v = await probe();
+    if (v) return v;
+    if (Date.now() > until) throw new Error(what);
+    await new Promise((r) => setTimeout(r, 25));
+  }
+}
 /** The last 6-digit code mailed to `to`, polling briefly because PocketBase sends OTP mail asynchronously. */
-export async function codeFor(to: string): Promise<string> {
-  for (let i = 0; i < 50; i++) {
-    const code = (await mails(to)).map((m) => /\b(\d{6})\b/.exec(m.text)?.[1]).filter(Boolean).at(-1);
-    if (code) return code;
-    await new Promise((r) => setTimeout(r, 100));
-  }
-  throw new Error(`No code mailed to ${to}`);
-}
+export const codeFor = (to: string): Promise<string> => poll(async () =>
+  (await mails(to)).map((m) => /\b(\d{6})\b/.exec(m.text)?.[1]).filter(Boolean).at(-1), `No code mailed to ${to}`);
 /** The last password-reset link mailed to `to` (text or HTML part), polling: PocketBase mails after replying. */
-export async function resetLinkFor(to: string): Promise<{ url: string; token: string }> {
-  for (let i = 0; i < 50; i++) {
-    const hit = (await mails(to)).map((m) => /(https?:\/\/[^\s"<]+\/reset-password#([\w.-]+))/.exec(`${m.text}\n${m.html}`)).filter(Boolean).at(-1);
-    if (hit) return { url: hit[1], token: hit[2] };
-    await new Promise((r) => setTimeout(r, 100));
-  }
-  throw new Error(`No reset link mailed to ${to}`);
-}
+export const resetLinkFor = (to: string): Promise<{ url: string; token: string }> => poll(async () => {
+  const hit = (await mails(to)).map((m) => /(https?:\/\/[^\s"<]+\/reset-password#([\w.-]+))/.exec(`${m.text}\n${m.html}`)).filter(Boolean).at(-1);
+  return hit ? { url: hit[1], token: hit[2] } : undefined;
+}, `No reset link mailed to ${to}`);
 /** A fresh documentation-range IP, so each test owns its own rate-limit buckets. */
 export const randomIp = () => `10.${Math.floor(Math.random() * 250)}.${Math.floor(Math.random() * 250)}.${1 + Math.floor(Math.random() * 250)}`;
 /** POST as if through the tunnel from `ip`; PocketBase trusts CF-Connecting-IP once Task 2's migration runs. */
@@ -137,7 +141,7 @@ export async function waitFor<T>(probe: () => Promise<T | null | undefined | fal
     const v = await probe();
     if (v) return v;
     if (Date.now() > until) throw new Error('waitFor timed out');
-    await new Promise((r) => setTimeout(r, 100));
+    await new Promise((r) => setTimeout(r, 25));
   }
 }
 let tokens = 0;

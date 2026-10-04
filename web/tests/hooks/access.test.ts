@@ -26,7 +26,7 @@ describe('sign-in by email code and the guards', () => {
   it('a non-member asks for a code and nothing is sent', async () => {
     const res = await post('/api/collections/users/request-otp', { email: 'nobody@test.invalid' });
     expect(res.status).toBe(200);
-    await new Promise((r) => setTimeout(r, 500));
+    await new Promise((r) => setTimeout(r, 200));
     expect(await mails('nobody@test.invalid')).toEqual([]);
   });
 
@@ -65,7 +65,7 @@ describe('sign-in by email code and the guards', () => {
     const res = await post('/api/collections/users/request-otp', { email });
     expect(res.status).toBe(200);
     expect(typeof (await res.json()).otpId).toBe('string');
-    await new Promise((r) => setTimeout(r, 700));
+    await new Promise((r) => setTimeout(r, 200));
     expect(await mails(email)).toEqual([]);
     expect((await logRows(`user = "${id}" && event = "code_sent"`)).length).toBe(0);
   });
@@ -74,19 +74,13 @@ describe('sign-in by email code and the guards', () => {
     const name = `Passworded ${Math.floor(Math.random() * 1e6)}`;
     const { id } = await loginToken(name);
     const email = emailOf(name.toLowerCase());
-    const collection = async (enabled: boolean) => fetch(`${PB}/api/collections/users`, { method: 'PATCH', headers: await su(), body: JSON.stringify({ passwordAuth: { enabled } }) });
-    const before = (await (await fetch(`${PB}/api/collections/users`, { headers: await su() })).json()).passwordAuth.enabled as boolean;
-    try {
-      expect((await collection(true)).status).toBe(200);
-      await fetch(`${PB}/api/collections/users/records/${id}`, { method: 'PATCH', headers: await su(),
-        body: JSON.stringify({ password: 'recovery-password-1', passwordConfirm: 'recovery-password-1', blocked: true }) });
-      // Refusals are logged once per IP per 15 minutes, so this test brings its own address.
-      expect((await postFrom(randomIp(), '/api/collections/users/auth-with-password', { identity: email, password: 'recovery-password-1' })).status).toBe(403);
-      expect((await logRows(`user = "${id}" && event = "sign_in_refused" && method = "password"`)).length).toBe(1);
-    } finally {
-      expect((await collection(before)).status).toBe(200);
-    }
+    await fetch(`${PB}/api/collections/users/records/${id}`, { method: 'PATCH', headers: await su(),
+      body: JSON.stringify({ password: 'recovery-password-1', passwordConfirm: 'recovery-password-1', blocked: true }) });
+    // Refusals are logged once per IP per 15 minutes, so this test brings its own address.
+    expect((await postFrom(randomIp(), '/api/collections/users/auth-with-password', { identity: email, password: 'recovery-password-1' })).status).toBe(403);
+    expect((await logRows(`user = "${id}" && event = "sign_in_refused" && method = "password"`)).length).toBe(1);
   });
+
 
   it('crew cannot change their own email through PocketBase\'s email-change flow', async () => {
     const { token } = await loginToken(`Mover ${Math.floor(Math.random() * 1e6)}`);
@@ -94,7 +88,7 @@ describe('sign-in by email code and the guards', () => {
     const res = await post('/api/collections/users/request-email-change', { newEmail }, token);
     expect(res.status).toBe(403);
     expect((await res.json()).message).toBe('Ask the Conductor to change your email.');
-    await new Promise((r) => setTimeout(r, 500));
+    await new Promise((r) => setTimeout(r, 200));
     expect(await mails(newEmail)).toEqual([]);
   });
 

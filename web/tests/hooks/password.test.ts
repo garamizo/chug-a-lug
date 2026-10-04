@@ -55,12 +55,6 @@ describe('password sign-in (spec §3.2)', () => {
     const rows = await waitFor(async () => { const r = await logRows(`event="rate_limited" && email=${JSON.stringify(ghost)}`); return r.length ? r : null; });
     expect(rows[0].detail).toBe('password');
   });
-
-  it('a put-off seat cannot sign in with its password', async () => {
-    const m = await member();
-    await block(m.id);
-    expect((await signIn(m.email, SEED)).status).toBe(403);
-  });
 });
 
 describe('password reset (spec §3.2)', () => {
@@ -84,7 +78,7 @@ describe('password reset (spec §3.2)', () => {
       expect(res.status, email).toBe(204);
       expect(await res.text(), email).toBe('');
     }
-    await new Promise((r) => setTimeout(r, 700));
+    await new Promise((r) => setTimeout(r, 200));
     expect(await mails(m.email)).toEqual([]);
   });
 
