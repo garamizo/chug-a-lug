@@ -6,9 +6,10 @@ import { ICONS } from '../../src/lib/icons';
 const html = (props: Record<string, unknown>) => render(SignInButton, { props: props as never }).body;
 
 describe('sign-in buttons', () => {
-  it('Google carries the four-colour G mark beside its words', () => {
+  it("Google carries Google's current G (the approved asset, not hand-drawn paths) beside its words", () => {
     const out = html({ provider: 'google', label: 'Continue with Google', testid: 'google' });
-    for (const colour of ['#EA4335', '#4285F4', '#FBBC05', '#34A853']) expect(out).toContain(colour);
+    expect(out).toMatch(/<img[^>]*src="\/google-g\.png"/);
+    expect(out).not.toContain('#EA4335'); // the outdated flat four-colour G
     expect(out).toContain('Continue with Google');
     expect(out).toContain('data-testid="google"');
     expect(out).toContain('type="button"');
@@ -20,7 +21,7 @@ describe('sign-in buttons', () => {
     expect(out).toContain('type="submit"');
   });
   it('the marks are decoration: the words are the accessible name', () => {
-    expect(html({ provider: 'google', label: 'x' })).toMatch(/<svg[^>]*aria-hidden="true"/);
+    expect(html({ provider: 'google', label: 'x' })).toMatch(/<img[^>]*alt=""/);
     expect(html({ provider: 'email', label: 'x' })).toMatch(/<svg[^>]*aria-hidden="true"/);
   });
 });
