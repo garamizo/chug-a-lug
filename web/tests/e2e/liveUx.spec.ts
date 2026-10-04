@@ -1,5 +1,5 @@
 import { expect, test, type Locator, type Page } from '@playwright/test';
-import { clearLockedCrawls, login, seedLockedCrawl, openTab } from './helpers';
+import { clearRoutes, login, seedLockedCrawl, openTab } from './helpers';
 import { copy } from '../../src/lib/labels';
 
 const ADMIN = process.env.ADMIN_PASSWORD ?? 'admin-test-password';
@@ -18,7 +18,7 @@ async function longPress(page: Page, target: Locator) {
 async function liveDay(page: Page, name: string) {
   await page.route('**/api/metra/**', (r) => r.fulfill({ json: { mode: 'schedule_only', fetchedAt: null, trips: [], alerts: [] } }));
   await login(page, name, ADMIN);
-  await clearLockedCrawls();
+  await clearRoutes();
   const ids = await seedLockedCrawl({ ownerName: name, eventDate: '2026-12-26', startTime: '12:00', departAt: '2026-12-26T20:34:00Z', arriveAt: '2026-12-26T20:49:00Z' });
   await page.clock.install({ time: new Date('2026-12-26T19:00:00Z') });
   await page.goto('/live');

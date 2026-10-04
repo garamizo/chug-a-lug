@@ -1,5 +1,5 @@
 import { test, expect, type Page } from '@playwright/test';
-import { login, seedLockedCrawl, clearLockedCrawls } from './helpers';
+import { login, seedLockedCrawl, clearRoutes, openHome } from './helpers';
 import { copy } from '../../src/lib/labels';
 
 const ADMIN = process.env.ADMIN_PASSWORD ?? 'admin-test-password';
@@ -29,6 +29,7 @@ async function makeDraft(page: Page, title: string) {
 test('someone else clones a route, names it on arrival, and both chats record it', async ({ page, browser }) => {
   const original = `Clone Source ${RUN}`;
   await login(page, 'E2E Builder', CREW);
+  await openHome(page, 'E2E Builder');
   const sourceUrl = await makeDraft(page, original);
 
   const other = await (await browser.newContext()).newPage();
@@ -76,7 +77,7 @@ test('someone else clones a route, names it on arrival, and both chats record it
 });
 
 test('the Conductor renames The Route through Save', async ({ page }) => {
-  await clearLockedCrawls();
+  await clearRoutes();
   await login(page, 'E2E Rename Conductor', ADMIN);
   // Seeded like liveEdit.spec's first Save test: Save needs to know where the crew is.
   const { itineraryId } = await seedLockedCrawl({ ownerName: 'E2E Rename Conductor', eventDate: '2026-12-26', startTime: '12:00',
@@ -94,7 +95,7 @@ test('the Conductor renames The Route through Save', async ({ page }) => {
 });
 
 test('Save waits for a pending rename: a refusal keeps the Conductor on the editor, a slow but accepted one still lands', async ({ page }) => {
-  await clearLockedCrawls();
+  await clearRoutes();
   await login(page, 'E2E Slow Rename Conductor', ADMIN);
   const { itineraryId } = await seedLockedCrawl({ ownerName: 'E2E Slow Rename Conductor', eventDate: '2026-12-26', startTime: '12:00',
     departAt: '2026-12-26T20:34:00.000Z', arriveAt: '2026-12-26T20:49:00.000Z', extraVenueAtFirstStation: true });
@@ -147,7 +148,7 @@ test('Save waits for a pending rename: a refusal keeps the Conductor on the edit
 });
 
 test('one tap on Save while the name box is focused renames and then saves, with no second tap', async ({ page }) => {
-  await clearLockedCrawls();
+  await clearRoutes();
   await login(page, 'E2E One Tap Conductor', ADMIN);
   const { itineraryId } = await seedLockedCrawl({ ownerName: 'E2E One Tap Conductor', eventDate: '2026-12-26', startTime: '12:00',
     departAt: '2026-12-26T20:34:00.000Z', arriveAt: '2026-12-26T20:49:00.000Z', extraVenueAtFirstStation: true });
@@ -172,7 +173,7 @@ test('one tap on Save while the name box is focused renames and then saves, with
 });
 
 test('one tap on Save still saves when the check answers between mousedown and mouseup and the preview is slow', async ({ page }) => {
-  await clearLockedCrawls();
+  await clearRoutes();
   await login(page, 'E2E Straddle Conductor', ADMIN);
   const { itineraryId } = await seedLockedCrawl({ ownerName: 'E2E Straddle Conductor', eventDate: '2026-12-26', startTime: '12:00',
     departAt: '2026-12-26T20:34:00.000Z', arriveAt: '2026-12-26T20:49:00.000Z', extraVenueAtFirstStation: true });
@@ -202,7 +203,7 @@ test('one tap on Save still saves when the check answers between mousedown and m
 });
 
 test('one tap on Save while the name box holds a refused name stays on the editor with the error and no sheet', async ({ page }) => {
-  await clearLockedCrawls();
+  await clearRoutes();
   await login(page, 'E2E One Tap Refused Conductor', ADMIN);
   const { itineraryId } = await seedLockedCrawl({ ownerName: 'E2E One Tap Refused Conductor', eventDate: '2026-12-26', startTime: '12:00',
     departAt: '2026-12-26T20:34:00.000Z', arriveAt: '2026-12-26T20:49:00.000Z', extraVenueAtFirstStation: true });
@@ -221,7 +222,7 @@ test('one tap on Save while the name box holds a refused name stays on the edito
 });
 
 test('a rejected rename keeps Save blocked once the refusal has already landed, until it is corrected or cancelled', async ({ page }) => {
-  await clearLockedCrawls();
+  await clearRoutes();
   await login(page, 'E2E Stuck Rename Conductor', ADMIN);
   const { itineraryId } = await seedLockedCrawl({ ownerName: 'E2E Stuck Rename Conductor', eventDate: '2026-12-26', startTime: '12:00',
     departAt: '2026-12-26T20:34:00.000Z', arriveAt: '2026-12-26T20:49:00.000Z', extraVenueAtFirstStation: true });
@@ -257,7 +258,7 @@ test('a rejected rename keeps Save blocked once the refusal has already landed, 
 
 test('a rename still checking when Add is clicked is awaited before the staged plan is parked', async ({ page }) => {
   page.on('dialog', (d) => d.accept());
-  await clearLockedCrawls();
+  await clearRoutes();
   await login(page, 'E2E Delayed Rename Conductor', ADMIN);
   const { itineraryId } = await seedLockedCrawl({ ownerName: 'E2E Delayed Rename Conductor', eventDate: '2026-12-26', startTime: '12:00',
     departAt: '2026-12-26T20:34:00.000Z', arriveAt: '2026-12-26T20:49:00.000Z', extraVenueAtFirstStation: true });

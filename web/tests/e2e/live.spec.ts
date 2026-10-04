@@ -1,5 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
-import { clearLockedCrawls, login, seedLockedCrawl } from './helpers';
+import { clearRoutes, login, seedLockedCrawl } from './helpers';
 
 const ADMIN = process.env.ADMIN_PASSWORD ?? 'admin-test-password';
 const CREW = process.env.CREW_PASSWORD ?? 'crew-test-password';
@@ -35,7 +35,7 @@ async function stubProxy(page: Page, alerts: unknown[] = []) {
 async function arrive(page: Page, name: string, password: string, at: string, alerts: unknown[] = [], opts: { extraVenueAtFirstStation?: boolean } = {}) {
   await stubProxy(page, alerts);
   await login(page, name, password);
-  await clearLockedCrawls();
+  await clearRoutes();
   await seedLockedCrawl({ ownerName: name, eventDate: DATE, startTime: '12:00', departAt: DEPART, arriveAt: ARRIVE, ...opts });
   await page.clock.install({ time: new Date(at) });
   await page.goto('/live');
@@ -111,7 +111,7 @@ test('a Conductor-saved position change refreshes the board train immediately, n
   // recognisable departure time so a stale board is caught by content, not just by request count.
   const NAME = 'E2E Reactive Skipper';
   await login(page, NAME, ADMIN);
-  await clearLockedCrawls();
+  await clearRoutes();
   const seeded = await seedLockedCrawl({
     ownerName: NAME, eventDate: DATE, startTime: '12:00', departAt: DEPART, arriveAt: ARRIVE,
     extraVenueAtFirstStation: true
@@ -179,7 +179,7 @@ test('before the crawl on a route that boards elsewhere, the board counts down t
   // must ask for the same ride. The first Naperville train after an 11:00 start leaves at 12:05.
   await page.route('**/api/metra/alerts', (r) => r.fulfill({ json: { mode: 'schedule_only', fetchedAt: null, alerts: [] } }));
   await login(page, 'E2E Boarding Skipper', ADMIN);
-  await clearLockedCrawls();
+  await clearRoutes();
   await seedLockedCrawl({ ownerName: 'E2E Boarding Skipper', eventDate: DATE, startTime: '11:00', departAt: DEPART, arriveAt: ARRIVE,
     startStation: { id: 'NAPERVILLE', name: 'Naperville' } });
   await page.clock.install({ time: new Date('2026-12-26T17:30:00.000Z') });   // 11:30 on the day

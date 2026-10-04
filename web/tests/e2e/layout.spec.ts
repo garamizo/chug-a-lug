@@ -1,4 +1,4 @@
-import { login, clearLockedCrawls, seedLockedCrawl } from './helpers';
+import { login, clearRoutes, seedLockedCrawl, openHome } from './helpers';
 import { test, expect } from '@playwright/test';
 
 const CREW = process.env.CREW_PASSWORD ?? 'crew-test-password';
@@ -6,6 +6,7 @@ const CREW = process.env.CREW_PASSWORD ?? 'crew-test-password';
 test('desktop viewports get a wider column, still capped for readability', async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 800 });
   await login(page, 'E2E Desk', CREW);
+  await openHome(page, 'E2E Desk');
   const box = await page.locator('main').boundingBox();
   expect(box?.width).toBeGreaterThan(600);
   expect(box?.width).toBeLessThan(1000);
@@ -14,6 +15,7 @@ test('desktop viewports get a wider column, still capped for readability', async
 test('the header with icon, title and menu stays pinned while scrolling', async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 300 });
   await login(page, 'E2E Desk', CREW);
+  await openHome(page, 'E2E Desk');
   const header = page.getByRole('banner');
   await expect(header.locator('img')).toBeVisible();
   await expect(header.getByText('Chug-a-Lug Choo-Choo')).toBeVisible();
@@ -28,11 +30,13 @@ test('the header with icon, title and menu stays pinned while scrolling', async 
 
 test('the header carries no date: the phone already shows one', async ({ page }) => {
   await login(page, 'E2E Desk', CREW);
+  await openHome(page, 'E2E Desk');
   await expect(page.getByRole('banner')).not.toContainText(/Sat|Sun|Mon|Dec/);
 });
 
 test('the menu holds logout, opens the Crew Board, and keeps the Drink scoreboard visible but disabled', async ({ page }) => {
   await login(page, 'E2E Desk', CREW);
+  await openHome(page, 'E2E Desk');
   await page.getByTestId('menu').click();
   await expect(page.getByTestId('logout')).toBeVisible();
   const scoreboard = page.getByRole('button', { name: /Drink scoreboard/ });
@@ -57,6 +61,7 @@ test('the menu is not offered before signing in', async ({ page }) => {
 
 test('normal mode hides simulation status and Conductor navigation', async ({ page }) => {
   await login(page, 'E2E Normal Conductor', process.env.ADMIN_PASSWORD!);
+  await openHome(page, 'E2E Normal Conductor');
   await expect(page.getByTestId('simulation-status')).toHaveCount(0);
   await page.getByTestId('menu').click();
   await expect(page.getByRole('button', { name: 'Shakedown Run' })).toHaveCount(0);
@@ -65,7 +70,7 @@ test('normal mode hides simulation status and Conductor navigation', async ({ pa
 test('on the event day the app lands on Live and navigates by the tab bar', async ({ page }) => {
   await page.route('**/api/metra/**', (r) => r.fulfill({ json: { mode: 'schedule_only', fetchedAt: null, trips: [], alerts: [] } }));
   await login(page, 'E2E Tab Bar', process.env.ADMIN_PASSWORD ?? 'admin-test-password');
-  await clearLockedCrawls();
+  await clearRoutes();
   await seedLockedCrawl({ ownerName: 'E2E Tab Bar', eventDate: '2026-12-26', startTime: '12:00', departAt: '2026-12-26T20:34:00Z', arriveAt: '2026-12-26T20:49:00Z' });
   await page.clock.install({ time: new Date('2026-12-26T19:00:00Z') });
   await page.goto('/');
@@ -82,7 +87,7 @@ test('on the event day the app lands on Live and navigates by the tab bar', asyn
 
 test('off the event day there is no tab bar and home stays home', async ({ page }) => {
   await login(page, 'E2E No Tab Bar', process.env.ADMIN_PASSWORD ?? 'admin-test-password');
-  await clearLockedCrawls();
+  await clearRoutes();
   await seedLockedCrawl({ ownerName: 'E2E No Tab Bar', eventDate: '2026-12-26', startTime: '12:00', departAt: '2026-12-26T20:34:00Z', arriveAt: '2026-12-26T20:49:00Z' });
   await page.clock.install({ time: new Date('2026-12-20T19:00:00Z') });
   await page.goto('/');

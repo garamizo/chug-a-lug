@@ -1,8 +1,8 @@
 import { expect, test } from '@playwright/test';
-import { clearLockedCrawls, login, openTab, seedLockedCrawl } from './helpers';
+import { clearRoutes, login, openTab, seedLockedCrawl } from './helpers';
 test('live actions open the Tab and camera choices and share activity with the crew', async ({ page, browser }) => {
   await login(page, 'Chat Conductor', process.env.ADMIN_PASSWORD ?? 'admin-test-password');
-  await clearLockedCrawls();
+  await clearRoutes();
   await seedLockedCrawl({ ownerName: 'Chat Conductor', eventDate: '2026-12-26', startTime: '12:00', departAt: '2026-12-26T20:34:00Z', arriveAt: '2026-12-26T20:49:00Z' });
   await page.clock.install({ time: new Date('2026-12-26T19:00:00Z') });
   await page.goto('/live');
@@ -39,7 +39,7 @@ test('live actions open the Tab and camera choices and share activity with the c
 async function liveChat(page: import('@playwright/test').Page, name: string) {
   await page.route('**/api/metra/**', (r) => r.fulfill({ json: { mode: 'schedule_only', fetchedAt: null, trips: [], alerts: [] } }));
   await login(page, name, process.env.ADMIN_PASSWORD ?? 'admin-test-password');
-  await clearLockedCrawls();
+  await clearRoutes();
   await seedLockedCrawl({ ownerName: name, eventDate: '2026-12-26', startTime: '12:00', departAt: '2026-12-26T20:34:00Z', arriveAt: '2026-12-26T20:49:00Z' });
   await page.clock.install({ time: new Date('2026-12-26T19:00:00Z') });
   await page.goto('/live');

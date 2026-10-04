@@ -1,5 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
-import { PB, clearLockedCrawls, login, seedLockedCrawl, superuserToken, openTab } from './helpers';
+import { PB, clearRoutes, login, seedLockedCrawl, superuserToken, openTab } from './helpers';
 import { copy } from '../../src/lib/labels';
 
 const ADMIN = process.env.ADMIN_PASSWORD ?? 'admin-test-password';
@@ -29,7 +29,7 @@ async function mirroredRouteId(page: Page): Promise<string | null> {
 async function practise(page: Page, name: string) {
   await page.route('**/api/metra/alerts', (r) => r.fulfill({ json: { mode: 'schedule_only', fetchedAt: null, alerts: [] } }));
   await login(page, name, ADMIN);
-  await clearLockedCrawls();
+  await clearRoutes();
   const ids = await seedLockedCrawl({ ownerName: name, eventDate: '2026-12-26', startTime: '12:00', departAt: '2026-12-26T20:34:00Z', arriveAt: '2026-12-26T20:49:00Z' });
   await page.clock.install({ time: PRACTICE });
   return ids;

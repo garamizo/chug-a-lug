@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test';
-import { PB, clearMails, codeFor, login, sessionFor, stubTurnstile, superuserToken } from './helpers';
+import { PB, clearMails, codeFor, login, sessionFor, stubTurnstile, superuserToken, openHome } from './helpers';
 import { copy } from '../../src/lib/labels';
 
 test('a visitor boards by email with a password, waits, is let aboard and signs in with it', async ({ page }) => {
@@ -79,10 +79,11 @@ test('crew get a popup; when one approver answers, the other popup clears; put o
   const [b, m, g] = await Promise.all([boss.newPage(), mate.newPage(), guest.newPage()]);
   await login(b, `E2E Chief ${n}`, 'admin-test-password');
   await login(m, `E2E Mate ${n}`, 'crew-test-password');
+  await openHome(m, `E2E Mate ${n}`);
 
   // The header dot shows while someone waits to board (spec §5); nobody is waiting yet.
   await truncateWaiting();
-  await b.reload();
+  await openHome(b, `E2E Chief ${n}`);
   await expect(b.getByTestId('menu')).toBeVisible();
   await expect(b.getByTestId('menu-dot')).toHaveCount(0);
   await clearMails(); await stubTurnstile(g);

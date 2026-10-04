@@ -37,7 +37,7 @@ export function browserConfig(sim = false, production = false) {
     outputDir: sim ? (production ? 'test-results/sim-offline' : 'test-results/sim') : 'test-results/ordinary',
     testDir: sim ? 'tests/sim' : 'tests/e2e',
     testMatch: sim ? (production ? '**/offline.spec.ts' : '**/{rehearsal,restart}.spec.ts') : '**/*.spec.ts',
-    globalSetup: sim ? './tests/sim/global-setup.ts' : './tests/e2e/global-setup.ts',
+    globalSetup: sim ? './tests/sim/global-setup.ts' : undefined,
     timeout: 30_000,
     workers: 1,
     use: { ...devices['iPhone 13'], browserName: 'chromium', baseURL: 'http://127.0.0.1:15173', trace: 'retain-on-failure' },

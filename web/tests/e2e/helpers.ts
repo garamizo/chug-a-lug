@@ -30,37 +30,42 @@ export async function sessionFor(name: string, admin = false): Promise<{ token: 
   return res.json();
 }
 
+/**
+ * Signs `name` in by cookie and opens nothing: open the page you want next. The app reads the cookie
+ * once, at boot (`CookieAuthStore`), so a page that already runs the app is reloaded to pick it up.
+ */
 export async function login(page: Page, name: string, password: string) {
   const { token, record } = await sessionFor(name, password === ADMIN);
   await page.context().addCookies([{ name: COOKIE, value: encodeURIComponent(JSON.stringify({ token, record })), url: BASE }]);
-  await page.goto('/');
-  // The tab bar mounts off `liveDay.isToday` alone, so on the event day it can render on `/` for
-  // the instant before the home page's own effect redirects to `/live`. A check-then-assert (see
-  // if the name shows, then assert its text) loses that race: the name can vanish between the two
-  // steps. `Promise.any` accepts whichever lands durably — the exact name on the home screen (an
-  // anchored regex, not a substring match, so one crew member's name can't satisfy another's), or
-  // the tab bar already up for the event day — without a synchronous check that can go stale.
-  const nameShown = page.getByTestId('name').filter({ hasText: exactly(name) });
-  const tabBarShown = page.getByTestId('tab-bar');
-  try {
-    await Promise.any([
-      nameShown.waitFor({ state: 'visible' }),
-      tabBarShown.waitFor({ state: 'visible' })
-    ]);
-  } catch {
-    // Replay as a normal Playwright expect so a failed login reports a readable timeout/diff
-    // instead of a bare AggregateError from Promise.any.
-    await expect(nameShown.or(tabBarShown).first()).toBeVisible();
-  }
+  if (page.url() !== 'about:blank') await page.reload();
 }
 
-export async function superuserToken(): Promise<string> {
-  const res = await fetch(`${PB}/api/collections/_superusers/auth-with-password`, {
-    method: 'POST', headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ identity: SU_EMAIL, password: SU_PASSWORD })
-  });
-  if (!res.ok) throw new Error(`Superuser login failed: ${res.status}`);
-  return (await res.json()).token;
+/**
+ * Opens `/` as a signed-in user and waits for it to settle. On the event day the tab bar can render on
+ * `/` for the instant before the home page's own effect redirects to `/live`, so a check-then-assert
+ * loses that race: accept whichever lands durably, the exact name on the home screen (an anchored
+ * match, so one crew member's name can't satisfy another's) or the tab bar.
+ */
+export async function openHome(page: Page, name: string) {
+  await page.goto('/');
+  const nameShown = page.getByTestId('name').filter({ hasText: exactly(name) });
+  const tabBarShown = page.getByTestId('tab-bar');
+  await expect(nameShown.or(tabBarShown).first()).toBeVisible();
+}
+
+let superuser: Promise<string> | undefined;
+/** One superuser login per worker: every helper needs it, and each login is a bcrypt check. */
+export function superuserToken(): Promise<string> {
+  superuser ??= (async () => {
+    const res = await fetch(`${PB}/api/collections/_superusers/auth-with-password`, {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ identity: SU_EMAIL, password: SU_PASSWORD })
+    });
+    if (!res.ok) throw new Error(`Superuser login failed: ${res.status}`);
+    return (await res.json()).token as string;
+  })();
+  superuser.catch(() => { superuser = undefined; });
+  return superuser;
 }
 
 async function create(collection: string, body: unknown, token: string) {
@@ -72,13 +77,12 @@ async function create(collection: string, body: unknown, token: string) {
   return res.json();
 }
 
-/** Removes every locked itinerary so one test's crawl cannot become another's. */
-export async function clearLockedCrawls(): Promise<void> {
+/** Removes every itinerary, drafts included, so one test's route cannot become another's. */
+export async function clearRoutes(): Promise<void> {
   const token = await superuserToken();
-  const res = await fetch(`${PB}/api/collections/itineraries/records?perPage=200`, { headers: { Authorization: token } });
-  for (const row of (await res.json()).items as { id: string }[]) {
-    await fetch(`${PB}/api/collections/itineraries/records/${row.id}`, { method: 'DELETE', headers: { Authorization: token } });
-  }
+  const res = await fetch(`${PB}/api/collections/itineraries/records?perPage=200&fields=id`, { headers: { Authorization: token } });
+  await Promise.all(((await res.json()).items as { id: string }[]).map((row) =>
+    fetch(`${PB}/api/collections/itineraries/records/${row.id}`, { method: 'DELETE', headers: { Authorization: token } })));
 }
 
 /**

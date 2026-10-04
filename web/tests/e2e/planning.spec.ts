@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test';
-import { clearLockedCrawls, login, seedLockedCrawl } from './helpers';
+import { clearRoutes, login, seedLockedCrawl, openHome } from './helpers';
 import { copy } from '../../src/lib/labels';
 
 const ADMIN = process.env.ADMIN_PASSWORD ?? 'admin-test-password';
@@ -29,6 +29,7 @@ test.beforeEach(async ({ page }) => {
 
 test('draft with real train times, layover change, card edits, votes, comments, approval and lock', async ({ page }) => {
   await login(page, 'E2E Skipper', ADMIN);
+  await openHome(page, 'E2E Skipper');
   await page.getByTestId('nav-plan').click();
   await page.getByTestId('draft-title').fill('E2E Crawl');
   await page.getByTestId('create-draft').click();
@@ -176,6 +177,7 @@ test('draft with real train times, layover change, card edits, votes, comments, 
 
 test('Board at counts the ride in to the first stop', async ({ page }) => {
   await login(page, 'E2E Skipper', ADMIN);
+  await openHome(page, 'E2E Skipper');
   await page.getByTestId('nav-plan').click();
   await page.getByTestId('draft-title').fill('Board At');
   await page.getByTestId('create-draft').click();
@@ -199,6 +201,7 @@ test('Board at counts the ride in to the first stop', async ({ page }) => {
 
 test('Back from the editor after an add does not reopen the venue sheet', async ({ page }) => {
   await login(page, 'E2E Skipper', ADMIN);
+  await openHome(page, 'E2E Skipper');
   await page.getByTestId('nav-plan').click();
   await page.getByTestId('draft-title').fill('No Double Add');
   await page.getByTestId('create-draft').click();
@@ -221,6 +224,7 @@ test('a stored venue shows its photos in the sheet on Add Stop', async ({ page }
     return route.fulfill({ json: { status: 'done', place: { id: 'place0000000001', collectionId: 'places', collectionName: 'places', photos: ['1.jpg'] } } });
   });
   await login(page, 'E2E Skipper', ADMIN);
+  await openHome(page, 'E2E Skipper');
   await page.getByTestId('nav-plan').click();
   await page.getByTestId('draft-title').fill('Photo Peek');
   await page.getByTestId('create-draft').click();
@@ -237,6 +241,7 @@ test('a failed add shows its error inside the venue sheet', async ({ page }) => 
     ? route.fulfill({ status: 400, json: { status: 400, message: 'Stop rejected for the test.', data: {} } })
     : route.fallback());
   await login(page, 'E2E Skipper', ADMIN);
+  await openHome(page, 'E2E Skipper');
   await page.getByTestId('nav-plan').click();
   await page.getByTestId('draft-title').fill('Add Fails');
   await page.getByTestId('create-draft').click();
@@ -250,6 +255,7 @@ test('a failed add shows its error inside the venue sheet', async ({ page }) => 
 
 test('another crew member can read and cheer a draft but not change it, even by deep link', async ({ page, browser }) => {
   await login(page, 'E2E Builder', process.env.CREW_PASSWORD ?? 'crew-test-password');
+  await openHome(page, 'E2E Builder');
   await page.getByTestId('nav-plan').click();
   await page.getByTestId('draft-title').fill('Builder Only');
   await page.getByTestId('create-draft').click();
@@ -293,6 +299,7 @@ test('another crew member can read and cheer a draft but not change it, even by 
 
 test('a slow first comments load does not wipe a newer one', async ({ page }) => {
   await login(page, 'E2E Latecomer', process.env.CREW_PASSWORD ?? 'crew-test-password');
+  await openHome(page, 'E2E Latecomer');
   await page.getByTestId('nav-plan').click();
   await page.getByTestId('draft-title').fill('E2E Slow Chat');
   await page.getByTestId('create-draft').click();
@@ -322,6 +329,7 @@ test('a slow first comments load does not wipe a newer one', async ({ page }) =>
 
 test('the builder deletes their draft from the board with the trash icon', async ({ page }) => {
   await login(page, 'E2E Tidy', process.env.CREW_PASSWORD ?? 'crew-test-password');
+  await openHome(page, 'E2E Tidy');
   await page.getByTestId('nav-plan').click();
   await page.getByTestId('draft-title').fill('Short Lived');
   await page.getByTestId('create-draft').click();
@@ -337,7 +345,7 @@ test('the builder deletes their draft from the board with the trash icon', async
 
 test('the Conductor deletes a locked route for everyone from its view page', async ({ page }) => {
   await login(page, 'E2E Deleter', ADMIN);
-  await clearLockedCrawls();
+  await clearRoutes();
   const seeded = await seedLockedCrawl({
     ownerName: 'E2E Deleter', eventDate: '2026-12-26', startTime: '12:00',
     departAt: '2026-12-26T20:34:00.000Z', arriveAt: '2026-12-26T20:49:00.000Z'
@@ -364,6 +372,7 @@ test('the route board drops its load error once a later reload succeeds', async 
   // Someone else builds a draft; the realtime reload that follows succeeds and clears the error.
   const other = await browser.newPage();
   await login(other, 'E2E Fixer', process.env.CREW_PASSWORD ?? 'crew-test-password');
+  await openHome(other, 'E2E Fixer');
   await other.getByTestId('nav-plan').click();
   await other.getByTestId('draft-title').fill('Back Online');
   await other.getByTestId('create-draft').click();
@@ -376,6 +385,7 @@ test('the route board drops its load error once a later reload succeeds', async 
 
 test('the picker opens on bars; restaurants and places wait folded with counts', async ({ page }) => {
   await login(page, 'E2E Skipper', ADMIN);
+  await openHome(page, 'E2E Skipper');
   await page.getByTestId('nav-plan').click();
   await page.getByTestId('draft-title').fill(`Grouped ${Date.now().toString(36)}`);
   await page.getByTestId('create-draft').click();

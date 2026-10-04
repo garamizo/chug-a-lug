@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test';
-import { clearLockedCrawls, login, seedLockedCrawl } from './helpers';
+import { clearRoutes, login, seedLockedCrawl } from './helpers';
 import { copy } from '../../src/lib/labels';
 
 const ADMIN = process.env.ADMIN_PASSWORD ?? 'admin-test-password';
@@ -11,7 +11,7 @@ const GIF = Buffer.from('R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA
 test('a photo uploads and appears in the strip for this stop', async ({ page }) => {
   await page.route('**/api/metra/**', (r) => r.fulfill({ json: { mode: 'schedule_only', fetchedAt: null, trips: [], alerts: [] } }));
   await login(page, 'E2E Freight Skipper', ADMIN);
-  await clearLockedCrawls();
+  await clearRoutes();
   await seedLockedCrawl({
     ownerName: 'E2E Freight Skipper', eventDate: DATE, startTime: '12:00',
     departAt: '2026-12-26T20:34:00.000Z', arriveAt: '2026-12-26T20:49:00.000Z'
@@ -37,7 +37,7 @@ test('a photo uploads and appears in the strip for this stop', async ({ page }) 
 test('a rejected middle upload still sends the last photo and reports the partial batch', async ({ page }) => {
   await page.route('**/api/metra/**', (r) => r.fulfill({ json: { mode: 'schedule_only', fetchedAt: null, trips: [], alerts: [] } }));
   await login(page, 'E2E Freight Skipper', ADMIN);
-  await clearLockedCrawls();
+  await clearRoutes();
   await seedLockedCrawl({
     ownerName: 'E2E Freight Skipper', eventDate: DATE, startTime: '12:00',
     departAt: '2026-12-26T20:34:00.000Z', arriveAt: '2026-12-26T20:49:00.000Z'
@@ -71,7 +71,7 @@ for (const [phase, time] of [
   test(`a photo still goes to the chat ${phase} the crawl, with no stop to file it under`, async ({ page }) => {
     await page.route('**/api/metra/**', (r) => r.fulfill({ json: { mode: 'schedule_only', fetchedAt: null, trips: [], alerts: [] } }));
     await login(page, 'E2E Freight Skipper', ADMIN);
-    await clearLockedCrawls();
+    await clearRoutes();
     await seedLockedCrawl({
       ownerName: 'E2E Freight Skipper', eventDate: DATE, startTime: '12:00',
       departAt: '2026-12-26T20:34:00.000Z', arriveAt: '2026-12-26T20:49:00.000Z'

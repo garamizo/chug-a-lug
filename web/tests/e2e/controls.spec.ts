@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test';
-import { PB, clearLockedCrawls, login, seedLockedCrawl, superuserToken } from './helpers';
+import { PB, clearRoutes, login, seedLockedCrawl, superuserToken } from './helpers';
 import { copy } from '../../src/lib/labels';
 
 const ADMIN = process.env.ADMIN_PASSWORD ?? 'admin-test-password';
@@ -22,7 +22,7 @@ async function attachPhotoPlace(stopId: string) {
 
 test('stop cards show the venue’s photo while planning and editing', async ({ page }) => {
   await login(page, 'E2E Photo Planner', ADMIN);
-  await clearLockedCrawls();
+  await clearRoutes();
   const seeded = await seedLockedCrawl({ ownerName: 'E2E Photo Planner', eventDate: '2026-12-26', startTime: '12:00', departAt: '2026-12-26T20:34:00.000Z', arriveAt: '2026-12-26T20:49:00.000Z' });
   await attachPhotoPlace(seeded.firstStopId);
 
@@ -35,7 +35,7 @@ test('stop cards show the venue’s photo while planning and editing', async ({ 
 
 test('return links are a back arrow and editing is a pen, both named for screen readers', async ({ page }) => {
   await login(page, 'E2E Icon Links', ADMIN);
-  await clearLockedCrawls();
+  await clearRoutes();
   const seeded = await seedLockedCrawl({ ownerName: 'E2E Icon Links', eventDate: '2026-12-26', startTime: '12:00', departAt: '2026-12-26T20:34:00.000Z', arriveAt: '2026-12-26T20:49:00.000Z' });
   await page.goto(`/plan/${seeded.itineraryId}`);
   const back = page.getByRole('link', { name: copy.backToPlanner });

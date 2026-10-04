@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test';
-import { clearLockedCrawls, login, seedLockedCrawl } from './helpers';
+import { clearRoutes, login, seedLockedCrawl } from './helpers';
 
 const ADMIN = process.env.ADMIN_PASSWORD ?? 'admin-test-password';
 const CREW = process.env.CREW_PASSWORD ?? 'crew-test-password';
@@ -10,7 +10,7 @@ const EVENT_DAY = new Date('2026-12-26T19:00:00Z');
 test('a plan change drafts a Bulletin the crew has to tap away', async ({ page, context }) => {
   page.on('dialog', (d) => d.accept());
   await login(page, 'E2E Bulletin Conductor', ADMIN);
-  await clearLockedCrawls();
+  await clearRoutes();
   const seeded = await seedLockedCrawl({
     ownerName: 'E2E Bulletin Conductor', eventDate: DATE, startTime: '12:00',
     departAt: '2026-12-26T20:34:00.000Z', arriveAt: '2026-12-26T20:49:00.000Z', extraVenueAtFirstStation: true
@@ -49,7 +49,7 @@ test('a plan change drafts a Bulletin the crew has to tap away', async ({ page, 
 test('the Conductor can skip the Bulletin and still save', async ({ page }) => {
   page.on('dialog', (d) => d.accept());
   await login(page, 'E2E Quiet Conductor', ADMIN);
-  await clearLockedCrawls();
+  await clearRoutes();
   const seeded = await seedLockedCrawl({
     ownerName: 'E2E Quiet Conductor', eventDate: DATE, startTime: '12:00',
     departAt: '2026-12-26T20:34:00.000Z', arriveAt: '2026-12-26T20:49:00.000Z'
@@ -68,7 +68,7 @@ test('the Conductor can skip the Bulletin and still save', async ({ page }) => {
 test('Save cannot replace the drafted Bulletin while its sheet is still open', async ({ page }) => {
   page.on('dialog', (d) => d.accept());
   await login(page, 'E2E Sheet-Lock Conductor', ADMIN);
-  await clearLockedCrawls();
+  await clearRoutes();
   const seeded = await seedLockedCrawl({
     ownerName: 'E2E Sheet-Lock Conductor', eventDate: DATE, startTime: '12:00',
     departAt: '2026-12-26T20:34:00.000Z', arriveAt: '2026-12-26T20:49:00.000Z', extraVenueAtFirstStation: true
@@ -91,7 +91,7 @@ test('Save cannot replace the drafted Bulletin while its sheet is still open', a
 
 test('the Conductor can post a Bulletin without changing the plan', async ({ page }) => {
   await login(page, 'E2E Plain Conductor', ADMIN);
-  await clearLockedCrawls();
+  await clearRoutes();
   await seedLockedCrawl({
     ownerName: 'E2E Plain Conductor', eventDate: DATE, startTime: '12:00',
     departAt: '2026-12-26T20:34:00.000Z', arriveAt: '2026-12-26T20:49:00.000Z'
@@ -109,7 +109,7 @@ test('the Conductor can post a Bulletin without changing the plan', async ({ pag
 
 test('retrying a lost save response preserves the edited Bulletin without posting twice', async ({ page }) => {
   await login(page, 'E2E Retry Conductor', ADMIN);
-  await clearLockedCrawls();
+  await clearRoutes();
   const seeded = await seedLockedCrawl({
     ownerName: 'E2E Retry Conductor', eventDate: DATE, startTime: '12:00',
     departAt: '2026-12-26T20:34:00.000Z', arriveAt: '2026-12-26T20:49:00.000Z'
@@ -140,7 +140,7 @@ test('retrying a lost save response preserves the edited Bulletin without postin
 
 async function pinBulletin(page: import('@playwright/test').Page, name: string) {
   await login(page, name, ADMIN);
-  await clearLockedCrawls();
+  await clearRoutes();
   await seedLockedCrawl({
     ownerName: name, eventDate: DATE, startTime: '12:00',
     departAt: '2026-12-26T20:34:00.000Z', arriveAt: '2026-12-26T20:49:00.000Z'

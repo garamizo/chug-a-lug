@@ -1,10 +1,11 @@
 import { expect, test } from '@playwright/test';
-import { login, openTab } from './helpers';
+import { login, openTab, openHome } from './helpers';
 
 const CREW = process.env.CREW_PASSWORD ?? 'crew-test-password';
 
 test('the Crew Board lists everyone who has logged in', async ({ page }) => {
   await login(page, 'E2E Roster One', CREW);
+  await openHome(page, 'E2E Roster One');
   await page.getByTestId('menu').click();
   await page.getByTestId('menu-crew').click();
 
@@ -14,10 +15,10 @@ test('the Crew Board lists everyone who has logged in', async ({ page }) => {
 });
 
 test('the open Crew Board follows new users, drinks, undo and acknowledgements', async ({ page, browser }) => {
-  const { clearLockedCrawls, seedLockedCrawl } = await import('./helpers');
+  const { clearRoutes, seedLockedCrawl } = await import('./helpers');
   const { copy } = await import('../../src/lib/labels');
   await login(page, 'E2E Roster Conductor', process.env.ADMIN_PASSWORD ?? 'admin-test-password');
-  await clearLockedCrawls();
+  await clearRoutes();
   await seedLockedCrawl({
     ownerName: 'E2E Roster Conductor', eventDate: '2026-12-26', startTime: '12:00',
     departAt: '2026-12-26T20:34:00.000Z', arriveAt: '2026-12-26T20:49:00.000Z'

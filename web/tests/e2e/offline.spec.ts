@@ -1,5 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
-import { clearLockedCrawls, login, seedLockedCrawl, openTab } from './helpers';
+import { clearRoutes, login, seedLockedCrawl, openTab } from './helpers';
 import { copy } from '../../src/lib/labels';
 import { fmtDateTime } from '../../src/lib/time';
 import type { NextTrip } from '../../src/lib/types';
@@ -36,7 +36,7 @@ async function stubProxy(page: Page) {
 async function arrive(page: Page) {
   await stubProxy(page);
   await login(page, 'E2E Tunnel Skipper', ADMIN);
-  await clearLockedCrawls();
+  await clearRoutes();
   const seeded = await seedLockedCrawl({
     ownerName: 'E2E Tunnel Skipper', eventDate: DATE, startTime: '12:00',
     departAt: DEPART, arriveAt: ARRIVE

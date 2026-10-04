@@ -3,6 +3,11 @@ import { SvelteKitPWA } from '@vite-pwa/sveltekit';
 import { defineConfig } from 'vitest/config';
 
 export default defineConfig({
+  server: {
+    // Compile route modules at dev-server start, not on the first visit: the first e2e test to open
+    // the editor or Live otherwise pays several seconds of on-demand compile.
+    warmup: { clientFiles: ['./src/routes/**/+page.svelte', './src/routes/**/+layout.svelte'] }
+  },
   plugins: [
     sveltekit(),
     SvelteKitPWA({

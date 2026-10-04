@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test';
-import { clearLockedCrawls, deleteStopDirect, latestAnchor, login, seedLockedCrawl } from './helpers';
+import { clearRoutes, deleteStopDirect, latestAnchor, login, seedLockedCrawl } from './helpers';
 import { copy } from '../../src/lib/labels';
 
 const ADMIN = process.env.ADMIN_PASSWORD ?? 'admin-test-password';
@@ -8,7 +8,7 @@ const DATE = '2026-12-26';
 
 async function openEditor(page: import('@playwright/test').Page, name: string, password: string) {
   await login(page, name, password);
-  await clearLockedCrawls();
+  await clearRoutes();
   const seeded = await seedLockedCrawl({
     ownerName: name, eventDate: DATE, startTime: '12:00',
     departAt: '2026-12-26T20:34:00.000Z', arriveAt: '2026-12-26T20:49:00.000Z',
