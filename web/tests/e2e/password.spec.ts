@@ -85,3 +85,17 @@ test('Your ticket emails a link to set a password', async ({ page }) => {
   await expect(page.getByTestId('account-note')).toHaveText(`${copy.linkSentTo} ${email}`);
   expect(await resetLinkFor(email)).toContain('/reset-password#');
 });
+
+test('the password field fills its row; Show and the hint actions are text links, not full-width buttons', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto('/login');
+  const field = await page.getByTestId('email-input').boundingBox();
+  const input = await page.getByTestId('password-input').boundingBox();
+  const show = await page.getByTestId('password-input-show').boundingBox();
+  expect(input!.width).toBeGreaterThan(field!.width * 0.6);
+  expect(show!.width).toBeLessThan(field!.width * 0.3);
+  expect(Math.abs((input!.y + input!.height / 2) - (show!.y + show!.height / 2))).toBeLessThan(4);
+  const useCode = page.getByTestId('use-code');
+  expect((await useCode.boundingBox())!.width).toBeLessThan(field!.width * 0.6);
+  await expect(useCode).toHaveCSS('background-color', 'rgba(0, 0, 0, 0)');
+});

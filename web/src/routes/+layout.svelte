@@ -102,6 +102,8 @@
   :global(button) { background: #ffb400; color: #111; border: 0; font-weight: 700; cursor: pointer; min-height: 48px; }
   :global(button:disabled), :global(button[aria-disabled='true']) { opacity: .6; cursor: wait; }
   :global(button.secondary) { background: transparent; color: #ffce5c; border: 1px solid #555; }
+  :global(button.link) { background: none; color: #ffce5c; border: 0; padding: 0; width: auto; min-height: 0; margin: 0;
+    font-size: inherit; font-weight: inherit; text-decoration: underline; }
   :global(:focus-visible) { outline: 3px solid #fff; outline-offset: 3px; }
   :global(.error) { color: #ff9a9a; margin-top: 16px; }
 </style>

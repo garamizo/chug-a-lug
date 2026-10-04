@@ -191,7 +191,6 @@
 <style>
   h2 { font-size: 18px; margin-top: 28px; }
   .meta { color: #ccc; }
-  .link { background: none; color: #ffce5c; border: 0; padding: 0; width: auto; min-height: 0; font-size: inherit; text-decoration: underline; }
   .tabs { display: flex; gap: 6px; margin: 12px 0 0; }
   .tab { flex: 1; margin: 0; padding: 8px; min-height: 44px; font-size: 14px; font-weight: 600; background: transparent; color: #aaa; border: 1px solid #444; border-radius: 10px; }
   .tab[aria-checked='true'] { background: #2a2a2a; color: #fff; border-color: #777; }
