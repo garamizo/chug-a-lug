@@ -44,3 +44,21 @@ coverage for correction, stale polls, actual resend, callback name collection/st
 and human-check recovery. Cover every new page state in the phone layout sweep. Run unit, type,
 browser and hook suites sequentially. Inspect phone/desktop and rehearsal login. No deployment
 or production database writes are part of implementation.
+
+## Review refinements
+
+A saved request starts in a neutral “Checking your request” state. Only a successful status
+response may show email verification and approval progress. Connection loss keeps the request
+and offers retry; background polling continues.
+
+Focus follows a single owner in the shared card: transitions to forms focus the relevant enabled
+field, and transitions to informational screens focus the heading. Busy actions defer that move.
+
+Google callback outcomes are saved even when SPA navigation has removed the callback screen.
+Only navigation and component updates require an active callback. A separate, nonsecret retry
+hint retains signup/login intent and the typed crew name for 30 minutes. It never authorizes an
+exchange: fresh consent supplies fresh state, code and verifier after a reload.
+
+Email correction cannot reset the mail allowance. Resends retain the three-per-request cap and
+also share a rolling three-per-hour budget across request IDs for each normalized address.
+Both real and decoy requests consume that budget atomically with their resend update.

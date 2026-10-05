@@ -1,5 +1,5 @@
 import { test, expect, type Page } from '@playwright/test';
-import { stubTurnstile } from './helpers';
+import { sessionFor, stubTurnstile } from './helpers';
 import { copy, authCopy } from '../../src/lib/labels';
 
 async function fillJoin(page: Page) {
@@ -20,9 +20,11 @@ test('email correction retires the old request, keeps form values and ignores a 
   await page.goto('/join'); await fillJoin(page);
   await page.getByTestId('send-code').click();
   await expect(page.getByTestId('code-input')).toBeVisible();
+  await expect(page.getByTestId('code-input')).toBeFocused();
   await page.clock.runFor(5000); await polled;
   await page.getByTestId('change-email').click();
   await expect(page.getByTestId('email-input')).toHaveValue('typo@example.com');
+  await expect(page.getByTestId('email-input')).toBeFocused();
   await expect(page.getByTestId('name-input')).toHaveValue('Alex Rider');
   await expect(page.getByTestId('password-input')).toHaveValue('sample-password-1');
   expect(cancelled).toEqual({ request_id: 'request1', secret: 'secret1' });
@@ -62,6 +64,7 @@ test('a typed email requests a sign-in code immediately and resend replaces its 
   await page.getByTestId('email-input').fill('Alex@Example.com');
   await page.getByTestId('use-code').click();
   await expect(page.getByTestId('code-input')).toBeVisible();
+  await expect(page.getByTestId('code-input')).toBeFocused();
   await page.getByTestId('resend-code').click();
   await expect(page.getByRole('status')).toContainText(authCopy.resent);
   await page.getByTestId('code-input').fill('123456');
@@ -71,6 +74,7 @@ test('a typed email requests a sign-in code immediately and resend replaces its 
   expect(authenticated).toEqual({ otpId: 'otp2', password: '123456' });
   await page.getByTestId('change-email').click();
   await expect(page.getByTestId('email-input')).toHaveValue('Alex@Example.com');
+  await expect(page.getByTestId('email-input')).toBeFocused();
 });
 
 test('human-check script failure offers retry without losing typed details', async ({ page }) => {
@@ -102,7 +106,8 @@ test('a silent human check times out and an expired token cannot submit', async 
 });
 
 async function googleReturn(page: Page, mode = 'join', state = 'good') {
-  await page.addInitScript(({ mode }) => sessionStorage.setItem('chugalug_google', JSON.stringify({ mode, name: '', state: 'good', codeVerifier: 'v'.repeat(43), redirectUrl: location.origin + '/auth/google' })), { mode });
+  await page.goto('/login');
+  await page.evaluate(({ mode }) => sessionStorage.setItem('chugalug_google', JSON.stringify({ mode, name: '', state: 'good', codeVerifier: 'v'.repeat(43), redirectUrl: location.origin + '/auth/google' })), { mode });
   await page.goto(`/auth/google?code=one-use-code&state=${state}`);
 }
 
@@ -149,4 +154,92 @@ test('Google login exchanges once and a failed exchange has a fresh-start path',
   await expect(page.getByTestId('error')).toContainText('Expired code');
   await expect(page.getByTestId('google-retry')).toBeVisible();
   expect(exchanges).toBe(1);
+});
+
+
+test('leaving a Google exchange preserves its pending request without navigating back', async ({ page }) => {
+  let release!: () => void, caught!: () => void;
+  const held = new Promise<void>(r => release = r), requested = new Promise<void>(r => caught = r);
+  await page.route('**/api/collections/users/auth-with-oauth2', async r => {
+    caught(); await held;
+    await r.fulfill({ status: 202, json: { pending: true, request_id: 'late-google', secret: 'late-secret' } });
+  });
+  await googleReturn(page);
+  await page.getByTestId('name-input').fill('Alex Rider');
+  await page.getByTestId('request-join').click(); await requested;
+  await page.getByRole('link', { name: copy.backToSignIn }).click();
+  await expect(page).toHaveURL(/\/login$/);
+  release();
+  await expect.poll(() => page.evaluate(() => JSON.parse(localStorage.getItem('chugalug_boarding') ?? 'null')))
+    .toMatchObject({ requestId: 'late-google', secret: 'late-secret', name: 'Alex Rider' });
+  await expect(page).toHaveURL(/\/login$/);
+});
+
+test('reloading Google profile preserves signup intent and name for a fresh exchange', async ({ page }) => {
+  let exchanges = 0;
+  await page.route('**/api/collections/users/auth-with-oauth2', r => { exchanges++; return r.abort(); });
+  await page.route('**/api/collections/users/auth-methods?*', r => r.fulfill({ json: {
+    oauth2: { enabled: true, providers: [{ name: 'google', state: 'new-state', codeVerifier: 'new-verifier', authURL: `${new URL(page.url()).origin}/google-test?redirect_uri=` }] }
+  } }));
+  await page.route('**/google-test?*', r => r.fulfill({ contentType: 'text/html', body: '<p>Google consent</p>' }));
+  await googleReturn(page);
+  await page.getByTestId('name-input').fill('Alex Rider');
+  await page.reload();
+  await expect(page.getByTestId('google-retry')).toBeVisible();
+  expect(exchanges).toBe(0);
+  expect(await page.evaluate(() => sessionStorage.getItem('chugalug_google'))).toBeNull();
+  await page.getByTestId('google-retry').click();
+  await expect(page).toHaveURL(/\/google-test\?/);
+  expect(await page.evaluate(() => JSON.parse(sessionStorage.getItem('chugalug_google') ?? 'null')))
+    .toMatchObject({ mode: 'join', name: 'Alex Rider', state: 'new-state', codeVerifier: 'new-verifier' });
+  expect(exchanges).toBe(0);
+});
+
+test('restoring a request never claims verification before the server confirms it', async ({ page }) => {
+  await page.goto('/login');
+  await page.evaluate(() => localStorage.setItem('chugalug_boarding', JSON.stringify({ requestId: 'saved', secret: 'secret', name: 'Alex', email: 'alex@example.com', savedAt: Date.now() })));
+  let release!: () => void, caught!: () => void;
+  const held = new Promise<void>(r => release = r), requested = new Promise<void>(r => caught = r);
+  await page.route('**/api/crawl/join/status', async r => { caught(); await held; await r.abort(); });
+  await page.goto('/join'); await requested;
+  await expect(page.getByTestId('join-restoring')).toBeVisible();
+  await expect(page.getByText(authCopy.verified, { exact: true })).toHaveCount(0);
+  release();
+  await expect(page.getByTestId('join-offline')).toBeVisible();
+  await expect(page.getByTestId('waiting')).toHaveCount(0);
+  expect(await page.evaluate(() => localStorage.getItem('chugalug_boarding'))).not.toBeNull();
+  await page.unroute('**/api/crawl/join/status');
+  await page.route('**/api/crawl/join/status', r => r.fulfill({ json: { status: 'unverified' } }));
+  await page.getByTestId('retry-status').click();
+  await expect(page.getByTestId('code-input')).toBeFocused();
+});
+
+test('password reset focuses the confirmation then the corrected email', async ({ page }) => {
+  await page.route('**/api/collections/users/request-password-reset', r => r.fulfill({ status: 204 }));
+  await page.goto('/login/forgot');
+  await page.getByTestId('email-input').fill('alex@example.com');
+  await page.getByTestId('send-link').click();
+  await expect(page.getByRole('heading', { name: authCopy.inboxTitle })).toBeFocused();
+  await page.getByTestId('change-email').click();
+  await expect(page.getByTestId('email-input')).toBeFocused();
+});
+
+
+test('leaving a Google login exchange still saves the completed session', async ({ page }) => {
+  const session = await sessionFor('E2E Google Late Session');
+  let release!: () => void, caught!: () => void;
+  const held = new Promise<void>(r => release = r), requested = new Promise<void>(r => caught = r);
+  await page.route('**/api/collections/users/auth-with-oauth2', async r => {
+    caught(); await held; await r.fulfill({ json: session });
+  });
+  await googleReturn(page, 'login'); await requested;
+  await page.getByRole('link', { name: copy.backToSignIn }).click();
+  await page.getByTestId('forgot').click();
+  await expect(page).toHaveURL(/\/login\/forgot$/);
+  release();
+  await expect.poll(async () => {
+    const cookie = (await page.context().cookies()).find(c => c.name === 'pb_auth');
+    return cookie ? JSON.parse(decodeURIComponent(cookie.value)).token : null;
+  }).toBe(session.token);
+  await expect(page).toHaveURL(/\/login\/forgot$/);
 });

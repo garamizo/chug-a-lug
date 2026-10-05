@@ -193,12 +193,15 @@ exports.resend = function (e) {
     try { r = tx.findRecordById('boarding_requests', body.request_id) } catch (_) { return }
     if (!$security.equal(r.getString('secret_hash'), crew.hash(body.secret))) return
     if (r.getString('status') !== 'unverified') { outcome = 'closed'; return }
-    // At most three resends per request, decoys included: a request cannot be used to mail-bomb an
-    // address. A repeat sign-up updates the same row and does not reset the count.
+    // Keep the per-request cap as well as the address budget, including decoys.
     if (r.getInt('resends') >= 3) { outcome = 'capped'; return }
     if (Date.now() / 1000 - r.getDateTime('code_sent_at').unix() < 60) { outcome = 'early'; return }
     decoy = r.getBool('decoy')
     email = r.getString('email')
+    // Cancellation creates a new request ID, but must not create a fresh mail allowance.
+    // Normalize and hash the address; real and decoy requests spend the same rolling budget.
+    const limits = require(`${__hooks}/limits.js`)
+    if (!limits.consumeInTransaction(tx, 'join-resend:' + crew.hash(crew.normalizeEmail(email)), 3, 3600)) { outcome = 'capped'; return }
     // A decoy repeats the notice that fits its address now: a seat, or a request already waiting.
     if (decoy) {
       try { tx.findAuthRecordByEmail('users', email); member = true } catch (_) {}

@@ -29,7 +29,6 @@
     return run(async () => {
       otpId = await requestCode(email); code = '';
       if (resend) notice = authCopy.resent;
-      else void focus('code');
     });
   }
   const withPassword = (ev: SubmitEvent) => { ev.preventDefault();
@@ -42,16 +41,15 @@
   function toCode() {
     if (busy) return;
     mode = 'code'; error = ''; notice = '';
-    if (email.trim()) void sendCode(); else void focus('email');
+    if (email.trim()) void sendCode();
   }
   function toPassword() {
     if (busy) return;
     mode = 'password'; otpId = ''; code = ''; error = ''; notice = '';
-    void focus('password');
   }
   function changeEmail() {
     if (busy) return;
-    otpId = ''; code = ''; error = ''; notice = ''; void focus('email');
+    otpId = ''; code = ''; error = ''; notice = '';
   }
   const checkCode = (ev: SubmitEvent) => { ev.preventDefault();
     if (!/^\d{6}$/.test(code.trim())) { error = copy.codeError; return; }
@@ -64,7 +62,7 @@
     void run(() => rehearsalLogin(n, password)); };
 </script>
 
-<AuthCard {title} icon={otpId ? 'mail' : undefined}>
+<AuthCard {title} {busy} focusTarget={otpId ? 'code' : mode === 'code' ? 'email' : 'password'} icon={otpId ? 'mail' : undefined}>
   {#if rehearsal}
     <p class="intro">{copy.rehearsalIntro}</p>
     <form onsubmit={rehearse} aria-busy={busy}>

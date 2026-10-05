@@ -535,6 +535,8 @@ export const authCopy = {
   profileIntro: 'One last detail so the crew can recognize your request.',
   requestJoin: 'Request to join',
   backToSignUp: 'Back to sign up',
+  restoringTitle: 'Checking your request',
+  restoringIntro: 'Your request is saved. We’re checking its latest status.',
   waitingTitle: 'Your request is in',
   verified: 'Email verified',
   pending: 'Waiting for crew approval',

@@ -1,12 +1,24 @@
 <script lang="ts">
   import { tick, type Snippet } from 'svelte';
-  let { title, icon, children }: { title: string; icon?: 'mail' | 'clock' | 'check'; children: Snippet } = $props();
+  let { title, icon, focusTarget, busy = false, children }: {
+    title: string; icon?: 'mail' | 'clock' | 'check'; focusTarget?: string; busy?: boolean; children: Snippet
+  } = $props();
   let heading: HTMLHeadingElement;
-  let initialized = false;
+  let initialized = false, previousTitle = '', previousTarget: string | undefined, pendingFocus = false;
+  // One focus owner for transitions. Async actions can render their next step before inputs
+  // are enabled; retain the pending move until the action settles, without refocusing on polls.
   $effect(() => {
-    const current = title;
-    if (initialized) void tick().then(() => { if (title === current) heading?.focus(); });
-    initialized = true;
+    const current = title, target = focusTarget, ready = !busy;
+    if (initialized && (current !== previousTitle || target !== previousTarget)) pendingFocus = true;
+    initialized = true; previousTitle = current; previousTarget = target;
+    if (!pendingFocus || !ready) return;
+    let cancelled = false;
+    void tick().then(() => {
+      if (cancelled) return;
+      pendingFocus = false;
+      (target ? document.getElementById(target) : heading)?.focus();
+    });
+    return () => { cancelled = true; };
   });
 </script>
 

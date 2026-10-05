@@ -21,7 +21,8 @@ test('a visitor boards by email with a password, waits, is let aboard and signs 
   await page.route('**/api/crawl/join/status', (route) => route.abort());
   await page.reload();
   await expect(page.getByTestId('join-offline')).toBeVisible({ timeout: 10_000 });
-  await expect(page.getByTestId('waiting')).toBeVisible();
+  await expect(page.getByTestId('join-restoring')).toBeVisible();
+  await expect(page.getByTestId('waiting')).toHaveCount(0);
   await page.unroute('**/api/crawl/join/status');
 
   // A crew member answers through the API here; the popup UI is Task 8's spec.

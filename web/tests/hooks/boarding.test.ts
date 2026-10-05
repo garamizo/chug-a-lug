@@ -224,6 +224,29 @@ describe('joining by email (spec §2.1–2.4)', () => {
     }
   });
 
+  it('cancelling and rejoining cannot reset the address resend budget, real or decoy', async () => {
+    const n = uid();
+    await loginToken(`Budget Member ${n}`);
+    for (const email of [`budget${n}@test.invalid`, `${Buffer.from(`budget member ${n}`).toString('hex')}@test.invalid`]) {
+      let r = await (await join(randomIp(), { name: `Budget ${uid()}`, email })).json();
+      // Even separate request IDs and IPs share the same rolling address budget.
+      for (let i = 0; i < 3; i++) {
+        await backdate(r.request_id, 'code_sent_at', 2);
+        expect((await postFrom(randomIp(), '/api/crawl/join/resend', { ...r, secret: 'wrong' })).status).toBe(404);
+        expect((await postFrom(randomIp(), '/api/crawl/join/resend', r)).status).toBe(200);
+        expect((await postFrom(randomIp(), '/api/crawl/join/cancel', r)).status).toBe(200);
+        const next = await (await join(randomIp(), { name: `Budget ${uid()}`, email: email.toUpperCase() })).json();
+        expect(next.request_id).not.toBe(r.request_id);
+        r = next;
+      }
+      await backdate(r.request_id, 'code_sent_at', 2);
+      await clearMails();
+      const responses = await Promise.all([1, 2].map(() => postFrom(randomIp(), '/api/crawl/join/resend', r)));
+      expect(responses.map(r => r.status)).toEqual([429, 429]);
+      expect(await mails(email)).toEqual([]);
+    }
+  });
+
   it('concurrent joins from one IP cannot beat the unverified cap', async () => {
     const ip = randomIp();
     const statuses = await Promise.all([1, 2, 3, 4].map(() => join(ip, { name: `Race ${uid()}`, email: `race${uid()}@test.invalid` }).then((r) => r.status)));

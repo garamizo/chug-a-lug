@@ -12,29 +12,28 @@
   import { passwordProblem } from '$lib/password';
   import SignInButton from '$lib/components/SignInButton.svelte';
   import { typedEmail } from '$lib/signInEmail';
-  import { onMount, tick } from 'svelte';
+  import { onMount } from 'svelte';
 
   const google = env.PUBLIC_GOOGLE_ENABLED === '1';
   let turnstile = $state<Turnstile>();
   let offline = $state(false);
-  let step = $state<'start' | 'code' | 'waiting' | 'aboard' | 'turned_away' | 'expired'>('start');
+  let step = $state<'start' | 'restoring' | 'code' | 'waiting' | 'aboard' | 'turned_away' | 'expired'>('start');
   let name = $state(''), email = $state(''), password = $state(''), code = $state(''), token = $state('');
   let error = $state(''), notice = $state(''), busy = $state(false);
   let current = $state<StoredBoarding | null>(null);
-  const title = $derived({ start: copy.boardTitle, code: authCopy.codeTitle, waiting: authCopy.waitingTitle,
+  const title = $derived({ start: copy.boardTitle, restoring: authCopy.restoringTitle, code: authCopy.codeTitle, waiting: authCopy.waitingTitle,
     aboard: authCopy.approvedTitle, turned_away: authCopy.declinedTitle, expired: authCopy.expiredTitle }[step]);
   $effect(() => { if ($auth.user) void goto('/', { replaceState: true }); });
   const message = (e: unknown) => e instanceof ClientResponseError ? e.response?.message || copy.genericError : copy.genericError;
   const cleanName = () => name.trim().replace(/\s+/g, ' ');
   let epoch = 0;
-  async function focus(id: string) { await tick(); document.getElementById(id)?.focus(); }
   onMount(() => {
     const stored = loadBoarding(localStorage, Date.now());
-    if (stored) { current = stored; name = stored.name; email = stored.email; step = 'waiting'; void check(); }
+    if (stored) { current = stored; name = stored.name; email = stored.email; step = 'restoring'; void check(); }
     return () => { epoch++; };
   });
   $effect(() => {
-    if (step !== 'waiting' && step !== 'code') return;
+    if (step !== 'waiting' && step !== 'code' && step !== 'restoring') return;
     const timer = setInterval(() => { if (!busy && document.visibilityState === 'visible') void check(); }, 5000);
     return () => clearInterval(timer);
   });
@@ -69,7 +68,6 @@
         epoch++;
         const stored = { requestId: r.request_id, secret: r.secret, name: cleanName(), email: email.trim().toLowerCase(), savedAt: Date.now() };
         saveBoarding(localStorage, stored); current = stored; step = 'code';
-        void focus('code');
       } finally { turnstile?.reset(); }
     }); };
   const verify = (ev: SubmitEvent) => { ev.preventDefault();
@@ -90,11 +88,11 @@
       if (!(e instanceof ClientResponseError) || e.status !== 404) throw e;
     }
     name = mine.name; email = mine.email;
-    restart(); void focus('email');
+    restart();
   });
 </script>
 
-<AuthCard {title} icon={step === 'code' ? 'mail' : step === 'waiting' ? 'clock' : step === 'aboard' ? 'check' : undefined}>
+<AuthCard {title} {busy} focusTarget={step === 'code' ? 'code' : step === 'start' ? 'email' : undefined} icon={step === 'code' ? 'mail' : step === 'waiting' ? 'clock' : step === 'aboard' ? 'check' : undefined}>
   {#if step === 'start'}
     <p class="intro">{copy.boardIntro}</p>
     {#if google}<div class="provider"><SignInButton provider="google" label={copy.continueGoogle} onclick={withGoogle} disabled={busy} testid="google" /></div><div class="divider"><span>{copy.orEmail}</span></div>{/if}
@@ -120,6 +118,9 @@
     <p class="resend">{google ? copy.noCodeHint : copy.noCodeHintNoGoogle}<br /><button type="button" class="text-button" onclick={again} disabled={busy} data-testid="resend-code">{copy.sendAgain}</button></p>
     {#if google}<div class="provider"><SignInButton provider="google" label={copy.continueGoogle} onclick={withGoogle} disabled={busy} testid="google" /></div>{/if}
     {#if notice}<p class="notice" role="status">{notice}</p>{/if}
+  {:else if step === 'restoring'}
+    <p class="intro" role="status" data-testid="join-restoring">{authCopy.restoringIntro}</p>
+    {#if offline}<button type="button" class="primary" disabled={busy} onclick={() => void run(check)} data-testid="retry-status">{busy ? copy.working : authCopy.retry}</button>{/if}
   {:else if step === 'waiting'}
     <p class="intro" data-testid="waiting">{copy.requestSent}</p>
     <ol class="steps">
@@ -137,7 +138,7 @@
     <p class="intro" data-testid="expired">{copy.requestExpired}</p>
     <button type="button" class="primary" onclick={restart}>{copy.boardAgain}</button>
   {/if}
-  {#if offline && (step === 'code' || step === 'waiting')}<p class="info" data-testid="join-offline">{copy.noSignal}</p>{/if}
+  {#if offline && (step === 'code' || step === 'waiting' || step === 'restoring')}<p class="info" data-testid="join-offline">{copy.noSignal}</p>{/if}
   {#if error}<p class="error" role="alert" data-testid="error">{error}</p>{/if}
   {#if step === 'start'}<div class="switch">{authCopy.alreadyAccount} <a class="text-button" href="/login" onclick={() => typedEmail.set(email)}>{copy.signIn}</a></div>
   {:else if step !== 'aboard'}<a class="text-button back" href="/login" onclick={() => typedEmail.set(email)}><span aria-hidden="true">←</span>{copy.backToSignIn}</a>{/if}

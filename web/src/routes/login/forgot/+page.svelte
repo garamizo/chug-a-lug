@@ -1,5 +1,4 @@
 <script lang="ts">
-  import { tick } from 'svelte';
   import { ClientResponseError } from 'pocketbase';
   import { requestPasswordReset } from '$lib/pb';
   import { typedEmail } from '$lib/signInEmail';
@@ -13,10 +12,10 @@
       (e) => { error = e instanceof ClientResponseError ? e.response?.message || copy.genericError : copy.genericError; })
       .finally(() => { busy = false; });
   };
-  async function changeEmail() { sent = false; error = ''; await tick(); document.getElementById('email')?.focus(); }
+  function changeEmail() { sent = false; error = ''; }
 </script>
 
-<AuthCard title={sent ? authCopy.inboxTitle : copy.forgotTitle} icon={sent ? 'mail' : undefined}>
+<AuthCard {busy} focusTarget={sent ? undefined : 'email'} title={sent ? authCopy.inboxTitle : copy.forgotTitle} icon={sent ? 'mail' : undefined}>
   {#if sent}
     <p class="intro" data-testid="link-sent">{copy.linkMaybeSent}</p>
     <p class="intro"><strong class="destination">{email.trim().toLowerCase()}</strong></p>

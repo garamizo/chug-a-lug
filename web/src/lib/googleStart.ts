@@ -1,5 +1,5 @@
 import { pb } from '$lib/pb';
-import { GOOGLE_KEY, buildAuthUrl, type GoogleState } from '$lib/google';
+import { GOOGLE_KEY, saveGoogleRetry, buildAuthUrl, type GoogleState } from '$lib/google';
 
 /** Full-page OAuth also works in installed apps. No crew name is required before Google. */
 export async function startGoogle(mode: GoogleState['mode'], name = ''): Promise<void> {
@@ -10,5 +10,6 @@ export async function startGoogle(mode: GoogleState['mode'], name = ''): Promise
   const redirectUrl = `${location.origin}/auth/google`;
   const state: GoogleState = { mode, name, state: provider.state, codeVerifier: provider.codeVerifier, redirectUrl };
   sessionStorage.setItem(GOOGLE_KEY, JSON.stringify(state));
+  saveGoogleRetry(sessionStorage, { mode, name });
   location.assign(buildAuthUrl(provider.authURL, redirectUrl));
 }

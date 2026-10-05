@@ -58,9 +58,14 @@ test('authentication recovery and approval states', async ({ page }) => {
   await page.route('**/api/collections/users/request-password-reset', r => r.fulfill({ status: 204 }));
   await page.route('**/api/collections/users/confirm-password-reset', r => r.fulfill({ status: 204 }));
   let status = 'unverified', offline = false;
-  await page.route('**/api/crawl/join/status', r => offline ? r.abort() : r.fulfill({ json: { status } }));
+  const pending: (() => void)[] = [];
+  await page.route('**/api/crawl/join/status', async r => {
+    if (status === 'loading') await new Promise<void>(resolve => pending.push(resolve));
+    await (offline ? r.abort() : r.fulfill({ json: { status } }));
+  });
   async function boarding(next: string, noSignal = false) {
     status = next; offline = noSignal;
+    pending.splice(0).forEach(resolve => resolve());
     await page.evaluate(() => localStorage.setItem('chugalug_boarding', JSON.stringify({ requestId: 'layout-request', secret: 'layout-secret', name: 'Alex Rider', email: 'alex@example.com', savedAt: Date.now() })));
     await page.goto('/join');
   }
@@ -74,6 +79,7 @@ test('authentication recovery and approval states', async ({ page }) => {
     { name: 'sign-in code resent', open: p => p.getByTestId('resend-code').click(), ready: p => p.getByRole('status') },
     { name: 'reset email sent', open: async (p) => { await p.goto('/login/forgot'); await p.getByTestId('email-input').fill('alex@example.com'); await p.getByTestId('send-link').click(); }, ready: p => p.getByTestId('link-sent') },
     { name: 'password set', open: async (p) => { await p.goto('/reset-password#layout-token'); await p.getByTestId('password-input').fill('layout-password'); await p.getByTestId('set-password').click(); }, ready: p => p.getByTestId('password-set') },
+    { name: 'join restoring', open: () => boarding('loading'), ready: p => p.getByTestId('join-restoring') },
     { name: 'join code entry', open: () => boarding('unverified'), ready: p => p.getByTestId('code-input') },
     { name: 'join awaiting approval', open: () => boarding('waiting'), ready: p => p.getByTestId('waiting') },
     { name: 'join offline', open: () => boarding('waiting', true), ready: p => p.getByTestId('join-offline') },
@@ -82,6 +88,7 @@ test('authentication recovery and approval states', async ({ page }) => {
     { name: 'join expired', open: () => boarding('expired'), ready: p => p.getByTestId('expired') },
     { name: 'human check failed', open: async (p) => { await p.evaluate(() => localStorage.removeItem('chugalug_boarding')); await p.route('https://challenges.cloudflare.com/**', r => r.abort()); await p.goto('/join'); }, ready: p => p.getByTestId('human-check-error') },
     { name: 'Google crew name', open: () => google('join'), ready: p => p.getByTestId('request-join') },
+    { name: 'Google profile reload', open: p => p.reload().then(() => {}), ready: p => p.getByTestId('google-retry') },
     { name: 'Google callback error', open: async (p) => { await p.route('**/api/collections/users/auth-with-oauth2', r => r.fulfill({ status: 400, json: { message: copy.genericError } })); await google('login'); }, ready: p => p.getByTestId('google-retry') }
   ]);
 });
