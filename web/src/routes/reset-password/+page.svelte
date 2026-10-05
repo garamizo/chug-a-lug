@@ -4,7 +4,8 @@
   import { ClientResponseError } from 'pocketbase';
   import { confirmPasswordReset, signInWithPassword } from '$lib/pb';
   import { passwordProblem, resetTokenEmail } from '$lib/password';
-  import { copy } from '$lib/labels';
+  import { authCopy, copy } from '$lib/labels';
+  import AuthCard from '$lib/components/AuthCard.svelte';
   import PasswordInput from '$lib/components/PasswordInput.svelte';
   // The fragment is read at component start (this app is client-only), where it cannot be missed:
   // SvelteKit's own first navigation throws on a fragment that will not decode, and then
@@ -42,23 +43,26 @@
   };
 </script>
 
-<h1>{copy.resetTitle}</h1>
+<AuthCard title={copy.resetTitle}>
 {#if phase === 'dead'}
-  <p data-testid="reset-dead">{copy.resetLinkDead}</p>
-  <p><a href="/login/forgot">{copy.askNewLink}</a></p>
+  <p class="intro" data-testid="reset-dead">{copy.resetLinkDead}</p>
+  <a class="primary" href="/login/forgot">{copy.askNewLink}</a>
 {:else if phase === 'set'}
-  <p data-testid="password-set">{copy.passwordSetSignIn}</p>
-  <p><a href="/login">{copy.signIn}</a></p>
+  <p class="intro" data-testid="password-set">{copy.passwordSetSignIn}</p>
+  <a class="primary" href="/login">{copy.signIn}</a>
 {:else}
+  <p class="intro">{authCopy.resetIntro}</p>
   <form onsubmit={submit} aria-busy={busy}>
     <input class="sr-only" type="email" autocomplete="username" readonly tabindex="-1" aria-hidden="true" value={accountEmail} />
-    <label for="new-password">{copy.newPasswordField}</label>
-    <PasswordInput id="new-password" autocomplete="new-password" bind:value={password} disabled={busy} testid="password-input" />
-    <small class="hint">{copy.passwordHint}</small>
-    <button type="submit" disabled={busy} data-testid="set-password">{busy ? copy.working : copy.setPassword}</button>
+    <div class="field"><label for="new-password">{copy.newPasswordField}</label>
+      <PasswordInput id="new-password" autocomplete="new-password" bind:value={password} disabled={busy} testid="password-input" />
+      <small class="field-hint">{copy.passwordHint}</small></div>
+    <button type="submit" class="primary" disabled={busy} data-testid="set-password">{busy ? copy.working : copy.setPassword}</button>
   </form>
 {/if}
 {#if error}<p class="error" role="alert" data-testid="error">{error}</p>{/if}
+{#if phase !== 'set'}<a class="text-button back" href="/login"><span aria-hidden="true">←</span>{copy.backToSignIn}</a>{/if}
+</AuthCard>
 
 <style>
   /* Carries the account's email for the password manager only; never seen or focused. */

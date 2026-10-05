@@ -79,6 +79,8 @@ export const joinStatus = (request_id: string, secret: string) =>
   pb.send<{ status: string }>('/api/crawl/join/status', { method: 'POST', body: { request_id, secret } });
 export const resendJoin = (request_id: string, secret: string) =>
   pb.send('/api/crawl/join/resend', { method: 'POST', body: { request_id, secret } });
+export const cancelJoin = (request_id: string, secret: string) =>
+  pb.send('/api/crawl/join/cancel', { method: 'POST', body: { request_id, secret } });
 const DAY_MS = 86400e3;
 /** users.authToken.duration, set by the crew-access migration. */
 const TOKEN_SECONDS = 90 * 86400;

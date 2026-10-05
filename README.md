@@ -64,7 +64,8 @@ users see. Bars and restaurants keep their plain names.
 | Wrap-up phase | **Closing Time** | Bar | |
 | Admin | **Conductor** | Rail | |
 | Users | **Crew** | Rail | |
-| Sign-up page `/join` | **Board** | Rail | "Board the Chug-a-Lug" |
+| Sign-in page `/login` | **Sign in** | Plain | "Welcome back"; password, emailed code, or Google |
+| Sign-up page `/join` | **Sign up** | Plain | "Create an account"; explains email verification and crew approval |
 | Join request | **Boarding request** | Rail | Shown as "waiting to board" |
 | Approve / reject a request | **Let aboard / Turn away** | Rail | Any approved crew member |
 | Conductor access panel `/crew/access` | **Manifest** | Rail | People, status, who let them aboard, last seen, access log |

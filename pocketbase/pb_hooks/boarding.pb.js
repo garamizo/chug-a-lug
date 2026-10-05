@@ -3,6 +3,7 @@ routerAdd('POST', '/api/crawl/join', (e) => require(`${__hooks}/boarding.js`).jo
 routerAdd('POST', '/api/crawl/join/verify', (e) => require(`${__hooks}/boarding.js`).verify(e))
 routerAdd('POST', '/api/crawl/join/status', (e) => require(`${__hooks}/boarding.js`).status(e))
 routerAdd('POST', '/api/crawl/join/resend', (e) => require(`${__hooks}/boarding.js`).resend(e))
+routerAdd('POST', '/api/crawl/join/cancel', (e) => require(`${__hooks}/boarding.js`).cancel(e))
 
 // Google: a new identity becomes a boarding request, never a user; an existing one must match
 // its seat's email. Skipping e.next() means PocketBase creates no record and no link.

@@ -134,7 +134,62 @@ describe('joining by email (spec §2.1–2.4)', () => {
   it('a wrong secret is a 404 everywhere', async () => {
     const ip = randomIp();
     const { request_id } = await (await join(ip, { name: `Secret ${uid()}`, email: `s${uid()}@test.invalid` })).json();
-    for (const path of ['status', 'verify', 'resend']) expect((await postFrom(ip, `/api/crawl/join/${path}`, { request_id, secret: 'x', code: '1' })).status).toBe(404);
+    for (const path of ['status', 'verify', 'resend', 'cancel']) expect((await postFrom(ip, `/api/crawl/join/${path}`, { request_id, secret: 'x', code: '1' })).status).toBe(404);
+  });
+
+  it('email correction expires only an unverified request, clears its credentials, and frees the open slot', async () => {
+    const ip = randomIp();
+    for (let i = 0; i < 3; i++) {
+      const email = `correct${uid()}@test.invalid`;
+      const response = await join(ip, { name: `Correct ${uid()}`, email });
+      expect(response.status).toBe(200);
+      const r = await response.json(), code = await codeFor(email);
+      expect((await postFrom(ip, '/api/crawl/join/cancel', r)).status).toBe(200);
+      expect(await row(r.request_id)).toMatchObject({ status: 'expired', password_hash: '', code_hash: '' });
+      expect((await postFrom(ip, '/api/crawl/join/cancel', r)).status).toBe(200);
+      expect((await postFrom(ip, '/api/crawl/join/verify', { ...r, code })).status).toBe(410);
+    }
+  });
+
+  it('cancel answers the same for decoys and real requests, without changing a member', async () => {
+    const n = uid();
+    await loginToken(`Cancel Member ${n}`);
+    for (const email of [`freshcancel${n}@test.invalid`, `${Buffer.from(`cancel member ${n}`).toString('hex')}@test.invalid`]) {
+      const ip = randomIp(), r = await (await join(ip, { name: `Cancel ${uid()}`, email })).json();
+      const response = await postFrom(ip, '/api/crawl/join/cancel', r);
+      expect(response.status).toBe(200);
+      expect(await response.json()).toEqual({});
+      expect(await row(r.request_id)).toMatchObject({ status: 'expired', password_hash: '', code_hash: '' });
+    }
+  });
+
+  it('a verify/cancel race cannot cancel a waiting request', async () => {
+    const ip = randomIp(), email = `cancelrace${uid()}@test.invalid`;
+    const r = await (await join(ip, { name: `Cancel Race ${uid()}`, email })).json();
+    const code = await codeFor(email);
+    const [verify, cancel] = await Promise.all([
+      postFrom(ip, '/api/crawl/join/verify', { ...r, code }),
+      postFrom(ip, '/api/crawl/join/cancel', r)
+    ]);
+    const saved = await row(r.request_id);
+    if (verify.status === 200) {
+      expect(cancel.status).toBe(409);
+      expect(saved.status).toBe('waiting');
+      expect((await postFrom(ip, '/api/crawl/join/cancel', r)).status).toBe(409);
+    } else {
+      expect(verify.status).toBe(410);
+      expect(cancel.status).toBe(200);
+      expect(saved.status).toBe('expired');
+    }
+  });
+
+  it('cancel never changes waiting or decided requests', async () => {
+    const ip = randomIp(), r = await (await join(ip, { name: `Closed ${uid()}`, email: `closed${uid()}@test.invalid` })).json();
+    for (const status of ['waiting', 'aboard', 'turned_away']) {
+      await fetch(`${PB}/api/collections/boarding_requests/records/${r.request_id}`, { method: 'PATCH', headers: await su(), body: JSON.stringify({ status }) });
+      expect((await postFrom(ip, '/api/crawl/join/cancel', r)).status).toBe(409);
+      expect((await row(r.request_id)).status).toBe(status);
+    }
   });
 
   it('resend is throttled to once a minute, then rotates the code', async () => {

@@ -2,45 +2,43 @@
   import { goto } from '$app/navigation';
   import { env } from '$env/dynamic/public';
   import { ClientResponseError } from 'pocketbase';
-  import { auth, joinCrew, joinStatus, pb, resendJoin, verifyJoin } from '$lib/pb';
+  import { auth, cancelJoin, joinCrew, joinStatus, resendJoin, verifyJoin } from '$lib/pb';
   import { clearBoarding, loadBoarding, saveBoarding, stepFor, type StoredBoarding } from '$lib/boarding';
-  import { GOOGLE_KEY, buildAuthUrl } from '$lib/google';
-  import { copy } from '$lib/labels';
+  import { startGoogle } from '$lib/googleStart';
+  import { authCopy, copy } from '$lib/labels';
+  import AuthCard from '$lib/components/AuthCard.svelte';
   import Turnstile from '$lib/components/Turnstile.svelte';
   import PasswordInput from '$lib/components/PasswordInput.svelte';
   import { passwordProblem } from '$lib/password';
   import SignInButton from '$lib/components/SignInButton.svelte';
-  import { onMount } from 'svelte';
+  import { typedEmail } from '$lib/signInEmail';
+  import { onMount, tick } from 'svelte';
 
   const google = env.PUBLIC_GOOGLE_ENABLED === '1';
   let turnstile = $state<Turnstile>();
   let offline = $state(false);
   let step = $state<'start' | 'code' | 'waiting' | 'aboard' | 'turned_away' | 'expired'>('start');
   let name = $state(''), email = $state(''), password = $state(''), code = $state(''), token = $state('');
-  let error = $state(''), busy = $state(false);
+  let error = $state(''), notice = $state(''), busy = $state(false);
   let current = $state<StoredBoarding | null>(null);
+  const title = $derived({ start: copy.boardTitle, code: authCopy.codeTitle, waiting: authCopy.waitingTitle,
+    aboard: authCopy.approvedTitle, turned_away: authCopy.declinedTitle, expired: authCopy.expiredTitle }[step]);
   $effect(() => { if ($auth.user) void goto('/', { replaceState: true }); });
   const message = (e: unknown) => e instanceof ClientResponseError ? e.response?.message || copy.genericError : copy.genericError;
   const cleanName = () => name.trim().replace(/\s+/g, ' ');
-
-  // Resume a stored request once (spec §5). onMount, not $effect: check() reads `current`, and an
-  // effect that both writes and reads it would re-run itself.
+  let epoch = 0;
+  async function focus(id: string) { await tick(); document.getElementById(id)?.focus(); }
   onMount(() => {
     const stored = loadBoarding(localStorage, Date.now());
-    if (stored) { current = stored; step = 'waiting'; void check(); }
+    if (stored) { current = stored; name = stored.name; email = stored.email; step = 'waiting'; void check(); }
+    return () => { epoch++; };
   });
-  // Poll while a request is open. Only `step` is tracked; check() runs inside the timer callback.
   $effect(() => {
     if (step !== 'waiting' && step !== 'code') return;
-    const timer = setInterval(() => { if (document.visibilityState === 'visible') void check(); }, 5000);
+    const timer = setInterval(() => { if (!busy && document.visibilityState === 'visible') void check(); }, 5000);
     return () => clearInterval(timer);
   });
-  // Bumped whenever this page itself moves the request on (start, verify, restart): a status poll
-  // asked before that answers for an older state, so a late 'unverified' cannot put a request that
-  // was just verified back on the code step.
-  let epoch = 0;
-  // A 404 is definitive (unknown request or wrong secret); anything else is "try again later", and
-  // the stored request is kept so a dead zone never costs someone their place in line.
+  // Newer actions own the screen: an old poll cannot undo verification or email correction.
   async function check() {
     const mine = current, asked = epoch;
     if (!mine) return;
@@ -48,8 +46,7 @@
     try {
       const next = stepFor((await joinStatus(mine.requestId, mine.secret)).status);
       if (stale()) return;
-      offline = false;
-      step = next;
+      offline = false; step = next;
       if (next !== 'code' && next !== 'waiting') clearBoarding(localStorage);
     } catch (e) {
       if (stale()) return;
@@ -58,71 +55,90 @@
     }
   }
   async function run(action: () => Promise<void>) {
-    if (busy) return; error = ''; busy = true;
+    if (busy) return; error = ''; notice = ''; busy = true;
     try { await action(); } catch (e) { error = message(e); } finally { busy = false; }
   }
   const start = (ev: SubmitEvent) => { ev.preventDefault();
     if (cleanName().length < 2 || cleanName().length > 32) { error = copy.nameError; return; }
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())) { error = copy.emailError; return; }
     const problem = passwordProblem(password); if (problem) { error = problem; return; }
+    if (!token) return;
     void run(async () => {
       try {
         const r = await joinCrew(cleanName(), email.trim(), password, token);
         epoch++;
-        current = { requestId: r.request_id, secret: r.secret, name: cleanName(), email: email.trim().toLowerCase(), savedAt: Date.now() };
-        saveBoarding(localStorage, current); step = 'code';
-      } finally { turnstile?.reset(); } // the token is spent either way
+        const stored = { requestId: r.request_id, secret: r.secret, name: cleanName(), email: email.trim().toLowerCase(), savedAt: Date.now() };
+        saveBoarding(localStorage, stored); current = stored; step = 'code';
+        void focus('code');
+      } finally { turnstile?.reset(); }
     }); };
   const verify = (ev: SubmitEvent) => { ev.preventDefault();
     if (!/^\d{6}$/.test(code.trim())) { error = copy.codeError; return; }
-    void run(async () => { await verifyJoin(current!.requestId, current!.secret, code.trim()); epoch++; step = 'waiting'; }); };
-  const again = () => void run(() => resendJoin(current!.requestId, current!.secret).then(() => {}));
-  const withGoogle = () => {
-    if (cleanName().length < 2 || cleanName().length > 32) { error = copy.nameError; return; }
-    void run(async () => {
-      pb.authStore.clear();
-      const p = (await pb.collection('users').listAuthMethods()).oauth2.providers.find((x) => x.name === 'google');
-      if (!p) throw new Error('google');
-      const redirectUrl = `${location.origin}/auth/google`;
-      sessionStorage.setItem(GOOGLE_KEY, JSON.stringify({ mode: 'join', name: cleanName(), state: p.state, codeVerifier: p.codeVerifier, redirectUrl }));
-      location.href = buildAuthUrl(p.authURL, redirectUrl);
-    });
+    void run(async () => { await verifyJoin(current!.requestId, current!.secret, code.trim()); epoch++; step = 'waiting'; password = ''; }); };
+  const again = () => void run(async () => { await resendJoin(current!.requestId, current!.secret); code = ''; notice = authCopy.resent; });
+  const withGoogle = () => void run(() => startGoogle('join', cleanName()));
+  const restart = () => {
+    epoch++; clearBoarding(localStorage); current = null; step = 'start'; code = ''; error = ''; notice = ''; offline = false;
   };
-  const restart = () => { epoch++; clearBoarding(localStorage); current = null; step = 'start'; code = ''; };
+  const changeEmail = () => void run(async () => {
+    const mine = current;
+    if (!mine) return;
+    epoch++;
+    try { await cancelJoin(mine.requestId, mine.secret); }
+    catch (e) {
+      if (e instanceof ClientResponseError && e.status === 409) { await check(); error = authCopy.requestChanged; return; }
+      if (!(e instanceof ClientResponseError) || e.status !== 404) throw e;
+    }
+    name = mine.name; email = mine.email;
+    restart(); void focus('email');
+  });
 </script>
 
-<h1>{copy.boardTitle}</h1>
-{#if step === 'start'}
-  <p>{copy.boardIntro}</p>
-  <form onsubmit={start} aria-busy={busy}>
-    <label for="name">{copy.name}</label>
-    <input id="name" type="text" autocomplete="nickname" placeholder={copy.namePlaceholder} bind:value={name} data-testid="name-input" maxlength="32" disabled={busy} />
-    {#if google}<SignInButton provider="google" label={copy.continueGoogle} onclick={withGoogle} disabled={busy} testid="google" /><p>{copy.orEmail}</p>{/if}
-    <label for="email">{copy.emailLabel}</label>
-    <input id="email" type="email" autocomplete="username" placeholder={copy.emailPlaceholder} bind:value={email} data-testid="email-input" disabled={busy} />
-    <label for="join-password">{copy.passwordField}</label>
-    <PasswordInput id="join-password" autocomplete="new-password" bind:value={password} disabled={busy} testid="password-input" />
-    <small class="hint">{copy.passwordHint}</small>
-    <Turnstile bind:this={turnstile} ontoken={(t) => (token = t)} />
-    <SignInButton provider="email" type="submit" label={busy ? copy.working : token ? copy.sendCode : copy.humanCheck} disabled={busy || !token} testid="send-code" />
-  </form>
-  <p><a href="/login">{copy.haveSeatSignIn}</a></p>
-{:else if step === 'code'}
-  <form onsubmit={verify} aria-busy={busy}>
-    <p>{copy.codeSentTo} {current?.email}</p>
-    <label for="code">{copy.codeLabel}</label>
-    <input id="code" inputmode="numeric" autocomplete="one-time-code" maxlength="6" bind:value={code} data-testid="code-input" disabled={busy} />
-    <button type="submit" disabled={busy} data-testid="verify">{busy ? copy.working : copy.confirmCode}</button>
-    <p class="hint">{google ? copy.noCodeHint : copy.noCodeHintNoGoogle} <button type="button" class="link" onclick={again}>{copy.sendAgain}</button></p>
-  </form>
-{:else if step === 'waiting'}
-  <p data-testid="waiting">{copy.requestSent}</p><p class="hint">{copy.requestSentHint}</p>
-  {#if offline}<p class="hint" data-testid="join-offline">{copy.noSignal}</p>{/if}
-{:else if step === 'aboard'}
-  <p data-testid="aboard">{copy.youreAboard}</p><a class="button" href="/login" data-testid="go-sign-in">{copy.signIn}</a>
-{:else if step === 'turned_away'}
-  <p data-testid="turned-away">{copy.turnedAway}</p>
-{:else}
-  <p data-testid="expired">{copy.requestExpired}</p><button type="button" onclick={restart}>{copy.boardAgain}</button>
-{/if}
-{#if error}<p class="error" role="alert" data-testid="error">{error}</p>{/if}
+<AuthCard {title} icon={step === 'code' ? 'mail' : step === 'waiting' ? 'clock' : step === 'aboard' ? 'check' : undefined}>
+  {#if step === 'start'}
+    <p class="intro">{copy.boardIntro}</p>
+    {#if google}<div class="provider"><SignInButton provider="google" label={copy.continueGoogle} onclick={withGoogle} disabled={busy} testid="google" /></div><div class="divider"><span>{copy.orEmail}</span></div>{/if}
+    <form onsubmit={start} aria-busy={busy}>
+      <div class="field">
+        <label for="name">{copy.name}</label>
+        <input id="name" type="text" autocomplete="nickname" bind:value={name} data-testid="name-input" maxlength="32" disabled={busy} aria-describedby="name-hint" />
+        <p class="field-hint" id="name-hint">{authCopy.nameHint}</p>
+      </div>
+      <div class="field"><label for="email">{copy.emailLabel}</label><input id="email" type="email" autocomplete="username" placeholder={copy.emailPlaceholder} bind:value={email} data-testid="email-input" disabled={busy} /></div>
+      <div class="field"><label for="join-password">{copy.passwordField}</label><PasswordInput id="join-password" autocomplete="new-password" bind:value={password} disabled={busy} testid="password-input" /><small class="field-hint">{copy.passwordHint}</small></div>
+      <Turnstile bind:this={turnstile} {google} ontoken={(t) => (token = t)} />
+      <button class="primary" type="submit" disabled={busy || !token} data-testid="send-code">{busy ? copy.working : authCopy.continue}</button>
+      <p class="next-hint">{authCopy.nextVerify}</p>
+    </form>
+  {:else if step === 'code'}
+    <p class="intro">{current?.email ? authCopy.codeIntro : authCopy.codeNoEmail}{#if current?.email}<br /><strong class="destination">{current.email}</strong>{/if}</p>
+    <button type="button" class="text-button change" onclick={changeEmail} disabled={busy} data-testid="change-email">{authCopy.changeEmail}</button>
+    <form onsubmit={verify} aria-busy={busy}>
+      <div class="field"><label for="code">{copy.codeLabel}</label><input id="code" class="code-input" inputmode="numeric" autocomplete="one-time-code" maxlength="6" bind:value={code} data-testid="code-input" disabled={busy} /></div>
+      <button type="submit" class="primary" disabled={busy} data-testid="verify">{busy ? copy.working : copy.confirmCode}</button>
+    </form>
+    <p class="resend">{google ? copy.noCodeHint : copy.noCodeHintNoGoogle}<br /><button type="button" class="text-button" onclick={again} disabled={busy} data-testid="resend-code">{copy.sendAgain}</button></p>
+    {#if google}<div class="provider"><SignInButton provider="google" label={copy.continueGoogle} onclick={withGoogle} disabled={busy} testid="google" /></div>{/if}
+    {#if notice}<p class="notice" role="status">{notice}</p>{/if}
+  {:else if step === 'waiting'}
+    <p class="intro" data-testid="waiting">{copy.requestSent}</p>
+    <ol class="steps">
+      <li class="complete"><span aria-hidden="true">✓</span>{authCopy.verified}</li>
+      <li class="current"><span aria-hidden="true">2</span>{authCopy.pending}</li>
+      <li><span aria-hidden="true">3</span>{authCopy.nextSignIn}</li>
+    </ol>
+    <p class="info">{copy.requestSentHint}</p>
+  {:else if step === 'aboard'}
+    <p class="intro" data-testid="aboard">{authCopy.approvedIntro}</p>
+    <a class="primary" href="/login" onclick={() => typedEmail.set(email)} data-testid="go-sign-in">{copy.signIn}</a>
+  {:else if step === 'turned_away'}
+    <p class="intro" data-testid="turned-away">{copy.turnedAway}</p>
+  {:else}
+    <p class="intro" data-testid="expired">{copy.requestExpired}</p>
+    <button type="button" class="primary" onclick={restart}>{copy.boardAgain}</button>
+  {/if}
+  {#if offline && (step === 'code' || step === 'waiting')}<p class="info" data-testid="join-offline">{copy.noSignal}</p>{/if}
+  {#if error}<p class="error" role="alert" data-testid="error">{error}</p>{/if}
+  {#if step === 'start'}<div class="switch">{authCopy.alreadyAccount} <a class="text-button" href="/login" onclick={() => typedEmail.set(email)}>{copy.signIn}</a></div>
+  {:else if step !== 'aboard'}<a class="text-button back" href="/login" onclick={() => typedEmail.set(email)}><span aria-hidden="true">←</span>{copy.backToSignIn}</a>{/if}
+</AuthCard>

@@ -57,6 +57,6 @@ describe('labels', () => {
       'emailMeLink', 'linkMaybeSent', 'backToSignIn', 'resetTitle', 'setPassword', 'passwordSetSignIn', 'resetLinkDead', 'askNewLink']) {
       expect((copy as Record<string, string>)[k], k).toBeTruthy();
     }
-    expect(copy.loginIntro).toBe('Sign in with Google or with your email and password.');
+    expect(copy.loginIntro).toBe('Sign in to catch up with the crew.');
   });
 });

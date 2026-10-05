@@ -221,6 +221,31 @@ exports.resend = function (e) {
   return e.json(200, {})
 }
 
+// Correcting an email retires only the caller's unverified request. The same transaction that
+// checks the secret checks the state: a concurrent verify must not lose a waiting request.
+// Expired is idempotent so a lost response can be retried; decoys follow exactly the same path.
+exports.cancel = function (e) {
+  const crew = require(`${__hooks}/crew.js`)
+  const body = e.requestInfo().body
+  if (typeof body.request_id !== 'string' || typeof body.secret !== 'string') return e.json(404, {})
+  let outcome = 'missing'
+  $app.runInTransaction((tx) => {
+    let r
+    try { r = tx.findRecordById('boarding_requests', body.request_id) } catch (_) { return }
+    if (!$security.equal(r.getString('secret_hash'), crew.hash(body.secret))) return
+    const status = r.getString('status')
+    if (status !== 'unverified' && status !== 'expired') { outcome = 'closed'; return }
+    if (status === 'unverified') { r.set('status', 'expired'); r.set('status_at', nowIso()) }
+    r.set('password_hash', '')
+    r.set('code_hash', '')
+    tx.save(r)
+    outcome = 'ok'
+  })
+  if (outcome === 'missing') return e.json(404, {})
+  if (outcome === 'closed') return e.json(409, {})
+  return e.json(200, {})
+}
+
 // Spec §2.5: called from onRecordAuthWithOAuth2Request. Returns true when it answered the request.
 exports.googleRequest = function (e) {
   const crew = require(`${__hooks}/crew.js`)

@@ -116,8 +116,9 @@ test('hidden things are skipped: display none, hidden, inert, aria-hidden, close
 test('the original bug: a Show button taking the row squeezes the password field, and the sweep says so', async ({ page }) => {
   await page.goto('/login');
   await page.getByTestId('password-input').waitFor();
-  // The cascade before button.link existed: the global button rule made Show full-width.
-  await page.addStyleTag({ content: '.password button { width: 100% !important; flex: 0 1 auto !important; padding: 14px !important; min-height: 48px !important; }' });
+  // Restore the original flex row too: the new auth card positions Show inside the input.
+  // In that old row, the global full-width button squeezed the password field below 120px.
+  await page.addStyleTag({ content: '.password { display: flex !important; } .password button { position: static !important; width: 100% !important; flex: 0 1 auto !important; padding: 14px !important; min-height: 48px !important; }' });
   expect((await page.getByTestId('password-input').boundingBox())!.width).toBeLessThan(120);
   expect((await layoutViolations(page)).join('\n')).toMatch(/narrow-field: input#password.* on \/login/);
 });
