@@ -59,7 +59,12 @@
     };
     // A chatty night sends a burst of events; each would reload all five lists, so they share one trailing load.
     const reload = coalesce(() => void load(), 300);
-    const unsubs = ['users', 'drink_entries', 'broadcast_acks', 'media', 'chat_messages'].map((name) => subscribe(name, '', reload.call));
+    const names = ['users', 'drink_entries', 'broadcast_acks', 'media', 'chat_messages'];
+    // The first read can land before the subscriptions do, and a change in between would then wait for
+    // the poll: read once more as soon as every subscription is live (as `watchDraft` does).
+    let connecting = names.length;
+    const ready = () => { if (--connecting === 0 && active) void load(); };
+    const unsubs = names.map((name) => subscribe(name, '', reload.call, ready));
     // Recover changes missed while the realtime connection was down.
     const timer = setInterval(() => void load(), 30_000);
     void load();

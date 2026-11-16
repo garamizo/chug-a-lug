@@ -132,6 +132,17 @@ export function logout(): void {
   pb.authStore.clear();
 }
 
+/**
+ * The SDK (pocketbase 0.28) reports "not connected" until its first subscription POST answers. A second
+ * listener added in that window to a topic it has already sent is kept in its list but never attached to
+ * the event stream, so that subscriber hears nothing until the next reconnect. Re-attaching the whole
+ * list once a subscription resolves is idempotent (the SDK removes each listener before adding it back).
+ */
+function attachAllListeners() {
+  const realtime = pb.realtime as unknown as { addAllSubscriptionListeners?: () => void };
+  realtime.addAllSubscriptionListeners?.();
+}
+
 /** Realtime subscription that refires `onChange` on any create/update/delete matching the filter.
  *  `onReady` fires once the subscription is live, for a catch-up read of anything missed before it. */
 export function subscribe(collection: string, filter: string, onChange: () => void, onReady?: () => void): () => void {
@@ -139,7 +150,7 @@ export function subscribe(collection: string, filter: string, onChange: () => vo
   let active = true;
   pb.collection(collection)
     .subscribe('*', () => onChange(), filter ? { filter } : {})
-    .then((u) => { if (active) { unsub = u; onReady?.(); } else u(); })
+    .then((u) => { if (active) { attachAllListeners(); unsub = u; onReady?.(); } else u(); })
     .catch(() => { /* offline: the page still works from its last fetch */ });
   return () => { active = false; unsub?.(); };
 }
