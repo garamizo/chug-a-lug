@@ -76,18 +76,32 @@ Legacy drinks without a photo keep counting — the rule applies to new taps.
 
 ### Server (`pocketbase/pb_hooks/live.pb.js`, the existing media create hook)
 
+PocketBase is pinned at 0.40.4 (`pocketbase/Dockerfile`, `scripts/pb-download.sh`).
+
 When a media create request carries a non-empty `drink_kind`:
-- Reject (400, code `proof_needs_image`) unless `kind = image`.
+- Reject (400, code `proof_needs_image`) unless `kind = image` **and** the uploaded file itself is an image: the
+  hook checks the file's sniffed content type (its leading bytes), not the client's `kind` or the file name. A
+  missing file is rejected by the required field as today.
 - Reject (400, `proof_needs_stop`) unless the client's `stop` is on the current route — a proof must belong to a stop,
   unlike plain Freight, which is re-tagged rather than rejected.
-- Inside one transaction: create the media (with the existing user/itinerary/at stamping), then create
-  `drink_entries` with `id = media.id`, `user`, `stop`, `kind = drink_kind`, `at` = the media's `at`, `media =
-  media.id`, so `action_order` numbering (`action_order.pb.js`) still runs. Any failure rolls both back.
+- Inside one transaction (`runInTransaction` wrapping the save chain, the transactional app used throughout, failures
+  propagated — an after-success hook is too late): save the media (with the existing user/itinerary/at stamping), then
+  save `drink_entries` with `id = media.id`, `user`, `stop`, `kind = drink_kind`, `at` copied explicitly from the
+  media's `at` (the request-only drink stamping hook does not run for a hook save), `media = media.id`.
+  `action_order.pb.js` uses the model `onRecordCreate`, so it numbers the hook-saved drink. Any failure rolls back
+  the media, the drink and the `action_order` sequence allocation.
 - The media's `tagged_by` stays as today (`clock`/`manual`).
 
-Undo (`drink_entries` delete by its owner): a delete hook removes the linked media in the same transaction (server
-side, so the media deleteRule — Conductor-only — is not loosened). The Conductor's media delete cascades to the drink
-through the relation.
+**Proof pairing is immutable.** A media update hook rejects (400, `proof_locked`) any update that sets `drink_kind`
+on media that has none, or that changes `drink_kind`, `kind`, `file`, `user`, `stop` or `itinerary` on a proof.
+`drink_entries` keeps `updateRule: null`.
+
+**Deletes go through the drink.** A model `onRecordDelete` hook on `drink_entries` (so it runs for owner Undo, the
+Conductor's media delete cascade, and stop/user cascades alike): after the drink's delete, if its `media` still
+exists, delete it in the same transaction; "already absent" (the media-first cascade path) is not an error. Server
+side, so the media deleteRule (Conductor-only) is not loosened. The Conductor deleting proof media cascades to the
+drink through the relation; the drink hook then finds the media gone. A failed media delete rolls the drink delete
+back.
 
 Media without `drink_kind` behaves exactly as today.
 
@@ -99,18 +113,28 @@ Media without `drink_kind` behaves exactly as today.
 - **Send.** The chosen image goes through `upload.ts` `prepare()` (compression, size, type), then one `media` create
   with FormData `id` (client `newRecordId()`), `user`, `stop`, `kind=image`, `taken_at`, `drink_kind`, `file`. After
   `clientClock.ready()` as every write does today.
+- **Confirming.** The media create returns only the media. The client then reads `drink_entries/{id}` (expand
+  `user,stop`) and upserts both rows. If that read fails, the photo and drink did land (they are one transaction):
+  the tap counts as sent, no Retry is offered, and the feed reload (`loadFeed`, realtime, the 30 s poll) brings the
+  drink in.
 - **Counting.** While a proof is in flight the button shows a sending state (`tab-sending-{kind}`), and the count does
-  **not** include it; the row and photo appear when the create returns (`liveDay.upsertDrink` + the media upsert) or
-  via realtime. `withPending` no longer adds unsaved taps to counts; the day total on Live (`+page.svelte:52-53`)
-  drops its pending add-on.
+  **not** include it; the row and photo appear once confirmed or via realtime. `withPending` no longer adds unsaved
+  taps to counts; the day total on Live (`+page.svelte:52-53`) drops its pending add-on.
+- **Scope of a send.** At tap time the send captures the user id, route (itinerary) id, stop id, the server day and
+  the simulation run id. Logout, a route change, a server-day change or a run change invalidates it: its retained
+  file is dropped, no Retry is offered, and a late answer is not upserted into the now-displayed feed (the feed's own
+  reload reconciles). Closing the Tab sheet does not cancel a send; its result shows in the feed.
 - **Failure.** The tap is taken back as today (`copy.noSignal` or the upload error), and a toast offers **Retry**
-  (`tab-retry`) holding the prepared file and the same id while the page is open. A retry that gets 400 for a
-  duplicate id treats the save as done if `drink_entries/{id}` now exists (the first send landed, the answer was
-  lost).
+  (`tab-retry`) holding the prepared file and the same id while the send's scope is still current. A retry that
+  gets 400 for a duplicate id treats the save as done if `drink_entries/{id}` now exists (the first send landed, the
+  answer was lost).
 - **Undo.** Unchanged UI (toast `tab-undo`, `tab-undo-last`); deleting the drink now also removes its photo
   server-side. The client drops both the drink and the media with that id from the feed.
-- **Freight and chat.** A proof photo is ordinary Freight. In Crew Chat and the Lightbox its caption names the drink
-  (icon + label, e.g. "🍺 Beer"); the Freight strip shows it like any photo.
+- **Freight and chat.** A proof photo is ordinary Freight, captioned with the drink (icon + label, e.g. "🍺 Beer")
+  wherever a Lightbox caption is built: `CrewChat.svelte`, `FreightStrip.svelte` and `StopSheet.svelte`. In Crew Chat
+  a proof shows **once**, as the photo entry (Cheers target `media`), captioned with the drink; `chatEntries` stops
+  emitting the `drink:{id}` announcement for drinks that have `media`. Legacy drinks without a photo keep their
+  announcement.
 - **Hint.** The Tab sheet says once, under the buttons, that a drink counts when its photo lands (new label).
 
 ### Labels (web/src/lib/labels.ts)
@@ -119,7 +143,8 @@ Media without `drink_kind` behaves exactly as today.
 - `tabSending: 'Sending…'`
 - `tabRetry: 'Retry'`
 - `proofNeedsImage: 'Take a photo — a video does not count.'`
-- `proofNeedsStop: 'Drinks count at a stop on today's route.'`
+- `proofNeedsStop: 'Drinks count at a stop on today’s route.'`
+- `proofLocked` is a server code only (no client path updates a proof).
 - A caption helper reuses the existing drink labels and icons (`labels.ts:277-281`, `:479`).
 
 README glossary: the **Tab** row gains "a drink counts once its photo lands; the photo is Freight". Add an **Undo**
@@ -128,21 +153,32 @@ note only if a row exists — none does today. FEATURES.md Tab/Freight bullets u
 ### Tests and fixtures
 
 - Hooks (`web/tests/hooks/live.test.ts`): a proof upload creates both rows with the same id, stamped `at`, and
-  `action_order`; video proof → 400; proof with a stop off the current route → 400; crew `drink_entries.create` →
-  rejected; owner deleting the drink removes the media; Conductor deleting the media removes the drink; a duplicate
-  id is refused without a second drink; plain Freight unchanged. `migrations.test.ts` for the new migration.
-- Hooks/e2e helpers that create `drink_entries` as a crew user must switch to the superuser or to a proof upload;
-  the sim seed (`web/src/lib/sim/seed.ts`) and rehearsal already use whichever path they need — check and fix.
-- Unit: counts exclude in-flight taps; caption helper; retry-after-duplicate handling.
-- e2e (`tab.spec.ts`, `freight.spec.ts`, sim `rehearsal.spec.ts`): Playwright supplies the photo through the file
-  chooser. Tap → choose image → count moves after the upload; cancel → no change; failed send → count unchanged, Retry
-  lands it; Undo removes the drink and its strip/chat photo. Existing Tab specs are rewritten for the new flow.
+  `action_order`; a video declared as `kind=image`, non-image bytes, and `kind=video` → 400 `proof_needs_image`;
+  proof with a stop off the current route → 400; a failed drink save (injected) rolls back the media, the drink and
+  the `action_order` counter; a duplicate id is refused without a second drink; crew `drink_entries.create` → 403
+  (createRule null rejects before hooks); owner Undo removes the media; Conductor media delete removes the drink;
+  stop and user cascades remove both; proof updates → 400 `proof_locked`; plain Freight unchanged.
+  `migrations.test.ts` for the new migration.
+- Existing tests to convert (crew-authenticated drink creates): `live.test.ts:73`, `:91` (successful creates) and
+  `:83` (forged owner) move to proof uploads; the anonymous create at `:114` now expects 403. `actionOrder.test.ts`
+  (superuser token) and migration fixtures (`app.save`) are unaffected. The sim seed (`web/src/lib/server/sim/seed.ts`)
+  and `web/tests/sim/setup.ts` create no drinks.
+- UI flows that tap drinks and need a photo supplied through the file chooser: `tab.spec.ts`, `chat.spec.ts`,
+  `crew.spec.ts`, `liveUx.spec.ts`, `practice.spec.ts`, `offline.spec.ts`, and sim `rehearsal.spec.ts`. A shared
+  e2e helper taps a kind and supplies a fixture JPEG.
+- Unit: counts exclude in-flight taps; caption helper; `chatEntries` shows a proof once and keeps legacy drink
+  announcements; retry-after-duplicate; a late answer after a scope change is not upserted.
+- e2e: tap → choose image → count moves after the upload; cancel → no change; failed send → count unchanged, Retry
+  lands it; Undo removes the drink and its strip/chat photo.
 - One `layoutSweep` line for the Tab sheet with a proof sending.
 
 ## Edge cases
 
 - Two quick taps of different kinds: each opens its own picker in turn; each send is independent.
 - Retry after the page reloads: the photo is gone; the user taps again. Accepted (no offline queue).
+- Chicago midnight or a route switch while a proof is sending or waiting for Retry: the send is out of scope; Retry
+  disappears and a late answer is left to the feed reload.
+- Deleting a stop or a user removes their proofs' drinks by cascade, and the drink delete hook removes the photos.
 - The crawl moves on while a proof is sending: the hook checks the stop is on the current route, not that it is the
   current stop — same as today's drink create, which has no current-stop check.
 - A Conductor deletes a proof photo for content: the drink goes with it, by design; the owner sees their count drop.
