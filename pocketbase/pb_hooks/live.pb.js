@@ -139,6 +139,12 @@ onRecordCreateRequest((e) => {
   e.next()
 }, 'chat_messages')
 
+// A Cheers counts on the day it was given, by the event clock: in a rehearsal `created` is wall time.
+onRecordCreateRequest((e) => {
+  e.record.set('at', require(`${__hooks}/clock.js`).eventNow(e.app))
+  e.next()
+}, 'reactions')
+
 // Drinks are stamped by the server like every other live row, so a phone's wrong clock cannot put a
 // round on the wrong day. The client's `at` is only its optimistic guess. A drink's photo is paired
 // by the media hook alone; only a superuser may name one in a drink create.

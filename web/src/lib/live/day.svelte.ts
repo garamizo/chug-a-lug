@@ -344,7 +344,8 @@ export class LiveDay {
     const byRoute = pb.filter('itinerary = {:id} && at >= {:start} && at < {:end}', { id, start, end });
     // Photos from before or after the crawl have no stop; older rows may predate the route field.
     const mediaByRoute = pb.filter('(itinerary = {:id} || stop.itinerary = {:id}) && at >= {:start} && at < {:end}', { id, start, end });
-    const reactionsToday = pb.filter('itinerary = {:id} && created >= {:start} && created < {:end}', { id, start, end });
+    // Cheers by the event clock too (stamped by the server), not `created`: a rehearsal's wall time is another day.
+    const reactionsToday = pb.filter('itinerary = {:id} && at >= {:start} && at < {:end}', { id, start, end });
     try {
       const [drinks, media, messages, reactions] = await Promise.all([
         pb.collection('drink_entries').getFullList<DrinkEntry>({ filter: byStop, expand: 'user,stop', sort: 'at,action_order,created,id', cache: 'no-store' }),

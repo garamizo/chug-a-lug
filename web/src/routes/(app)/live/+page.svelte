@@ -4,14 +4,16 @@
   import { ClientResponseError } from 'pocketbase';
   import { SvelteSet } from 'svelte/reactivity';
   import { clientClock } from '$lib/sim/clock.svelte';
-  import { goto } from '$app/navigation';
+  import { afterNavigate, goto } from '$app/navigation';
+  import { page } from '$app/state';
   import { copy, drinkIcons } from '$lib/labels';
   import { mirrorSavedWhen } from '$lib/offline';
   import { auth, pb } from '$lib/pb';
   import type { DrinkEntry, DrinkKind, Media } from '$lib/types';
   import { liveDay } from '$lib/live/day.svelte';
   import { compressForUpload, uploadBatch } from '$lib/live/upload';
-  import { openStop } from '$lib/nav';
+  import { openStop, sheetStopId } from '$lib/nav';
+  import { closingKey, closingSession, closingStore, shouldAutoOpen } from '$lib/live/closing';
   import { stripStops } from '$lib/live/strip';
   import { clockFailure, sameScope, sendProof, type ProofScope, type ProofSend, type ProofTap } from '$lib/live/proof';
   import { drinkCount } from '$lib/live/crew';
@@ -25,7 +27,7 @@
   import TabRow from '$lib/components/TabRow.svelte';
   import TabSheet from '$lib/components/TabSheet.svelte';
   import { ui } from '$lib/ui.svelte';
-  import { onDestroy } from 'svelte';
+  import { onDestroy, tick } from 'svelte';
   import FreightStrip from '$lib/components/FreightStrip.svelte';
   import Leaderboard from '$lib/components/Leaderboard.svelte';
 
@@ -184,6 +186,27 @@
     }
   }
 
+  // Closing Time: once the train home has arrived, a card plays the night's reel, and the first time this
+  // phone is on Live with the whole night's feed in, the reel opens by itself. Not over anything open on
+  // Live, not again once it has played here, and not again this session once someone left it unplayed.
+  const closings = closingStore();
+  let playButton = $state<HTMLButtonElement>();
+  let autoOpening = false;
+  const overlayOpen = $derived(!!sheetStopId() || !!page.state.lightbox || ui.tabOpen || liveDay.composing || ui.menuOpen);
+  $effect(() => {
+    const scope = liveDay.closingScope;
+    if (!scope || autoOpening) return;
+    const key = closingKey(scope);
+    // Live is never quiet: practice interrupts only the screen that is practising, and this is that screen.
+    if (!shouldAutoOpen({ ready: liveDay.reelReady, shown: closings.has(key), leftThisSession: closingSession.left.has(key), overlayOpen, quiet: false })) return;
+    autoOpening = true;
+    void goto('/live/closing').finally(() => { autoOpening = false; });
+  });
+  // Back from the reel: Play takes the focus the reel had.
+  afterNavigate((nav) => {
+    if (nav.from?.url?.pathname === '/live/closing') void tick().then(() => playButton?.focus());
+  });
+
   // Photos go to the chat at any time. While a stop is open they are also filed under it (its strip
   // and first-photo milestone); before and after the crawl the server files them under the route.
   async function upload(selected: File[]) {
@@ -214,6 +237,13 @@
 
 {#if liveDay.fromMirror && liveDay.mirrorSavedAt}
   <p class="stale" data-testid="mirror-notice">{copy.showingMirror} {mirrorSavedWhen(liveDay.mirrorSavedAt, liveDay.wallNow)}.</p>
+{/if}
+
+{#if liveDay.closedAt}
+  <section class="closing" data-testid="closing-card">
+    <p>{copy.closingCard}</p>
+    <button type="button" bind:this={playButton} data-testid="closing-play" onclick={() => void goto('/live/closing')}>{copy.closingPlay}</button>
+  </section>
 {/if}
 
 {#if !liveDay.hasRoute}
@@ -298,6 +328,10 @@
   .action:active { transform: translateY(2px); box-shadow: none; }
   .speaker { background: linear-gradient(145deg, #403050, #241d2d); border-color: #886a9b; box-shadow: 0 3px 0 #574363; color: #efdcff; }
   .action:disabled { opacity: .45; box-shadow: none; }
+  .closing { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: 12px 0; padding: 12px 12px 12px 16px;
+    border: 1px solid #b5873b; border-radius: 16px; background: linear-gradient(145deg, #443319, #211b13); color: #ffe3a3; }
+  .closing p { margin: 0; font-weight: 700; }
+  .closing button { width: auto; flex: none; margin: 0; padding: 8px 18px; border-radius: 999px; background: #f2c94c; color: #111; font-weight: 700; }
   .stale { margin: 12px 0; padding: 10px 12px; border: 1px solid #555; border-radius: 9px; font-size: 13px; color: #cfcfcf; }
   .toasts { display: flex; flex-direction: column; gap: 8px; margin-top: 10px; }
   .toast { display: flex; justify-content: space-between; align-items: center; gap: 14px; padding: 8px 8px 8px 16px; border-radius: 999px; background: #f2efe6; color: #111;

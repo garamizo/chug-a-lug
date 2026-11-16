@@ -116,7 +116,7 @@ export type DrinkEntry = RecordModel & { action_order?: number; user: string; st
 export type Media = RecordModel & { user: string; file: string; kind: 'image' | 'video'; taken_at: string; at?: string; stop: string; itinerary?: string; tagged_by: 'clock' | 'manual' | 'none'; drink_kind?: DrinkKind | ''; expand?: { user?: UserRecord } };
 export type ReactionTarget = 'drink' | 'bulletin' | 'message' | 'media';
 export type ChatMessage = RecordModel & { itinerary: string; user: string; body: string; at: string; expand?: { user?: UserRecord } };
-export type Reaction = RecordModel & { user: string; target_kind: ReactionTarget; target_id: string; itinerary: string };
+export type Reaction = RecordModel & { user: string; target_kind: ReactionTarget; target_id: string; itinerary: string; at: string };
 /** One item in the full-screen viewer. `url` is what is shown, `full` the original for download. */
 export type LightboxItem = { url: string; full: string; kind: 'image' | 'video'; caption?: string };
 

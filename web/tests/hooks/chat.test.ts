@@ -59,8 +59,11 @@ describe('chat_messages', () => {
 describe('reactions', () => {
   it('counts one Cheers per person per entry', async () => {
     const body = { user: crewId, target_kind: 'message', target_id: 'abcdefghijklmno', itinerary: itineraryId };
-    const first = await post(path('reactions'), body, crew);
+    const first = await post(path('reactions'), { ...body, at: '2000-01-01T00:00:00Z' }, crew);
     expect(first.status).toBe(200);
+    // Stamped by the server like every other live row, whatever the body says.
+    const firstAt = Date.parse((await first.clone().json()).at);
+    expect(Math.abs(Date.now() - firstAt)).toBeLessThan(10000);
     expect((await post(path('reactions'), body, crew)).status).toBe(400); // the unique index
     const id = (await first.json()).id;
     expect((await del(`${path('reactions')}/${id}`, conductor)).status).toBe(404);

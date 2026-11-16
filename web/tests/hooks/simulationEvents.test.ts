@@ -33,6 +33,13 @@ describe.skipIf(process.env.SIM !== '1')('simulation event hooks', () => {
     expect(res.status).toBe(200);
     expect(Date.parse((await res.json()).at)).toBe(Date.parse(epoch));
   });
+  it('stamps Cheers with virtual time, keeping created as wall time', async () => {
+    const res = await post(path('reactions'), { user, target_kind: 'message', target_id: 'abcdefghijklmno', itinerary, at: '2000-01-01T00:00:00Z' }, conductor);
+    expect(res.status).toBe(200);
+    const row = await res.json();
+    expect(Date.parse(row.at)).toBe(Date.parse(epoch));
+    expect(Math.abs(Date.now() - Date.parse(row.created))).toBeLessThan(10000);
+  });
   it('keeps locked_at real and uses event time for the lock log', async () => {
     const res = await patch(`${path('itineraries')}/${itinerary}`, { status: 'locked' }, root);
     expect(res.status).toBe(200);

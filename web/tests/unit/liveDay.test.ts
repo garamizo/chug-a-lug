@@ -247,7 +247,8 @@ describe('one day at a time', () => {
       const p = params as { start?: unknown };
       if (p?.start !== undefined) expect(p.start).toBeInstanceOf(Date);
     }
-    expect(filters).toContainEqual([expect.stringContaining('created >= {:start} && created < {:end}'), expect.anything()]);
+    // Cheers too, by the server's event time: in a rehearsal `created` is wall time, on another day.
+    expect(filters.map(([text]) => text)).not.toContainEqual(expect.stringContaining('created >='));
   });
   it('limits Bulletins to the day, and acks to those Bulletins', async () => {
     mocks.getFullList.mockResolvedValueOnce([{ id: 'b1' }]).mockResolvedValueOnce([]);

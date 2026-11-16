@@ -38,6 +38,12 @@ export function browserConfig(sim = false, production = false) {
     testDir: sim ? 'tests/sim' : 'tests/e2e',
     testMatch: sim ? (production ? '**/offline.spec.ts' : '**/{rehearsal,restart}.spec.ts') : '**/*.spec.ts',
     globalSetup: sim ? './tests/sim/global-setup.ts' : undefined,
+    // Closing Time's night locks a route on the rehearsal's date (archiving the rehearsal's route) and
+    // runs the clock past the train home, so it runs once the rehearsal and the restart are done.
+    projects: sim && !production ? [
+      { name: 'rehearsal', testMatch: '**/{rehearsal,restart}.spec.ts' },
+      { name: 'closing', testMatch: '**/closing.spec.ts', dependencies: ['rehearsal'] }
+    ] : undefined,
     timeout: 30_000,
     workers: 1,
     use: { ...devices['iPhone 13'], browserName: 'chromium', baseURL: 'http://127.0.0.1:15173', trace: 'retain-on-failure' },
