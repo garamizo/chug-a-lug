@@ -144,7 +144,7 @@ test('a watcher falls back after the Conductor deletes the current route', async
   await crew.close();
 });
 
-test('the Metra credit sits above the tab bar at the bottom of Live', async ({ page }) => {
+test('the Metra credit sits above the tab bar and the Practice strip at the bottom of Live', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await stubLiveStatus(page);
   await practise(page, 'E2E Practice Credit');
@@ -153,9 +153,13 @@ test('the Metra credit sits above the tab bar at the bottom of Live', async ({ p
   const credit = page.getByTestId('metra-credit');
   await expect(credit).toContainText('Nov 14, 2026');
   await page.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight));
+  // Both bars are fixed to the bottom; the footer must clear the higher of the two.
+  await expect(page.getByTestId('practice-badge')).toBeVisible();
   await expect.poll(async () => {
-    const c = await credit.boundingBox(); const bar = await page.getByTestId('tab-bar').boundingBox();
-    return c && bar ? bar.y - (c.y + c.height) : -1;
+    const c = await credit.boundingBox();
+    const bar = await page.getByTestId('tab-bar').boundingBox();
+    const strip = await page.getByTestId('practice-badge').boundingBox();
+    return c && bar && strip ? Math.min(bar.y, strip.y) - (c.y + c.height) : -1;
   }).toBeGreaterThanOrEqual(0);
   await expect(credit).toBeInViewport({ ratio: 1 });
 });

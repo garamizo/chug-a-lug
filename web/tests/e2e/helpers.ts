@@ -208,14 +208,18 @@ export async function stubTurnstile(page: Page) {
 
 export const CREDIT_PUBLISHED = '11/14/26 02:20:03 AM America/Chicago';
 /** Answers /api/metra/status as the live stack would (the test stack's `file:` timetable never gives the
- *  Metra credit a date), optionally after `delayMs`. `liveDay` reads the same endpoint for the board's
- *  mode; `schedule_only` with no fetch time is what the test stack and a practice day report anyway. */
-export async function stubLiveStatus(page: Page, delayMs = 0) {
+ *  Metra credit a date). With `hold`, every answer waits for that promise. `liveDay` reads the same
+ *  endpoint for the board's mode; `schedule_only` with no fetch time is what the test stack and a
+ *  practice day report anyway. `requested()` / `answered()` count requests seen and answers delivered. */
+export async function stubLiveStatus(page: Page, opts: { hold?: Promise<void> } = {}) {
+  let requested = 0, answered = 0;
   const feed = { fetchedAt: null, ageSec: null, mode: 'schedule_only' };
   await page.route('**/api/metra/status', async (r) => {
-    if (delayMs) await new Promise((res) => setTimeout(res, delayMs));
+    requested++;
+    if (opts.hold) await opts.hold;
     await r.fulfill({ json: { source: 'live', revision: null, staticPublishedAt: CREDIT_PUBLISHED, staticSource: 'download',
       rtFetchedAt: null, rtAgeSec: null, mode: 'schedule_only', feeds: { positions: feed, tripupdates: feed, alerts: feed } } })
-      .catch(() => {});   // the page may have moved on
+      .then(() => { answered++; }, () => {});   // the page may have moved on
   });
+  return { requested: () => requested, answered: () => answered };
 }

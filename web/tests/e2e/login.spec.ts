@@ -43,12 +43,18 @@ test('the Metra credit shows signed out without a date, signed in with it, and l
 });
 
 test('a status answer that lands after logout never shows its date', async ({ page }) => {
-  await stubLiveStatus(page, 3000);
+  let release!: () => void;
+  const stub = await stubLiveStatus(page, { hold: new Promise<void>((r) => { release = r; }) });
   await login(page, 'E2E Credit Late', 'crew-test-password');
   await openHome(page, 'E2E Credit Late');
+  // The credit's watcher and liveDay each asked once, and neither has its answer yet.
+  await expect.poll(stub.requested).toBeGreaterThanOrEqual(2);
+  const credit = page.getByTestId('metra-credit');
+  await expect(credit).toHaveText(copy.notAffiliated);
   await page.getByTestId('menu').click();
   await page.getByTestId('logout').click();
   await expect(page).toHaveURL(/\/login$/);
-  await page.waitForTimeout(3500);   // past the stubbed delay; a sleep is the point of this test
-  await expect(page.getByTestId('metra-credit')).toHaveText(copy.notAffiliated);
+  release();
+  await expect.poll(stub.answered).toBe(stub.requested());   // delivered to this same page, after logout
+  await expect(credit).toHaveText(copy.notAffiliated);
 });
