@@ -60,6 +60,7 @@ users see. Bars and restaurants keep their plain names.
 | Like / dislike | **Cheers / Pass** | Bar | |
 | Live phase | **Live** | Plain | |
 | Practice day | **Practice** | Plain | Any day that is not the current route's date; Live runs the route's timetable at today's time |
+| Metra credit | **Schedule from Metra’s public feed. Not affiliated with Metra. Timetable published …** | Plain | Footer on every page; Metra's license. The date shows only when signed in, and only Metra's real publish date |
 | Current route | **Current route** | Plain | The locked route the Conductor selected ("Make current"); Live, The Route and photos follow it |
 | Wrap-up phase | **Closing Time** | Bar | |
 | Admin | **Conductor** | Rail | |

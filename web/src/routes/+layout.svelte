@@ -1,6 +1,6 @@
 <script lang="ts">
   import { clientClock } from '$lib/sim/clock.svelte';
-  import { onMount } from 'svelte';
+  import { onMount, untrack } from 'svelte';
   import { page } from '$app/state';
   import { beforeNavigate } from '$app/navigation';
   import { landing } from '$lib/landing';
@@ -8,7 +8,8 @@
   import { auth } from '$lib/pb';
   import AppMenu from '$lib/components/AppMenu.svelte';
   import SimulationStatus from '$lib/components/SimulationStatus.svelte';
-  import { fetchAlerts } from '$lib/live/feed';
+  import { fetchAlerts, fetchStatus } from '$lib/live/feed';
+  import { watchCreditDate } from '$lib/metraCredit';
   import { readSeen, unseenCount } from '$lib/live/seen';
   import { liveDay } from '$lib/live/day.svelte';
   import { boardingQueue } from '$lib/live/boardingQueue.svelte';
@@ -33,6 +34,15 @@
     check();
     const timer = setInterval(check, 60_000);
     return () => clearInterval(timer);
+  });
+  // The Metra credit's date, one watcher per signed-in user. Keyed on the id, and started untracked
+  // because `fetchStatus` reads the simulation clock's revision synchronously: token renewals, renames
+  // and clock revisions must not restart it. Dispose clears the date at logout.
+  let creditDate = $state('');
+  const creditUser = $derived($auth.user?.id ?? '');
+  $effect(() => {
+    if (!creditUser) return;
+    return untrack(() => watchCreditDate(fetchStatus, (d) => { creditDate = d; }));
   });
   onMount(() => {
     if (import.meta.env.PROD && 'serviceWorker' in navigator) {
@@ -68,6 +78,7 @@
 </header>
 <AppMenu open={ui.menuOpen} {unread} waiting={boardingQueue.count} onclose={() => (ui.menuOpen = false)} oncompose={() => (liveDay.composing = true)} />
 <main class="col">{@render children()}</main>
+<footer class="col credit" data-testid="metra-credit">{copy.notAffiliated}{#if creditDate}{' '}{copy.timetablePublished} {creditDate}.{/if}</footer>
 
 <style>
   :global(:root) {
@@ -93,6 +104,7 @@
   .dot { position: absolute; top: 5px; right: 5px; width: 9px; height: 9px; border-radius: 50%;
     background: #ffb400; border: 2px solid #111; }
   main { padding-block: 24px 0; }
+  .credit { font-size: 12px; line-height: 1.5; color: #888; padding-block: 32px 16px; }
   :global(h1) { font-size: 30px; line-height: 1.2; }
   :global(p) { line-height: 1.6; color: #bbb; }
   :global(form) { margin: 24px 0; }

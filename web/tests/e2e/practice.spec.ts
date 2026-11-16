@@ -1,5 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
-import { PB, clearRoutes, login, seedLockedCrawl, superuserToken, openTab } from './helpers';
+import { PB, clearRoutes, login, seedLockedCrawl, superuserToken, openTab, stubLiveStatus } from './helpers';
 import { copy } from '../../src/lib/labels';
 
 const ADMIN = process.env.ADMIN_PASSWORD ?? 'admin-test-password';
@@ -142,4 +142,20 @@ test('a watcher falls back after the Conductor deletes the current route', async
   // mode, so a real `setOffline` reload cannot load the app shell; read the mirror directly instead.
   await expect.poll(() => mirroredRouteId(crew)).toBeNull();
   await crew.close();
+});
+
+test('the Metra credit sits above the tab bar at the bottom of Live', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await stubLiveStatus(page);
+  await practise(page, 'E2E Practice Credit');
+  await page.goto('/live');
+  await expect(page.getByTestId('tab-bar')).toBeVisible();
+  const credit = page.getByTestId('metra-credit');
+  await expect(credit).toContainText('Nov 14, 2026');
+  await page.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight));
+  await expect.poll(async () => {
+    const c = await credit.boundingBox(); const bar = await page.getByTestId('tab-bar').boundingBox();
+    return c && bar ? bar.y - (c.y + c.height) : -1;
+  }).toBeGreaterThanOrEqual(0);
+  await expect(credit).toBeInViewport({ ratio: 1 });
 });

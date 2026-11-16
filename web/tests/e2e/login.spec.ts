@@ -1,5 +1,6 @@
 import { test, expect } from '@playwright/test';
-import { login } from './helpers';
+import { login, openHome, stubLiveStatus } from './helpers';
+import { copy } from '../../src/lib/labels';
 
 test('a signed-out visitor lands on /login; a session persists in a cookie until logout', async ({ page, context }) => {
   await page.goto('/');
@@ -25,4 +26,29 @@ test('login only signs in: the next page opened is already signed in, and an ope
   await login(page, 'E2E Cookie Second', 'crew-test-password');
   await expect(page).toHaveURL(/\/account$/);
   await expect(page.getByTestId('account-name')).toHaveValue('E2E Cookie Second');
+});
+
+test('the Metra credit shows signed out without a date, signed in with it, and loses it at logout', async ({ page }) => {
+  await page.goto('/login');
+  const credit = page.getByTestId('metra-credit');
+  await expect(credit).toHaveText(copy.notAffiliated);
+  await stubLiveStatus(page);
+  await login(page, 'E2E Credit', 'crew-test-password');
+  await openHome(page, 'E2E Credit');
+  await expect(credit).toHaveText(`${copy.notAffiliated} ${copy.timetablePublished} Nov 14, 2026.`);
+  await page.getByTestId('menu').click();
+  await page.getByTestId('logout').click();
+  await expect(page).toHaveURL(/\/login$/);
+  await expect(credit).toHaveText(copy.notAffiliated);
+});
+
+test('a status answer that lands after logout never shows its date', async ({ page }) => {
+  await stubLiveStatus(page, 3000);
+  await login(page, 'E2E Credit Late', 'crew-test-password');
+  await openHome(page, 'E2E Credit Late');
+  await page.getByTestId('menu').click();
+  await page.getByTestId('logout').click();
+  await expect(page).toHaveURL(/\/login$/);
+  await page.waitForTimeout(3500);   // past the stubbed delay; a sleep is the point of this test
+  await expect(page.getByTestId('metra-credit')).toHaveText(copy.notAffiliated);
 });

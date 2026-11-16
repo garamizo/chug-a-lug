@@ -205,3 +205,17 @@ export async function stubTurnstile(page: Page) {
     body: "(function(){var n=0,cb=null;function fresh(){setTimeout(function(){cb('ok-e2e-'+Date.now()+'-'+(++n))})}" +
       "window.turnstile={render:function(el,o){cb=o.callback;fresh();return 'w'},reset:function(){fresh()},remove:function(){}}})();" }));
 }
+
+export const CREDIT_PUBLISHED = '11/14/26 02:20:03 AM America/Chicago';
+/** Answers /api/metra/status as the live stack would (the test stack's `file:` timetable never gives the
+ *  Metra credit a date), optionally after `delayMs`. `liveDay` reads the same endpoint for the board's
+ *  mode; `schedule_only` with no fetch time is what the test stack and a practice day report anyway. */
+export async function stubLiveStatus(page: Page, delayMs = 0) {
+  const feed = { fetchedAt: null, ageSec: null, mode: 'schedule_only' };
+  await page.route('**/api/metra/status', async (r) => {
+    if (delayMs) await new Promise((res) => setTimeout(res, delayMs));
+    await r.fulfill({ json: { source: 'live', revision: null, staticPublishedAt: CREDIT_PUBLISHED, staticSource: 'download',
+      rtFetchedAt: null, rtAgeSec: null, mode: 'schedule_only', feeds: { positions: feed, tripupdates: feed, alerts: feed } } })
+      .catch(() => {});   // the page may have moved on
+  });
+}
