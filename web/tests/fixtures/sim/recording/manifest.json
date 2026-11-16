@@ -6,7 +6,7 @@
   "windowEnd": "2026-12-27T00:10:00.000Z",
   "gtfs": {
     "file": "schedule.zip",
-    "sha256": "7e1e3738a85403d8eef04cfeddf577e928be0df54a6619fdfe81972ca018ff2b"
+    "sha256": "82678caae61fa4e84355a2ec92f4249e9269bc8eccfc5c57bf2fb9471bff123a"
   },
   "observationsAvailable": true,
   "observationStart": "2026-12-26T18:20:00.000Z",

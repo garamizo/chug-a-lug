@@ -132,13 +132,14 @@ export function logout(): void {
   pb.authStore.clear();
 }
 
-/** Realtime subscription that refires `onChange` on any create/update/delete matching the filter. */
-export function subscribe(collection: string, filter: string, onChange: () => void): () => void {
+/** Realtime subscription that refires `onChange` on any create/update/delete matching the filter.
+ *  `onReady` fires once the subscription is live, for a catch-up read of anything missed before it. */
+export function subscribe(collection: string, filter: string, onChange: () => void, onReady?: () => void): () => void {
   let unsub: (() => void) | null = null;
   let active = true;
   pb.collection(collection)
     .subscribe('*', () => onChange(), filter ? { filter } : {})
-    .then((u) => { if (active) unsub = u; else u(); })
+    .then((u) => { if (active) { unsub = u; onReady?.(); } else u(); })
     .catch(() => { /* offline: the page still works from its last fetch */ });
   return () => { active = false; unsub?.(); };
 }

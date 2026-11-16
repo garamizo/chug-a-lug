@@ -194,6 +194,9 @@ test('a new route boards at Aurora and runs home to it', async ({ page }) => {
   await page.getByTestId('sheet-add').click();
   await expect(page.getByTestId('stop-row-0')).toBeVisible();
   await expect(page.getByTestId('closing-leg')).toContainText(`${copy.runHome} Aurora`);
+  // BN3 leaves La Grange at 1:55 PM and reaches Aurora at 2:42 PM; Finish is that arrival.
+  await expect(page.getByTestId('closing-leg')).toContainText('2:42 PM');
+  await expect(page.locator('.stats > div').filter({ hasText: copy.statFinish })).toContainText('2:42 PM');
 });
 
 test('Board at counts the ride in to the first stop', async ({ page }) => {

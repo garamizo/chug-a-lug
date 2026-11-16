@@ -35,6 +35,10 @@ export function draftFrom(early: EarlyDraft | undefined, id: string): Promise<Dr
 /** Calls `onchange` whenever the itinerary, its stops, or its legs change. Returns the unsubscribe. */
 export function watchDraft(id: string, onchange: () => void): () => void {
   const filter = pb.filter('itinerary = {:id}', { id });
-  const unsubs = [subscribe('stops', filter, onchange), subscribe('legs', filter, onchange), subscribe('itineraries', pb.filter('id = {:id}', { id }), onchange)];
+  // The page's first read can predate the subscription: the planner writes the run home last, and a
+  // leg created in that gap raises no event. Reading once more when all three are live closes it.
+  let pending = 3;
+  const ready = () => { if (--pending === 0) onchange(); };
+  const unsubs = [subscribe('stops', filter, onchange, ready), subscribe('legs', filter, onchange, ready), subscribe('itineraries', pb.filter('id = {:id}', { id }), onchange, ready)];
   return () => unsubs.forEach((u) => u());
 }

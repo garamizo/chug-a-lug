@@ -11,6 +11,7 @@
   import LineMap from './LineMap.svelte';
   import StopRow from './StopRow.svelte';
   import LegRow from './LegRow.svelte';
+  import { runHomeReason } from '$lib/runHome';
 
   let { itinerary, stops, legs, editable, canManage, actions, onerror, onopenstop, photos, builder, current, belowHeader, selectTitle }: {
     itinerary: Itinerary; stops: StopLike[]; legs: Leg[]; editable: boolean; canManage: boolean; actions: PlanActions; onerror?: (message: string) => void;
@@ -71,10 +72,9 @@
   // Stations no train stops at on the crawl date (Metra skips a few on weekends). A leg from or
   // to one can never work, and the message should say so rather than blame the layover.
   const unserved = $derived(new Set((stations ?? []).filter((s) => s.served === false).map((s) => s.id)));
-  const legReason = (i: number): string | undefined => {
-    const bad = [sorted[i], sorted[i + 1]].find((s) => s && unserved.has(s.station_id));
-    return bad ? `${names[bad.station_id]} ${copy.noServiceLeg} ${fmtWeekday(itinerary.event_date)}. ${copy.noServiceHint}` : undefined;
-  };
+  const noService = (id: string | undefined): string | undefined =>
+    id && unserved.has(id) ? `${names[id]} ${copy.noServiceLeg} ${fmtWeekday(itinerary.event_date)}. ${copy.noServiceHint}` : undefined;
+  const legReason = (i: number): string | undefined => noService([sorted[i], sorted[i + 1]].find((s) => s && unserved.has(s.station_id))?.station_id);
 
   // Adding a stop leaves and comes back; remember where the page was scrolled so the crawl does
   // not jump back to the top every time.
@@ -104,8 +104,9 @@
 
   const finish = $derived(closing && closing.kind !== 'impossible' ? new Date(closing.arrive_at) : finishAt(sorted.map((_, i) => leaveAt(i))));
   const homeName = $derived(itinerary.start_station_name || itinerary.start_station);
+  // The same unserved-station message the other legs use, for the last stop's station or Board at's.
   const closingReason = $derived(closing?.kind === 'impossible'
-    ? closing.reason === 'after_midnight' ? copy.runHomeMidnight : `${copy.runHome} ${homeName}: ${copy.noTrain}`
+    ? runHomeReason(closing.reason, legReason(sorted.length - 1) ?? noService(itinerary.start_station), homeName)
     : undefined);
 
   // The name is edited in place. Leaving the box renames; a refused name stays in the box with the

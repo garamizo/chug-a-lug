@@ -22,8 +22,11 @@
   let draft = $state<Draft | null>(null);
   let error = $state('');
 
+  // Only the newest read may land: an older one can finish late with legs from before the recompute.
+  let loadSeq = 0;
   async function load(first?: Promise<Draft>) {
-    try { draft = await (first ?? loadDraft(data.id)); } catch { error = copy.loadError; }
+    const seq = ++loadSeq;
+    try { const loaded = await (first ?? loadDraft(data.id)); if (seq === loadSeq) draft = loaded; } catch { if (seq === loadSeq) error = copy.loadError; }
   }
   $effect(() => {
     // Clear the previous itinerary first so navigating between drafts never shows the old one's

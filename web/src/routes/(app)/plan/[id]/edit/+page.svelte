@@ -91,9 +91,15 @@
   const editable = $derived(!!draft && canEditStops(draft.itinerary, $auth.user));
   const canManage = $derived(!!draft && canEditSettings(draft.itinerary, $auth.user));
 
+  // Realtime reloads overlap; only the newest read may land, or an older one that started before the
+  // recompute finished writing legs can overwrite a newer one (the run home is written last).
+  let loadSeq = 0;
   async function load(first?: Promise<Draft>) {
+    const seq = ++loadSeq;
     try {
-      draft = await (first ?? loadDraft(data.id));
+      const loaded = await (first ?? loadDraft(data.id));
+      if (seq !== loadSeq) return;
+      draft = loaded;
       // On The Route the staged plan is built once: from a plan parked before the add screen if
       // there is one, otherwise from the records. Later realtime reloads must not clobber an edit
       // in progress.
