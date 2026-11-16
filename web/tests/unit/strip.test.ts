@@ -31,3 +31,9 @@ it('uses the opening leg\'s arrival for the first stop over the start time', () 
   const opening = [{ from_stop: '', to_stop: 'a', arrive_at: '2026-12-26T18:45:00.000Z' }, ...legs] as Leg[];
   expect(stripStops(stops, opening, null, start)[0].arriveAt).toBe('2026-12-26T18:45:00.000Z');
 });
+
+it('ignores the opening and closing legs, whose ends are empty', () => {
+  const extra = [...legs, { from_stop: '', to_stop: '', arrive_at: '2026-12-26T17:00:00Z', kind: 'walk' }, { from_stop: 'c', to_stop: '', arrive_at: '2026-12-26T23:00:00Z', kind: 'train' }] as Leg[];
+  const plain = stripStops(stops, legs, null, start);
+  expect(stripStops(stops, extra, null, start)).toEqual(plain);
+});

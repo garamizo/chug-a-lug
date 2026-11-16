@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { currentStop } from '../../src/lib/live/current';
+import { closingFresh, closingLeg, crawlEnd, currentStop } from '../../src/lib/live/current';
 import type { Leg, Stop } from '../../src/lib/types';
 
 const stop = (id: string, station: string, order: number): Stop => ({
@@ -177,5 +177,78 @@ describe('currentStop', () => {
     });
     expect(r.stop?.id).toBe('A');
     expect(r.source).toBe('override');
+  });
+
+  describe('the run home', () => {
+    const closing = (ready: string, depart: string, arrive: string, extra: Partial<Leg> = {}): Leg =>
+      ({ ...leg('C', '', depart, arrive), ready_at: ready, ...extra }) as Leg;
+    // Last stop C arrives 21:20 (dwell 60), train home departs 22:20, arrives 23:00.
+    const home = closing('2026-12-26T22:20:00.000Z', '2026-12-26T22:30:00.000Z', '2026-12-26T23:00:00.000Z');
+    const withHome = [...legs, home];
+    const run = (iso: string, override?: { stopId: string; at: string }, ls = withHome) =>
+      currentStop(stops, ls, new Date(iso), { startAt, override });
+
+    it('the last stop departs on the train home', () => {
+      expect(run('2026-12-26T21:30:00.000Z').departAt).toBe(home.depart_at);
+    });
+    it('still at the last stop while riding home', () => {
+      const r = run('2026-12-26T22:45:00.000Z');
+      expect(r.source).toBe('clock');
+      expect(r.stop?.id).toBe('C');
+    });
+    it('after only once home', () => {
+      expect(run('2026-12-26T22:59:00.000Z').source).toBe('clock');
+      expect(run('2026-12-26T23:00:00.000Z').source).toBe('after');
+    });
+    it('an impossible run home never ends the crawl', () => {
+      const bad = closing('2026-12-26T22:20:00.000Z', '', '', { kind: 'impossible', reason: 'after_midnight' });
+      const ls = [...legs, bad];
+      expect(run('2026-12-27T09:00:00.000Z', undefined, ls).source).toBe('clock');
+      expect(crawlEnd(stops, ls, startAt)).toEqual({ at: null, reason: 'no_run_home' });
+      const o = { stopId: 'C', at: '2026-12-26T21:20:00.000Z' };
+      expect(run('2026-12-27T09:00:00.000Z', o, ls).source).toBe('override');
+    });
+    it('early terminal check-in, legs replanned', () => {
+      // Checked in at C at 21:00 (before the 21:20 arrival); replanned ready_at = 22:00.
+      const ls = [...legs, closing('2026-12-26T22:00:00.000Z', '2026-12-26T22:10:00.000Z', '2026-12-26T22:40:00.000Z')];
+      const o = { stopId: 'C', at: '2026-12-26T21:00:00.000Z' };
+      expect(run('2026-12-26T22:39:00.000Z', o, ls).source).toBe('override');
+      expect(run('2026-12-26T22:40:00.000Z', o, ls).source).toBe('after');
+    });
+    it('late terminal check-in, legs replanned from it', () => {
+      const ls = [...legs, closing('2026-12-26T23:00:00.000Z', '2026-12-26T23:10:00.000Z', '2026-12-26T23:40:00.000Z')];
+      const o = { stopId: 'C', at: '2026-12-26T22:00:00.000Z' };
+      expect(run('2026-12-26T23:30:00.000Z', o, ls).source).toBe('override');
+      expect(run('2026-12-26T23:40:00.000Z', o, ls).source).toBe('after');
+    });
+    it('late terminal check-in with stale legs stays override', () => {
+      const o = { stopId: 'C', at: '2026-12-26T23:30:00.000Z' };
+      expect(run('2026-12-27T00:30:00.000Z', o).source).toBe('override');
+    });
+    it('check-in between scheduled arrival and ready time with stale legs stays override', () => {
+      const a = [stop('A', 'AURORA', 1), stop('C', 'CUS', 2)];
+      const arr = '2026-12-26T20:00:00.000Z';
+      const stale = [leg('A', 'C', '2026-12-26T19:40:00.000Z', arr),
+        closing('2026-12-26T21:00:00.000Z', '2026-12-26T21:10:00.000Z', '2026-12-26T21:40:00.000Z')];
+      const fresh = [stale[0], closing('2026-12-26T21:30:00.000Z', '2026-12-26T21:40:00.000Z', '2026-12-26T22:10:00.000Z')];
+      const o = { stopId: 'C', at: '2026-12-26T20:30:00.000Z' };
+      const go = (ls: Leg[], iso: string) => currentStop(a, ls, new Date(iso), { startAt, override: o }).source;
+      expect(go(stale, '2026-12-26T21:50:00.000Z')).toBe('override');
+      expect(go(fresh, '2026-12-26T22:09:00.000Z')).toBe('override');
+      expect(go(fresh, '2026-12-26T22:10:00.000Z')).toBe('after');
+    });
+    it('closingFresh', () => {
+      const o = (at: string, stopId = 'C') => ({ stopId, at });
+      expect(closingFresh(stops, withHome, null)).toBe(true);
+      expect(closingFresh(stops, withHome, o('2026-12-26T21:00:00.000Z', 'A'))).toBe(true);
+      expect(closingFresh(stops, withHome, o('2026-12-26T21:20:30.000Z'))).toBe(true);
+      expect(closingFresh(stops, withHome, o('2026-12-26T20:50:00.000Z'))).toBe(false);
+    });
+    it('crawlEnd falls back without a closing leg, and with no stops', () => {
+      expect(closingLeg(stops, legs)).toBeNull();
+      expect(crawlEnd(stops, legs, startAt)).toEqual({ at: new Date('2026-12-26T21:20:00.000Z') });
+      expect(crawlEnd([], [], startAt)).toEqual({ at: startAt });
+      expect(crawlEnd(stops, withHome, startAt)).toEqual({ at: new Date(home.arrive_at) });
+    });
   });
 });

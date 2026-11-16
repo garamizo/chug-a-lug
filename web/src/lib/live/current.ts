@@ -19,6 +19,44 @@ export type Current = {
   source: CurrentSource;
 };
 
+export type CrawlEnd = { at: Date; reason?: undefined } | { at: null; reason: 'no_run_home' };
+
+const lastStop = (stops: Stop[]): Stop | null =>
+  stops.reduce<Stop | null>((m, s) => (m === null || s.order > m.order ? s : m), null);
+
+/** The run home: from the last stop, to nowhere (`to_stop` empty), heading for "Board at". */
+export function closingLeg(stops: Stop[], legs: Leg[]): Leg | null {
+  const last = lastStop(stops);
+  return last ? legs.find((l) => l.from_stop === last.id && l.to_stop === '') ?? null : null;
+}
+
+/** When the crawl is over: the train home's arrival; null when no run home is possible. Without a
+ *  closing leg (older data) it is the last stop's departure if it has one, else its arrival. */
+export function crawlEnd(stops: Stop[], legs: Leg[], startAt: Date): CrawlEnd {
+  const last = lastStop(stops);
+  if (!last) return { at: startAt };
+  const closing = closingLeg(stops, legs);
+  if (closing) {
+    return closing.kind === 'impossible' ? { at: null, reason: 'no_run_home' } : { at: new Date(closing.arrive_at) };
+  }
+  const out = legs.find((l) => l.from_stop === last.id);
+  if (out?.depart_at) return { at: new Date(out.depart_at) };
+  const arrive = legs.find((l) => l.to_stop === last.id)?.arrive_at;
+  return { at: arrive ? new Date(arrive) : startAt };
+}
+
+/** True when the closing leg was planned from this check-in: its ready_at is within 60 s of
+ *  check-in + last.dwell_min (what `recomputeLegs` produces from that anchor). Always true with no
+ *  anchor or an anchor at another stop. */
+export function closingFresh(stops: Stop[], legs: Leg[], anchor: { stopId: string; at: string } | null): boolean {
+  const last = lastStop(stops);
+  if (!anchor || !last || anchor.stopId !== last.id) return true;
+  const closing = closingLeg(stops, legs);
+  if (!closing) return true;
+  const expected = new Date(anchor.at).getTime() + last.dwell_min * 60_000;
+  return Math.abs(new Date(closing.ready_at).getTime() - expected) <= 60_000;
+}
+
 type Timing = {
   stop: Stop; arriveAt: number; departAt: number | null; departIso: string | null;
   next: Stop | null; onward: Stop | null;
@@ -27,7 +65,7 @@ type Timing = {
 /** Arrival and departure per stop: the incoming leg's arrival (or the start) and the outgoing leg's departure. */
 function timings(stops: Stop[], legs: Leg[], startAt: Date): Timing[] {
   const ordered = [...stops].sort((a, b) => a.order - b.order);
-  const incoming = new Map(legs.map((l) => [l.to_stop, l]));
+  const incoming = new Map(legs.filter((l) => l.to_stop !== '').map((l) => [l.to_stop, l]));
   const outgoing = new Map(legs.map((l) => [l.from_stop, l]));
   return ordered.map((stop, i) => {
     const inLeg = incoming.get(stop.id);
@@ -58,9 +96,9 @@ export function currentStop(
 
   const at = now.getTime();
   const last = ts[ts.length - 1];
-  // The crawl is over once it is past the final departure, or — since the last stop has no onward
-  // leg — once it has arrived there at all. Either way there is no train left to catch.
-  const finished = (t: Timing) => t === last && (t.departAt === null ? at >= t.arriveAt : at >= t.departAt);
+  // The crawl is over once the train home has arrived. With no run home (impossible) it never ends.
+  const end = crawlEnd(stops, legs, opts.startAt);
+  const finished = (t: Timing) => t === last && end.at !== null && at >= end.at.getTime();
 
   const override = opts.override;
   const hit = override ? ts.findIndex((t) => t.stop.id === override.stopId) : -1;
@@ -79,10 +117,14 @@ export function currentStop(
       i = j;
     }
     if (i > hit) return result(ts[i], finished(ts[i]) ? 'after' : 'clock');
-    // Still at the checked-in stop. At the last stop, a check-in no newer than its planned arrival
-    // is one the schedule has caught up with, so the crawl ends there as it would by the clock.
+    // Still at the checked-in stop. At the last stop the crawl ends when the train home arrives, but
+    // only if that leg was replanned from this check-in; stale legs say nothing about it.
     const t = ts[hit];
-    return result(t, finished(t) && checkedIn <= t.arriveAt ? 'after' : 'override');
+    if (t !== last) return result(t, 'override');
+    const closing = closingLeg(stops, legs);
+    if (!closing) return result(t, finished(t) && checkedIn <= t.arriveAt ? 'after' : 'override');
+    const done = closing.kind !== 'impossible' && closingFresh(stops, legs, override) && finished(t);
+    return result(t, done ? 'after' : 'override');
   }
 
   // Walk forward to the last stop the crawl has already arrived at.
