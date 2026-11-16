@@ -132,6 +132,20 @@ describe('POST /api/plan/commit', () => {
     expect(state.writes).toEqual([]);
   });
 
+  it('refuses a run home that cannot be ridden, naming the home station', async () => {
+    state.itinerary = { ...state.itinerary, start_station: 'AURORA', start_station_name: 'Aurora' };
+    const res = await call({
+      ...rideable, anchorStopId: 's3',
+      stops: [rideable.stops[0], { ...rideable.stops[1], dwell_min: 600 }]
+    });
+    expect(res.status).toBe(409);
+    const body = await res.json();
+    expect(body.blockers).toHaveLength(1);
+    expect(body.blockers[0].message).toContain('Berwyn Beer Hall');
+    expect(body.blockers[0].message).toContain(`${copy.blockTo} Aurora.`);
+    expect(state.writes).toEqual([]);
+  });
+
   it('rejects impossible legs before the selected position off the event day without writing', async () => {
     vi.setSystemTime(new Date('2026-12-19T18:00:00.000Z'));
     const res = await call({

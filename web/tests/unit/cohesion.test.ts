@@ -67,4 +67,20 @@ describe('cohesionBlockers', () => {
     expect(blockers[0].message).toContain(`${copy.theStart} ${copy.blockTo} Alpha`);
   });
 
+
+  describe('the run home', () => {
+    const closing = { fromStopId: 'c', toStopId: '', kind: 'impossible' as const };
+    const input = { eventDate: '2026-12-26', now: new Date('2026-12-26T18:00:00Z'), stops, legs: [...rideable, closing], anchorStopId: 'b' };
+
+    it('names the home station when the closing leg is impossible', () => {
+      expect(cohesionBlockers({ ...input, homeName: 'Aurora' })).toEqual([{
+        code: 'impossible_leg',
+        message: `${copy.blockNoTrain} Berwyn Beer Hall ${copy.blockTo} Aurora. ${copy.blockHint}`
+      }]);
+    });
+
+    it('falls back to the start wording without a home name', () => {
+      expect(cohesionBlockers(input)[0].message).toContain(`${copy.blockTo} ${copy.theStart}.`);
+    });
+  });
 });

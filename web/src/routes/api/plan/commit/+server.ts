@@ -147,7 +147,8 @@ export const POST: RequestHandler = async ({ request }) => {
     const blockers = cohesionBlockers({
       eventDate: itinerary.event_date, now: new Date(at),
       stops: stops.map((s) => ({ id: s.id, order: s.order, name: s.name })),
-      legs, anchorStopId: anchorStopId || null
+      legs, anchorStopId: anchorStopId || null,
+      homeName: itinerary.start_station_name || itinerary.start_station
     });
     // `message` is what `api()` on the client surfaces as the caught error's text; without it the
     // Conductor sees a bare "409 Conflict" instead of the reason (already user-facing copy).

@@ -198,7 +198,8 @@
         eventDate: draft.itinerary.event_date, now: liveDay.realNow,
         stops: plan.stops.map((s) => ({ id: s.id, order: s.order, name: s.name })),
         legs: previewLegs.map((l) => ({ fromStopId: l.from_stop, toStopId: l.to_stop, kind: l.kind })),
-        anchorStopId: plan.anchorStopId
+        anchorStopId: plan.anchorStopId,
+        homeName: draft.itinerary.start_station_name || draft.itinerary.start_station
       })
     : []);
 

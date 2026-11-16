@@ -28,6 +28,8 @@ export function impossibleFromAnchor(input: { stops: CohesionStop[]; legs: Cohes
 export function cohesionBlockers(input: {
   stops: CohesionStop[]; legs: CohesionLeg[]; anchorStopId: string | null;
   eventDate: string; now?: Date;
+  /** The station the run home ends at; names a leg whose `toStopId` is ''. */
+  homeName?: string;
 }): Blocker[] {
   if (!input.anchorStopId) return [{ code: 'no_position', message: copy.blockNoPosition }];
   const ordered = [...input.stops].sort((a, b) => a.order - b.order);
@@ -35,6 +37,8 @@ export function cohesionBlockers(input: {
   if (index.get(input.anchorStopId) === undefined) return [{ code: 'anchor_missing', message: copy.blockAnchorMissing }];
   // The opening leg's `fromStopId` is '': the ride starts before any stop on the route.
   const name = (id: string) => (id ? ordered.find((s) => s.id === id)?.name ?? id : copy.theStart);
+  // The closing leg's `toStopId` is '': the ride ends at the Board at station, past the last stop.
+  const toName = (id: string) => (id ? name(id) : input.homeName || copy.theStart);
 
   // A selected position is still required off-day, but no leg is history until the event day.
   const impossible = input.eventDate === todayInTz(input.now)
@@ -42,6 +46,6 @@ export function cohesionBlockers(input: {
     : input.legs.filter((leg) => leg.kind === 'impossible');
   return impossible.map((leg) => ({
     code: 'impossible_leg' as const,
-    message: `${copy.blockNoTrain} ${name(leg.fromStopId)} ${copy.blockTo} ${name(leg.toStopId)}. ${copy.blockHint}`
+    message: `${copy.blockNoTrain} ${name(leg.fromStopId)} ${copy.blockTo} ${toName(leg.toStopId)}. ${copy.blockHint}`
   }));
 }
