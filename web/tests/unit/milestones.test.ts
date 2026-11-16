@@ -13,10 +13,9 @@ const drink = (user: string, kind: string, minute: number) => ({
 const ids = (rows: { id: string }[]) => rows.map((r) => r.id);
 
 describe('milestones', () => {
-  it('announces the first of each kind once', () => {
-    const rows = milestones([drink('a', 'beer', 1), drink('b', 'beer', 2), drink('b', 'food', 3)], [], [], DATE);
-    expect(ids(rows).filter((id) => id.includes('first'))).toEqual(['milestone:first:beer', 'milestone:first:food']);
-    expect(rows.find((r) => r.id === 'milestone:first:beer')?.body).toContain('A');
+  it('no longer announces first-of-kind drinks or leader changes (Golden Spikes do)', () => {
+    const rows = milestones([drink('a', 'beer', 1), drink('b', 'beer', 2), drink('b', 'shot', 3), drink('a', 'beer', 4), drink('a', 'beer', 5)], [], [], DATE);
+    expect(ids(rows)).toEqual([]);
   });
 
   it('counts only shots, cocktails and beers toward crew totals, at the drink that crossed the line', () => {
@@ -29,14 +28,6 @@ describe('milestones', () => {
     expect(total.target).toBeNull();
   });
 
-  it('reports a new leader only when someone strictly overtakes', () => {
-    const rows = milestones([drink('a', 'beer', 1), drink('b', 'beer', 2), drink('b', 'shot', 3), drink('a', 'beer', 4), drink('a', 'beer', 5)], [], [], DATE);
-    const leads = rows.filter((r) => r.id.startsWith('milestone:lead'));
-    expect(leads.map((r) => [r.id, r.body])).toEqual([
-      ['milestone:lead:1', `👑 B ${copy.milestoneLead}`], ['milestone:lead:2', `👑 A ${copy.milestoneLead}`]
-    ]);
-  });
-
   it('marks the first photo at each stop and ignores other days', () => {
     const media = [
       { id: 'p1', stop: 's1', at: '2026-12-26T20:10:00Z', created: '', user: 'a', expand: { user: { name: 'A' } } },
@@ -46,6 +37,15 @@ describe('milestones', () => {
     const rows = milestones([drink('a', 'beer', 1)].map((d) => ({ ...d, at: '2026-12-25T20:00:00Z' })), media, [{ id: 's1', name: 'Tap' }, { id: 's2', name: 'Hall' }], DATE);
     expect(ids(rows)).toEqual(['milestone:photo:s1']);
     expect(rows[0].body).toContain('Tap');
+  });
+
+  it('skips a drink proof photo when finding the first photo at a stop', () => {
+    const media = [
+      { id: 'p1', stop: 's1', at: '2026-12-26T20:10:00Z', created: '', user: 'a', drink_kind: 'beer' },
+      { id: 'p2', stop: 's1', at: '2026-12-26T20:11:00Z', created: '', user: 'b', expand: { user: { name: 'B' } } }
+    ] as unknown as Media[];
+    const rows = milestones([], media, [{ id: 's1', name: 'Tap' }], DATE);
+    expect(rows.map((r) => r.body)).toEqual([`📸 ${copy.milestonePhoto} Tap · B`]);
   });
 
   it('places the photo milestone right after its own photo once merged through chatEntries', () => {
@@ -64,8 +64,9 @@ describe('milestones', () => {
   });
 
   it('gives the same answer every time and drops a milestone when its drink is undone', () => {
-    const drinks = [drink('a', 'beer', 1), drink('b', 'shot', 2)];
+    const drinks = Array.from({ length: 10 }, (_, i) => drink('a', 'beer', i));
     expect(milestones(drinks, [], [], DATE)).toEqual(milestones([...drinks].reverse(), [], [], DATE));
-    expect(ids(milestones(drinks.slice(0, 1), [], [], DATE))).not.toContain('milestone:first:shot');
+    expect(ids(milestones(drinks, [], [], DATE))).toContain('milestone:total:10');
+    expect(ids(milestones(drinks.slice(0, 9), [], [], DATE))).not.toContain('milestone:total:10');
   });
 });

@@ -1,5 +1,6 @@
 import type { Broadcast, ChatMessage, DrinkEntry, Media, Reaction, ReactionTarget } from '$lib/types';
-import { copy } from '$lib/labels';
+import { copy, drinkIcons } from '$lib/labels';
+import { SPIKE_LABELS, type SpikeEvent } from './spikes';
 
 export type ChatEntry = {
   id: string; at: string; created: string; order: number; author: string; userId: string; stop: string;
@@ -23,6 +24,23 @@ export function chatEntries(drinks: DrinkEntry[], bulletins: Broadcast[], extra:
       target: { kind: 'media', id: p.id }, media: p })),
     ...(extra.milestones ?? [])
   ].sort((a, b) => Date.parse(a.at) - Date.parse(b.at) || a.created.localeCompare(b.created) || a.order - b.order || a.id.localeCompare(b.id));
+}
+
+/** Golden Spikes as chat lines; a hand-over names the previous holder from the earlier event of the same spike. */
+export function spikeEntries(events: SpikeEvent[]): ChatEntry[] {
+  const names = new Map<string, string>();
+  return events.map((e): ChatEntry => {
+    const { name } = SPIKE_LABELS[e.kind];
+    let body = `🏅 ${name} · ${e.name}`;
+    if (e.kind === 'pathfinder') {
+      const kind = e.detail ?? '';
+      body += ` — ${copy.spikeFirst} ${drinkIcons[kind] ?? '☕'} ${(copy as Record<string, string>)[`drink_${kind}`] ?? copy.chatDrink}`;
+    } else if (e.from) {
+      body += ` ${copy.spikeTakesFrom} ${names.get(`${e.kind}:${e.from}`) ?? copy.chatCrew}`;
+    }
+    names.set(`${e.kind}:${e.user}`, e.name);
+    return { id: e.id, at: e.at, created: e.created, order: e.order, author: copy.spikeAuthor, userId: '', stop: '', kind: 'spike', body, target: null };
+  });
 }
 
 export function reactionSummary(reactions: Reaction[], me: string): Map<string, { count: number; mine: string | null }> {

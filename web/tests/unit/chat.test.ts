@@ -1,5 +1,5 @@
-import { expect, it } from 'vitest';
-import { chatEntries, reactionSummary } from '../../src/lib/live/chat';
+import { describe, expect, it } from 'vitest';
+import { chatEntries, reactionSummary, spikeEntries } from '../../src/lib/live/chat';
 import type { Broadcast, ChatMessage, DrinkEntry, Media, Reaction } from '../../src/lib/types';
 it('merges bulletin and Tab activity in event order, including names and venue', () => {
   const drinks = [{ id: 'd', at: '2026-09-19T17:06:00Z', kind: 'beer', expand: { user: { name: 'Pat' }, stop: { name: 'Tap Room' } } }] as unknown as DrinkEntry[];
@@ -51,4 +51,23 @@ it('shows a drink with a photo only as its photo entry; a legacy drink keeps its
   ] as unknown as DrinkEntry[];
   const media = [{ id: 'p', at: '2026-12-26T17:00:00Z', kind: 'image', user: 'u', stop: 's', drink_kind: 'beer' }] as unknown as Media[];
   expect(chatEntries(drinks, [], { media }).map(r => r.id)).toEqual(['photo:p', 'drink:old']);
+});
+
+describe('spikeEntries', () => {
+  const ev = (o: Record<string, unknown>) => ({ id: 'spike:x', kind: 'bigboy', user: 'u1', name: 'ANN', at: '2026-12-26T20:00:00Z', created: '', order: 1.5, ...o });
+  it('formats Pathfinder with the first kind', () => {
+    const [e] = spikeEntries([ev({ kind: 'pathfinder', detail: 'beer' }) as never]);
+    expect(e).toMatchObject({ id: 'spike:x', kind: 'spike', author: 'Golden Spike', userId: '', target: null, order: 1.5 });
+    expect(e.body).toBe('🏅 Pathfinder · ANN — first 🍺 Beer');
+  });
+  it('formats a held spike hand-over and its first holder', () => {
+    const rows = spikeEntries([
+      ev({ id: 'spike:bigboy:1' }), ev({ id: 'spike:bigboy:2', user: 'u2', name: 'BOB', from: 'u1' })
+    ] as never);
+    expect(rows[0].body).toBe('🏅 Big Boy · ANN');
+    expect(rows[1].body).toBe('🏅 Big Boy · BOB takes it from ANN');
+  });
+  it('formats other spikes plainly', () => {
+    expect(spikeEntries([ev({ kind: 'caboose' }) as never])[0].body).toBe('🏅 Caboose · ANN');
+  });
 });

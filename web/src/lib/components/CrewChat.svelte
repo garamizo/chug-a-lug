@@ -7,8 +7,9 @@
   import { clientClock } from '$lib/sim/clock.svelte';
   import { copy, drinkIcons, labels, proofCaption } from '$lib/labels';
   import { fmtTime } from '$lib/time';
-  import { chatEntries, reactionSummary, type ChatEntry } from '$lib/live/chat';
+  import { chatEntries, reactionSummary, spikeEntries, type ChatEntry } from '$lib/live/chat';
   import { milestones } from '$lib/live/milestones';
+  import { spikes } from '$lib/live/spikes';
   import { liveDay } from '$lib/live/day.svelte';
   import { openLightbox } from '$lib/nav';
   import type { LightboxItem } from '$lib/types';
@@ -25,7 +26,9 @@
   } = $props();
   let sendError = $state(''), shown = $state(40);
   const marks = $derived(milestones(liveDay.feed.drinks, liveDay.feed.media, liveDay.stops, liveDay.today));
-  const all = $derived(chatEntries(liveDay.feed.drinks, liveDay.bulletins, { messages: liveDay.feed.messages, media: liveDay.feed.media, milestones: marks }));
+  const golden = $derived(spikeEntries(spikes({ drinks: liveDay.feed.drinks, media: liveDay.feed.media, messages: liveDay.feed.messages,
+    stops: liveDay.stops, date: liveDay.today, closedAt: liveDay.closedAt })));
+  const all = $derived(chatEntries(liveDay.feed.drinks, liveDay.bulletins, { messages: liveDay.feed.messages, media: liveDay.feed.media, milestones: [...marks, ...golden] }));
   const entries = $derived(all.slice(-shown));
   const cheers = $derived(reactionSummary(liveDay.feed.reactions, userId));
   const photos = $derived(all.filter((e) => e.media));
@@ -93,16 +96,16 @@
     {#each entries as entry (entry.id)}
       {@const key = entry.target ? `${entry.target.kind}:${entry.target.id}` : null}
       {@const c = key ? cheers.get(key) : undefined}
-      {@const mine = entry.userId === userId && entry.kind !== 'milestone' && entry.kind !== 'bulletin'}
+      {@const mine = entry.userId === userId && entry.kind !== 'milestone' && entry.kind !== 'spike' && entry.kind !== 'bulletin'}
       <!-- svelte-ignore a11y_no_noninteractive_tabindex, a11y_no_noninteractive_element_interactions -->
-      <article class:bulletin={entry.kind === 'bulletin'} class:milestone={entry.kind === 'milestone'} class:mine class:open={menu.openFor === entry.id}
+      <article class:bulletin={entry.kind === 'bulletin'} class:milestone={entry.kind === 'milestone'} class:spike={entry.kind === 'spike'} class:mine class:open={menu.openFor === entry.id}
         tabindex={entry.target ? 0 : undefined} title={entry.target ? copy.chatHoldHint : undefined}
         onpointerdown={(e) => { if (entry.target) menu.start(e, entry.id); }} onpointermove={(e) => menu.move(e)} onpointerup={() => menu.cancel()} onpointercancel={() => menu.cancel()} onpointerleave={() => menu.cancel()}
         oncontextmenu={(e) => { if (!entry.target) return; e.preventDefault(); menu.open(entry.id); }}
         onkeydown={(e) => { if (entry.target && e.key === 'Enter' && e.target === e.currentTarget) { e.preventDefault(); menu.open(entry.id); } }}>
-        {#if !mine && entry.kind !== 'milestone'}<strong class="who" style:color={nameColour(entry.userId || entry.author)}>{entry.author}</strong>{/if}
+        {#if !mine && entry.kind !== 'milestone' && entry.kind !== 'spike'}<strong class="who" style:color={nameColour(entry.userId || entry.author)}>{entry.author}</strong>{/if}
         {#if entry.kind === 'bulletin'}<p><span aria-hidden="true">📣</span> {entry.body}<span class="pad"></span></p>
-        {:else if entry.kind === 'message' || entry.kind === 'milestone'}<p>{entry.body}<span class="pad"></span></p>
+        {:else if entry.kind === 'message' || entry.kind === 'milestone' || entry.kind === 'spike'}<p>{entry.body}<span class="pad"></span></p>
         {:else if entry.kind === 'photo' && entry.media}
           <button type="button" class="photo" aria-label={entry.media.kind === 'image' ? copy.openFreightPhoto : copy.openFreightVideo}
             onclick={() => openLightbox(viewer, photos.findIndex((p) => p.id === entry.id))}>
@@ -141,6 +144,8 @@
   article.mine { align-self: flex-end; background: #3a2f17; border-radius: 10px 3px 10px 10px; }
   article.bulletin { background: #3a2c0f; border: 1px solid #806329; }
   article.milestone { align-self: center; background: #1b2415; border-radius: 8px; text-align: center; font-size: 13px; color: #cfe3bf; }
+  article.spike { background: #3a2f0c; border: 1px solid #b8921f; color: #ffe08a; }
+  article.spike p { color: #ffe08a; }
   article.open { outline: 2px solid #ffb400; }
   article:has(.react) { margin-bottom: 12px; }
   .who { display: block; font-size: 13px; font-weight: 700; line-height: 1.3; }
