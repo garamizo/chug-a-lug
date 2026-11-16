@@ -76,6 +76,8 @@ Board already ranks drinks for the day.
   Includes admin retagging of Freight (Decision 5).
 - Scoreboard (Hall of Fame): drinks per person, per stop, per drink type; stop likes.
 - Awards (Golden Spikes): the seven computed ones are done (chat, Crew Board laurels, winner's card); admin-assigned ones remain.
+- [x] Closing Time's highlight reel: a story-style montage of the night (stops, most-Cheered photos and
+  messages, spikes, drinks, finale) that opens by itself on each phone when the train home arrives.
 
 **Nice to have**
 - Event log replay: a timeline of the day with photos placed on it.

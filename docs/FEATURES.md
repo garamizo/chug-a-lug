@@ -101,6 +101,12 @@ Goal: nobody misses a train, nobody is lost, and the plan can change without cha
   Tab kind), Big Boy (most drinks, from 3), Caboose (fewest, at Closing Time), Triple Header, Full Consist, Whistle Stop
   (most messages, from 5) and Railfan (most photos, from 3). They post to Crew chat, the winner sees a card once, and the
   Crew Board shows a laurel and count by each name.
+- **Closing Time** starts when the train home arrives. Live then shows a card that plays the night's highlight
+  reel. The reel opens by itself once on each phone, as soon as the whole night's feed has loaded, and never over
+  an open sheet, photo, Tab or Bulletin. It plays full screen like a story: the route's title, then each stop with
+  its most-Cheered photos (up to two), its most-Cheered message, the Golden Spikes won there and its drinks, then a
+  finale with the crew's total, the spikes held at the end and the Caboose. Tap right or left to skip, hold to
+  pause; ✕, Done or Back return to Live. Cheers are stamped by the server's clock, so a rehearsal counts them too.
 - **The Tab** is a one-tap row of shot / cocktail / beer / non-alcoholic / food buttons in a sheet
   opened from the tab bar (from any screen it goes to Live first; X, a tap outside or Escape closes
   it, and it stays open between taps), with personal counters per drink and a running total for the day. A tap opens
