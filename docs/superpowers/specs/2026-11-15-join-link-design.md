@@ -146,7 +146,7 @@ link is used up or expired. Ask the Conductor for a new one."
    - missing row or wrong secret → 404;
    - row already has `user` (a retry after a lost answer): if the code matches, answer as in the
      success case for that user without touching seats; otherwise 400;
-   - past `expires_at`, more than 5 wrong codes, or more than 15 min since `code_sent_at` → 410 "That
+   - past `expires_at`, 5 wrong codes already spent (`code_attempts >= 5`, even for a right code), or more than 15 min since `code_sent_at` → 410 "That
      code expired. Start again."; wrong code → 400 and `code_attempts + 1`;
    - link no longer active → link message, row deleted;
    - name or email now taken → 409, row deleted;
@@ -167,7 +167,7 @@ link is used up or expired. Ask the Conductor for a new one."
 **Cron** `join_sweep` every 5 minutes deletes sign-ups past `expires_at`. The existing daily
 `access_log` pruning moves from `boarding.js` to `access.js`, minus its `boarding_requests` UPDATE.
 
-**Client** (`/join`): reads the token from the fragment, checks it with route 1, shows the form, then
+**Client** (`/join`): a stored sign-up that has reached the code step is restored **without** a link check (after a lost answer for the last seat the link is already full, yet the verify retry must still work). Otherwise it reads the token from the fragment, checks it with route 1, shows the form, then
 the code step. On a successful verify it saves the session with `pb.authStore.save(res.token,
 res.record)` (as `rehearsalLogin` does; raw `pb.send` installs nothing) **before** clearing its
 stored sign-up and going to Home. If the verify answer is lost the page retries the same request; a
