@@ -57,13 +57,13 @@ export function closingFresh(stops: Stop[], legs: Leg[], anchor: { stopId: strin
   return Math.abs(new Date(closing.ready_at).getTime() - expected) <= 60_000;
 }
 
-type Timing = {
+export type Timing = {
   stop: Stop; arriveAt: number; departAt: number | null; departIso: string | null;
   next: Stop | null; onward: Stop | null;
 };
 
 /** Arrival and departure per stop: the incoming leg's arrival (or the start) and the outgoing leg's departure. */
-function timings(stops: Stop[], legs: Leg[], startAt: Date): Timing[] {
+export function stopTimings(stops: Stop[], legs: Leg[], startAt: Date): Timing[] {
   const ordered = [...stops].sort((a, b) => a.order - b.order);
   const incoming = new Map(legs.filter((l) => l.to_stop !== '').map((l) => [l.to_stop, l]));
   const outgoing = new Map(legs.map((l) => [l.from_stop, l]));
@@ -91,7 +91,7 @@ export function currentStop(
   now: Date,
   opts: { startAt: Date; override?: { stopId: string; at: string } | null }
 ): Current {
-  const ts = timings(stops, legs, opts.startAt);
+  const ts = stopTimings(stops, legs, opts.startAt);
   if (ts.length === 0) return { stop: null, nextStop: null, onwardStop: null, departAt: null, source: 'before' };
 
   const at = now.getTime();

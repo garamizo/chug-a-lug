@@ -87,4 +87,15 @@ describe('labels', () => {
     expect(proofCaption('', 'Ana')).toBe('Ana');
     expect(proofCaption(undefined, 'Ana')).toBe('Ana');
   });
+  it('has the Closing Time copy', () => {
+    expect(copy.closingCard).toBe('Closing Time — the night’s highlights');
+    expect(copy.closingPlay).toBe('Play');
+    expect(copy.closingNotYet).toBe('Closing Time starts when the train home arrives.');
+    expect(copy.closingLoading).toBe('Putting the night together…');
+    expect(copy.closingReplay).toBe('Watch again');
+    expect(copy.closingDone).toBe('Done');
+    expect(copy.closingFinale).toBe('That’s the night');
+    expect(copy.closingCrewTotal).toBe('drinks, all told');
+    expect(copy.closingCheers).toBe('Cheers');
+  });
 });

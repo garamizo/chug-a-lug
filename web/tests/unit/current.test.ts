@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { closingFresh, closingLeg, crawlEnd, currentStop } from '../../src/lib/live/current';
+import { closingFresh, closingLeg, crawlEnd, currentStop, stopTimings } from '../../src/lib/live/current';
 import type { Leg, Stop } from '../../src/lib/types';
 
 const stop = (id: string, station: string, order: number): Stop => ({
@@ -250,5 +250,17 @@ describe('currentStop', () => {
       expect(crawlEnd([], [], startAt)).toEqual({ at: startAt });
       expect(crawlEnd(stops, withHome, startAt)).toEqual({ at: new Date(home.arrive_at) });
     });
+  });
+});
+
+describe('stopTimings', () => {
+  it('stopTimings matches the old timings', () => {
+    const t = stopTimings([stops[2], stops[0], stops[1]], legs, startAt);
+    expect(t.map((x) => x.stop.id)).toEqual(['A', 'B', 'C']);
+    expect(t.map((x) => x.arriveAt)).toEqual([
+      startAt.getTime(), Date.parse('2026-12-26T19:20:00.000Z'), Date.parse('2026-12-26T21:20:00.000Z')
+    ]);
+    expect(t.map((x) => x.departIso)).toEqual(['2026-12-26T19:00:00.000Z', '2026-12-26T21:00:00.000Z', null]);
+    expect(t[0].next?.id).toBe('B');
   });
 });
