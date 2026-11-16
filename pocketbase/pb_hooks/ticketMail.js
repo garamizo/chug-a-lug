@@ -25,7 +25,7 @@ function ticketHtml(code) {
 <tr><td colspan="3" style="padding:10px 14px 16px 18px;">
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"><tr>
 <td style="font-family:${FONT};font-size:12px;font-weight:800;color:${INK};white-space:nowrap;">VALID 15 MIN</td>
-<td align="right" style="font-family:${FONT};font-size:12px;font-weight:800;color:${INK};text-align:right;white-space:nowrap;padding-left:12px;">CHUG-A-LUG CHOO-CHOO</td>
+<td align="right" style="font-family:${FONT};font-size:12px;font-weight:800;color:${INK};text-align:right;padding-left:12px;">CHUG-A-LUG CHOO-CHOO</td>
 </tr></table>
 </td></tr>
 </table>
