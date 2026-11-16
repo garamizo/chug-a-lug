@@ -80,6 +80,7 @@
 
 <style>
   :global(:root) {
+    color-scheme: dark;
     --gold: #ffb400; --gold-soft: #ffce5c; --gold-deep: #6b4c10; --metra: #29C233; --board-bg: #0b0b0b; --danger: #ff8a80;
     --mono: ui-monospace, SFMono-Regular, Menlo, monospace;
   }
