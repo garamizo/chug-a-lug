@@ -67,10 +67,17 @@ describe('sendProof', () => {
   });
   it('maps errors to messages', async () => {
     const fail = (e: unknown) => sendProof(send, deps({ createMedia: vi.fn(async () => { throw e; }) }));
-    expect(await fail({ status: 0 })).toEqual({ status: 'failed', message: copy.noSignal });
-    expect(await fail({ status: 400, response: { message: 'Proof_needs_image.' } })).toEqual({ status: 'failed', message: copy.proofNeedsImage });
-    expect(await fail({ status: 400, response: { message: 'Proof_needs_stop.' } })).toEqual({ status: 'failed', message: copy.proofNeedsStop });
-    expect(await fail({ status: 500 })).toEqual({ status: 'failed', message: copy.uploadFailed });
+    expect(await fail({ status: 0 })).toEqual({ status: 'failed', message: copy.noSignal, retryable: true });
+    expect(await fail({ status: 400, response: { message: 'Proof_needs_image.' } })).toEqual({ status: 'failed', message: copy.proofNeedsImage, retryable: false });
+    expect(await fail({ status: 400, response: { message: 'Proof_needs_stop.' } })).toEqual({ status: 'failed', message: copy.proofNeedsStop, retryable: false });
+    expect(await fail({ status: 500 })).toEqual({ status: 'failed', message: copy.uploadFailed, retryable: true });
+  });
+  it('retries network and 5xx failures, never a server refusal', async () => {
+    const fail = async (e: unknown) => (await sendProof(send, deps({ createMedia: vi.fn(async () => { throw e; }) }))) as { retryable: boolean };
+    expect((await fail({ status: 503 })).retryable).toBe(true);
+    expect((await fail(new Error('boom'))).retryable).toBe(true);
+    expect((await fail({ status: 400, response: { message: 'Something_else.' } })).retryable).toBe(false);
+    expect((await fail({ status: 403, response: { message: 'Forbidden.' } })).retryable).toBe(false);
   });
 });
 

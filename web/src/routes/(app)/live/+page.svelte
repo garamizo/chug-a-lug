@@ -55,7 +55,11 @@
   // of them makes an unfinished send stale: no Retry, and a late answer is left to the feed's reload.
   const scope = $derived<ProofScope | null>(me && liveDay.itinerary
     ? { user: me, itinerary: liveDay.itinerary.id, day: liveDay.today, runId: clientClock.runId ?? null } : null);
-  $effect(() => { if (retries.some((r) => !sameScope(r.scope, scope))) retries = retries.filter((r) => sameScope(r.scope, scope)); });
+  // A kept send goes when its scope changes, or once its drink is in the feed (the upload landed and only the answer was lost).
+  $effect(() => {
+    const saved = new Set(liveDay.feed.drinks.map((d) => d.id));
+    if (retries.some((r) => !sameScope(r.scope, scope) || saved.has(r.id))) retries = retries.filter((r) => sameScope(r.scope, scope) && !saved.has(r.id));
+  });
   // Only saved rows count, by the server's day.
   const dayTotal = $derived(drinkCount(liveDay.feed.drinks, me, liveDay.today));
   const leaders = $derived($auth.user ? topLine(liveDay.feed.drinks, { id: $auth.user.id, name: $auth.user.name }, liveDay.today) : []);
@@ -83,7 +87,12 @@
     const photo = camera?.files?.[0], t = tapped;
     tapped = null;
     if (camera) camera.value = '';
-    if (photo && t) void logDrink(t, photo);
+    if (photo && t) {
+      // The new photo is on its way: the last drink's Undo must not stay live while it compresses.
+      clearTimeout(toastTimer);
+      toast = null;
+      void logDrink(t, photo);
+    }
   }
 
   // The camera answered: shrink the photo, then send it as the drink, at the stop it was tapped.
@@ -121,11 +130,11 @@
       });
     } catch (err) {
       // No clock to send by (offline, or the simulation is away): the photo is kept for Retry.
-      result = sameScope(send.scope, scope) ? { status: 'failed', message: clockFailure(err) } : { status: 'stale' };
+      result = sameScope(send.scope, scope) ? { status: 'failed', message: clockFailure(err), retryable: true } : { status: 'stale' };
     }
     const others = retries.filter((r) => r.id !== send.id);
     if (result.status === 'stale') { retries = others; return; }
-    if (result.status === 'failed') { error = result.message; retries = [...others, send]; return; }
+    if (result.status === 'failed') { error = result.message; retries = result.retryable ? [...others, send] : others; return; }
     retries = others;
     if (result.drink) liveDay.upsertDrink(result.drink);
     if (result.media) liveDay.upsertMedia(result.media);
@@ -238,6 +247,7 @@
         <div class="toast" role="status" data-testid="tab-retry-toast">
           <span>{#each retries as r, i (r.id)}{i ? ' · ' : ''}{drinkIcons[r.kind]} {(copy as Record<string, string>)[`drink_${r.kind}`]}{/each}</span>
           <button type="button" onclick={() => void retrySends()} data-testid="tab-retry">{copy.tabRetry}</button>
+          <button type="button" onclick={() => { retries = []; }} data-testid="tab-retry-close" aria-label={copy.closeSheet}>✕</button>
         </div>
       {/if}
       {#if toast}

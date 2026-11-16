@@ -116,6 +116,47 @@ test('a failed send takes the tap back and Retry lands it, for every photo that 
   expect([...ids.slice(2)].sort()).toEqual([...ids.slice(0, 2)].sort());
 });
 
+test('a send whose answer was lost but whose drink arrives drops its Retry', async ({ page }) => {
+  await tabDay(page, 'E2E Tab Lost Answer');
+  let lose = true, feedUp = false;
+  // Keep the feed from learning of the drink (realtime reloads it) until the toast has been seen.
+  await page.route(/\/api\/collections\/(drink_entries|media)\/records\?/, (r) => r.request().method() === 'GET' && !feedUp ? r.abort() : r.continue());
+  await page.route(MEDIA, async (r) => {
+    if (!isProofPost(r.request()) || !lose) return r.fallback();
+    lose = false;
+    await r.fetch();          // the upload lands on the server ...
+    await r.abort();          // ... and the answer never reaches the phone
+  });
+  await tapDrink(page, 'beer');
+  await expect(page.getByTestId('tab-retry-toast')).toBeVisible();
+  await expect(page.getByTestId('drink-beer').locator('.count')).toHaveText('0');
+  feedUp = true;
+  await page.clock.runFor(30_000);                 // the feed's poll brings the drink in
+  await expect(page.getByTestId('drink-beer').locator('.count')).toHaveText('1');
+  await expect(page.getByTestId('tab-retry-toast')).toHaveCount(0);
+});
+
+test('a refused send shows its message and offers no Retry', async ({ page }) => {
+  await tabDay(page, 'E2E Tab Refused');
+  await page.route(MEDIA, (r) => isProofPost(r.request())
+    ? r.fulfill({ status: 400, contentType: 'application/json', body: JSON.stringify({ status: 400, message: 'proof_needs_stop', data: {} }) })
+    : r.continue());
+  await tapDrink(page, 'shot');
+  await expect(page.getByRole('alert')).toHaveText(copy.proofNeedsStop);
+  await expect(page.getByTestId('tab-retry')).toHaveCount(0);
+  await expect(page.getByTestId('tab-retry-toast')).toHaveCount(0);
+});
+
+test('the Retry toast can be closed', async ({ page }) => {
+  await tabDay(page, 'E2E Tab Retry Close');
+  await page.route(MEDIA, (r) => isProofPost(r.request()) ? r.abort() : r.continue());
+  await tapDrink(page, 'shot');
+  await expect(page.getByTestId('tab-retry-toast')).toBeVisible();
+  await page.getByTestId('tab-retry-close').click();
+  await expect(page.getByTestId('tab-retry-toast')).toHaveCount(0);
+  await expect(page.getByTestId('drink-shot').locator('.count')).toHaveText('0');
+});
+
 test('a saved drink whose read-back fails counts as sent and arrives with the next reload', async ({ page }) => {
   await tabDay(page, 'E2E Tab Readback');
   await page.route('**/api/collections/drink_entries/records**', r => r.request().method() === 'GET' ? r.abort() : r.continue());

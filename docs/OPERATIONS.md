@@ -96,6 +96,10 @@ dev (the PocketBase hook calls the SvelteKit server with that secret and URL aft
 - A Tab drink is written together with its photo. The migration `1759300000_photo_tab.js` applies on a
   PocketBase restart (`docker compose restart pocketbase`; `pb_migrations/` is a bind mount, no rebuild for it);
   `just up` ships the web change. Drinks logged without a photo before the change keep counting.
+  The hooks and migrations are bind-mounted and live as soon as the checkout moves, so ship the web
+  image and the PocketBase restart together (`just up` plus `docker compose restart pocketbase`): old web
+  against the new server makes every Tab tap fail, and new web against the old server saves photos
+  without counting drinks. Each drink now adds a compressed photo (about 0.3-1 MB), so backups grow.
 - Save calls `POST /api/plan/commit`. It reconciles the persisted stop ids before validating rideability
   from the anchor onward; impossible legs behind the crew do not block Save. A 409 "The Route changed"
   means reload and make the change again. Reconciliation checks stop membership, not a version of

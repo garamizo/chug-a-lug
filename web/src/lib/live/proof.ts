@@ -12,7 +12,7 @@ export type ProofTap = { kind: DrinkKind; stop: string; scope: ProofScope };
 export type ProofResult =
   | { status: 'saved'; drink: DrinkEntry | null; media: Media | null } // null = landed but not read back; caller reloads the feed
   | { status: 'stale' }                                                // scope no longer current; nothing to upsert
-  | { status: 'failed'; message: string };                             // keep for Retry
+  | { status: 'failed'; message: string; retryable: boolean };         // retryable: keep for Retry; else the server refused it
 
 export type ProofDeps = {
   createMedia: (form: FormData) => Promise<Media>;
@@ -50,6 +50,12 @@ function failureMessage(err: unknown): string {
   return copy.uploadFailed;
 }
 
+/** Network trouble and 5xx may pass on a second try; a 4xx is the server refusing this very send. */
+const isRetryable = (err: unknown): boolean => {
+  const status = (err as { status?: number } | null)?.status;
+  return typeof status !== 'number' || status === 0 || status >= 500;
+};
+
 const isDuplicate = (err: unknown): boolean =>
   (err as { response?: { data?: { id?: { code?: string } } } } | null)?.response?.data?.id?.code === 'validation_not_unique';
 
@@ -62,14 +68,14 @@ export async function sendProof(send: ProofSend, deps: ProofDeps): Promise<Proof
   try {
     media = await deps.createMedia(proofForm(send));
   } catch (err) {
-    if (!isDuplicate(err)) return settle({ status: 'failed', message: failureMessage(err) });
+    if (!isDuplicate(err)) return settle({ status: 'failed', message: failureMessage(err), retryable: isRetryable(err) });
     // Lost response: the first attempt landed. Count it as done if its drink is there.
     try {
       const drink = await deps.getDrink(send.id);
       const m = await deps.getMedia(send.id).catch(() => null);
       return settle({ status: 'saved', drink, media: m });
     } catch {
-      return settle({ status: 'failed', message: copy.uploadFailed });
+      return settle({ status: 'failed', message: copy.uploadFailed, retryable: true });
     }
   }
   try {

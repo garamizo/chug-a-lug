@@ -104,7 +104,10 @@ Goal: nobody misses a train, nobody is lost, and the plan can change without cha
   the button was tapped, and shows once in Crew chat). While the photo sends the button says
   "Sending…"; a failed send offers Retry while the page stays open (a retry after a lost response
   never counts twice). A video is refused. Drinks logged before photos were required keep counting.
-  A toast with Undo confirms the drink, and it stays up (with a retry
+  A failed send the server refused (no stop, no usable image) shows its message and offers no Retry; a
+  Retry goes away once the drink shows up, and its close button discards the kept photos.
+  A toast with Undo confirms the drink (Undo removes its photo too, and the Conductor deleting a
+  drink's photo removes the drink), and it stays up (with a retry
   if the delete fails) until it fades or another tap replaces it — after which "Undo my last one here"
   still undoes your newest entry at the stop. The Tab and Freight are available only while the position
   source is `clock` or `override`; a stop still appears before and after the crawl, but the Tab
