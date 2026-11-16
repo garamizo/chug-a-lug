@@ -180,8 +180,9 @@ describe('recomputeLegs with a start station', () => {
 
   it('plans an opening leg even for a single stop', () => {
     const legs = recomputeLegs(s, { date: D, startMin: 660, startStation: 'NAPERVILLE' }, [stops[0]]);
-    expect(legs).toHaveLength(1);
+    expect(legs).toHaveLength(2); // the opening leg and the run home
     expect(legs[0]).toMatchObject({ fromStopId: '', toStopId: 's1', arriveMin: 755 });
+    expect(legs[1]).toMatchObject({ fromStopId: 's1', toStopId: '' });
   });
 
   it('adds nothing without a start station', () => {
@@ -193,5 +194,55 @@ describe('recomputeLegs with a start station', () => {
     const legs = recomputeLegs(s, { date: D, startMin: 660, startStation: 'NAPERVILLE', anchor: { stopId: 's1', atMin: 700 } }, stops);
     // Anchored at 11:40: ready 12:40, platform 12:45, BN4 at 14:30.
     expect(legs[1]).toMatchObject({ fromStopId: 's1', readyMin: 760, departMin: 870 });
+  });
+});
+
+describe('recomputeLegs: the run home', () => {
+  const stops = [
+    { id: 's1', order: 1, station_id: 'ELMHURST', dwell_min: 30, walk_min: 5 },
+    { id: 's2', order: 2, station_id: 'WHEATON', dwell_min: 20, walk_min: 4 }
+  ];
+  const run = (over: Partial<Parameters<typeof recomputeLegs>[1]>, st = stops) =>
+    recomputeLegs(s, { date: D, startMin: 600, startStation: 'OTC', ...over }, st);
+
+  it('adds a run home from the last stop to the start station', () => {
+    const legs = run({});
+    expect(legs).toHaveLength(3);
+    // s1 reached at 11:14, s2 at 13:34 (UW3 810 + walk 4), so ready 834; UW6 leaves Wheaton 16:45, reaches OTC 17:35.
+    expect(legs[2]).toMatchObject({ fromStopId: 's2', toStopId: '', kind: 'train', readyMin: 834, departMin: 1005, arriveMin: 1055 });
+    expect(legs[2].arriveMin).toBe((legs[2].segments[0] as { arr: number }).arr);
+    expect(legs[2].reason).toBeUndefined();
+  });
+  it('plans nothing home without a start station', () => {
+    const legs = run({ startStation: null });
+    expect(legs).toHaveLength(stops.length - 1);
+  });
+  it('has no legs for no stops', () => {
+    expect(run({}, [])).toEqual([]);
+  });
+  it('is a walk when the last stop is at the start station', () => {
+    const legs = run({ startStation: 'WHEATON' });
+    expect(legs[legs.length - 1]).toMatchObject({ fromStopId: 's2', toStopId: '', kind: 'walk', readyMin: 834, arriveMin: 834 + 4 });
+  });
+  it('is impossible when no train is left, with no reason', () => {
+    const late = [stops[0], { ...stops[1], dwell_min: 600 }];
+    const leg = run({}, late).pop()!;
+    expect(leg).toMatchObject({ kind: 'impossible', segments: [], readyMin: 1414, arriveMin: 1418 });
+    expect(leg.departMin).toBe(leg.arriveMin);
+    expect(leg.reason).toBeUndefined();
+  });
+  it('is impossible when the train home arrives after midnight', () => {
+    const legs = recomputeLegs(s, { date: D, startMin: 1300, startStation: 'GENEVA' }, [{ id: 'a', order: 1, station_id: 'OTC', dwell_min: 10, walk_min: 2 }]);
+    expect(legs[1]).toMatchObject({ fromStopId: 'a', toStopId: '', kind: 'impossible', segments: [], reason: 'after_midnight', readyMin: 1427, arriveMin: 1429 });
+  });
+  it('walking home at midnight is impossible', () => {
+    const at = (dwell: number) => recomputeLegs(s, { date: D, startMin: 1000, startStation: 'OTC' }, [{ id: 'a', order: 1, station_id: 'OTC', dwell_min: dwell, walk_min: 10 }]).pop()!;
+    expect(at(420)).toMatchObject({ kind: 'impossible', reason: 'after_midnight' });
+    expect(at(419)).toMatchObject({ kind: 'walk', arriveMin: 1439 });
+    expect(at(419).reason).toBeUndefined();
+  });
+  it('replans the run home from an anchor at the last stop', () => {
+    const legs = run({ anchor: { stopId: 's2', atMin: 900 } });
+    expect(legs[2]).toMatchObject({ readyMin: 920, departMin: 1005, arriveMin: 1055 });
   });
 });

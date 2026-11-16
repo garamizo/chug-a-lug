@@ -9,7 +9,7 @@ export function computeLegs(schedule: Schedule, opts: {
   const anchor = opts.anchor ? { stopId: opts.anchor.stopId, atMin: minutesOfDay(opts.date, opts.anchor.at) } : null;
   const toIso = (m: number) => localToUtc(opts.date, m).toISOString();
   return recomputeLegs(schedule, { date: opts.date, startMin: opts.startMin, anchor, startStation: opts.startStation }, opts.stops).map((leg) => ({
-    fromStopId: leg.fromStopId, toStopId: leg.toStopId, kind: leg.kind,
+    fromStopId: leg.fromStopId, toStopId: leg.toStopId, kind: leg.kind, ...(leg.reason ? { reason: leg.reason } : {}),
     readyAt: toIso(leg.readyMin), departAt: toIso(leg.departMin), arriveAt: toIso(leg.arriveMin),
     segments: leg.segments.map((seg) => (seg.kind === 'train' ? { ...seg, dep: toIso(seg.dep), arr: toIso(seg.arr) } : seg)) as Segment[]
   }));

@@ -11,12 +11,13 @@ export type PlanSegment = ({ kind: 'train' } & Connection) | { kind: 'walk'; min
  */
 export type LegPlan = { kind: 'train' | 'walk' | 'impossible'; segments: PlanSegment[]; departMin: number; arriveMin: number };
 export type StopInput = { id: string; order: number; station_id: string; dwell_min: number; walk_min: number };
-export type ComputedLeg = { fromStopId: string; toStopId: string; kind: LegPlan['kind']; readyMin: number; departMin: number; arriveMin: number; segments: PlanSegment[] };
+export type ComputedLeg = { fromStopId: string; toStopId: string; kind: LegPlan['kind']; readyMin: number; departMin: number; arriveMin: number; segments: PlanSegment[]; reason?: 'after_midnight' };
 
 /** Where the crawl actually is, and when it got there: the tail of the day is planned from here. */
 export type Anchor = { stopId: string; atMin: number };
 
 export const DOWNTOWN_WALK_MIN = 6;
+const MINUTES_PER_DAY = 1440;
 
 /** Trips serving `from` then `to` (in that order) departing at or after `afterMin` on `date`. */
 export function nextTrips(s: Schedule, from: string, to: string, afterMin: number, date: string, limit = 3): Connection[] {
@@ -138,6 +139,21 @@ export function recomputeLegs(
     const arriveMin = (plan.kind === 'impossible' ? atStation : plan.arriveMin) + b.walk_min;
     legs.push({ fromStopId: a.id, toStopId: b.id, kind: plan.kind, readyMin, departMin: plan.departMin, arriveMin, segments: plan.segments });
     arrival = arriveMin;
+  }
+  const last = sorted[sorted.length - 1];
+  if (opts.startStation && last) {
+    // The run home: last stop back to the Board at station. Arriving at the station is arriving at the
+    // cars, so no venue walk is added. Nothing may arrive at or after midnight: Live switches to a
+    // practice day there and a crawl still riding home would never finish.
+    if (opts.anchor && last.id === opts.anchor.stopId) arrival = opts.anchor.atMin;
+    const readyMin = arrival + last.dwell_min;
+    const atStation = readyMin + last.walk_min;
+    const plan = planLeg(s, last.station_id, opts.startStation, atStation, opts.date);
+    if (plan.kind !== 'impossible' && plan.arriveMin >= MINUTES_PER_DAY) {
+      legs.push({ fromStopId: last.id, toStopId: '', kind: 'impossible', readyMin, departMin: atStation, arriveMin: atStation, segments: [], reason: 'after_midnight' });
+    } else {
+      legs.push({ fromStopId: last.id, toStopId: '', kind: plan.kind, readyMin, departMin: plan.departMin, arriveMin: plan.kind === 'impossible' ? atStation : plan.arriveMin, segments: plan.segments });
+    }
   }
   return legs;
 }

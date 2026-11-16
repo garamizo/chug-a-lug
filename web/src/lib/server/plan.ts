@@ -11,7 +11,7 @@ import type { Checkin, Segment } from '$lib/types';
 export type PlanStop = { id: string; order: number; station_id: string; dwell_min: number; walk_min: number };
 export type PlannedLeg = {
   fromStopId: string; toStopId: string; kind: 'train' | 'walk' | 'impossible';
-  readyAt: string; departAt: string; arriveAt: string; segments: Segment[];
+  readyAt: string; departAt: string; arriveAt: string; segments: Segment[]; reason?: 'after_midnight';
 };
 
 const VENUE_KINDS = new Set(['bar', 'restaurant', 'other']);

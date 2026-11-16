@@ -53,7 +53,7 @@ export type Segment =
 
 export type Leg = RecordModel & {
   itinerary: string; from_stop: string; to_stop: string; kind: 'train' | 'walk' | 'impossible';
-  ready_at: string; depart_at: string; arrive_at: string; segments: Segment[]; computed_at: string;
+  ready_at: string; depart_at: string; arrive_at: string; segments: Segment[]; computed_at: string; reason?: string;
 };
 
 export type Vote = RecordModel & { user: string; target_collection: string; target_id: string; value: 'up' | 'down' };

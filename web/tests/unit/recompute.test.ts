@@ -170,7 +170,7 @@ it('writes the opening leg with an empty from_stop when the route has a start st
   state.stops = [{ id: 's1', order: 1, station_id: 'LAGRANGE', dwell_min: 60, walk_min: 5 }];
   await recomputeItinerary('aaaaaaaaaaaaaaa');
   const legs = state.created.filter((c) => c.collection === 'legs').map((c) => c.body);
-  expect(legs).toHaveLength(1);
+  expect(legs).toHaveLength(2); // the opening leg and the run home
   expect(legs[0]).toMatchObject({ from_stop: '', to_stop: 's1', kind: 'train' });
 });
 
