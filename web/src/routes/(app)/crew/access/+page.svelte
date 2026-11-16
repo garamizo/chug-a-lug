@@ -1,12 +1,11 @@
 <script lang="ts">
   import { auth, pb } from '$lib/pb';
   import { ClientResponseError } from 'pocketbase';
-  import { accessEventLabels, copy, labels, requestStatusLabels, signInMethodLabels } from '$lib/labels';
+  import { accessEventLabels, copy, labels, signInMethodLabels } from '$lib/labels';
   import { fmtDateTime } from '$lib/time';
-  type Person = { id: string; name: string; email: string; is_admin: boolean; blocked: boolean; approved_by: string; last_seen: string; created: string };
-  type Req = { id: string; name: string; email: string; method: string; status: string; country: string; city: string; user_agent: string; created: string; decided_by: string };
+  type Person = { id: string; name: string; email: string; is_admin: boolean; blocked: boolean; last_seen: string; created: string };
   type Row = { id: string; created: string; event: string; method: string; name: string; email: string; user: string; actor: string; ip: string; country: string; city: string; user_agent: string; detail: string };
-  let data = $state<{ people: Person[]; requests: Req[]; log: Row[] } | null>(null);
+  let data = $state<{ people: Person[]; log: Row[] } | null>(null);
   // A failed load and a failed Put off / Let back on are reported apart: neither hides the list.
   let filter = $state(''), error = $state(''), actionError = $state('');
   const load = async () => { try { data = await pb.send('/api/crawl/manifest', {}); error = ''; } catch { error = copy.loadError; } };
@@ -33,12 +32,10 @@
         <strong>{p.name}{#if p.is_admin}<small> · {labels.admin}</small>{/if}</strong>
         <span class="email">{p.email}</span>
         <small data-testid="person-status">{copy.personStatus}: {p.blocked ? copy.personPutOff : copy.personAboard} · {copy.personSince}: {when(p.created)}</small>
-        <small>{copy.approvedBy}: {p.approved_by || copy.none} · {copy.lastSeen}: {when(p.last_seen)}</small>
+        <small>{copy.lastSeen}: {when(p.last_seen)}</small>
         {#if !p.is_admin}<button type="button" class="secondary" onclick={() => void block(p.id, !p.blocked)} data-testid="toggle-block">{p.blocked ? copy.letBackOn : copy.putOff}</button>{/if}
       </div>
     {/each}
-    <h2>{copy.recentRequests}</h2>
-    {#each data.requests as r (r.id)}<div class="row"><strong>{r.name}</strong> <span class="email">{r.email}</span> <small>{shown(requestStatusLabels, r.status)} · {shown(signInMethodLabels, r.method)} · {r.country || copy.none} {r.city} · {when(r.created)}{#if r.decided_by} · {copy.byWhom} {r.decided_by}{/if}</small></div>{/each}
     <h2>{copy.accessLog}</h2>
     <select bind:value={filter} data-testid="log-filter"><option value="">{copy.allEvents}</option>{#each [...new Set(data.log.map((r) => r.event))] as ev (ev)}<option value={ev}>{shown(accessEventLabels, ev)}</option>{/each}</select>
     {#each rows as r (r.id)}<div class="row log"><small>{when(r.created)} · {shown(accessEventLabels, r.event)}{#if r.method} ({shown(signInMethodLabels, r.method)}){/if} · {r.name || r.user || r.email} · {r.ip} {r.country} {r.city}{#if r.actor} · {copy.byWhom} {r.actor}{/if}{#if r.detail} · {r.detail}{/if}</small></div>{/each}

@@ -12,7 +12,6 @@
   import { watchCreditDate } from '$lib/metraCredit';
   import { readSeen, unseenCount } from '$lib/live/seen';
   import { liveDay } from '$lib/live/day.svelte';
-  import { boardingQueue } from '$lib/live/boardingQueue.svelte';
   import { ui } from '$lib/ui.svelte';
   let { children } = $props();
 
@@ -70,13 +69,12 @@
         <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
           <path d="M4 7h16M4 12h16M4 17h16"></path>
         </svg>
-        <!-- Spec §5: the dot also shows while anyone is waiting to board. -->
-        {#if unread || boardingQueue.count}<span class="dot" data-testid="menu-dot"></span>{/if}
+        {#if unread}<span class="dot" data-testid="menu-dot"></span>{/if}
       </button>
     {/if}
   </div>
 </header>
-<AppMenu open={ui.menuOpen} {unread} waiting={boardingQueue.count} onclose={() => (ui.menuOpen = false)} oncompose={() => (liveDay.composing = true)} />
+<AppMenu open={ui.menuOpen} {unread} onclose={() => (ui.menuOpen = false)} oncompose={() => (liveDay.composing = true)} />
 <main class="col">{@render children()}</main>
 <footer class="col credit" data-testid="metra-credit">{copy.notAffiliated}{#if creditDate}{' '}{copy.timetablePublished} {creditDate}.{/if}</footer>
 

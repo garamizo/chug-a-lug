@@ -10,8 +10,6 @@
   import BulletinSheet from '$lib/components/BulletinSheet.svelte';
   import TabBar from '$lib/components/TabBar.svelte';
   import Lightbox from '$lib/components/Lightbox.svelte';
-  import BoardingPopup from '$lib/components/BoardingPopup.svelte';
-  import { boardingQueue } from '$lib/live/boardingQueue.svelte';
   import { newRecordId } from '$lib/live/staged';
   let { children } = $props();
   let error = $state('');
@@ -39,8 +37,6 @@
     checkedFor = id;
     void refreshSession().then((r) => { if (r === 'signed_out' && pb.authStore.record?.id === id) logout(); });
   });
-  // The layout owns the boarding queue; logout disposes it (CLAUDE.md clock-ownership rule).
-  $effect(() => { if (userId) return boardingQueue.start(); });
   const here = $derived(liveDay.here);
   const onLive = $derived(page.url.pathname === '/live');
   // Practice interrupts only the screen that is practising; planning and voting stay quiet.
@@ -114,7 +110,6 @@
   <!-- The Tab opens from the tab bar, so a practice day's Live needs it too; practice stays off the other screens. -->
   {#if liveDay.isEventDay || (liveDay.practice && onLive)}<TabBar />{/if}
   <Lightbox />
-  <BoardingPopup />
   {#if liveDay.composing}
     <BulletinSheet text="" onsend={(body) => void postBulletin(body)} onskip={() => (liveDay.composing = false)} ondismiss={() => (liveDay.composing = false)} />
   {/if}
