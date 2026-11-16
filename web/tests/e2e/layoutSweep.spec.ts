@@ -1,5 +1,5 @@
 import { expect, test, type Locator, type Page } from '@playwright/test';
-import { clearRoutes, inviteLink, login, openTab, seedLockedCrawl, stubTurnstile } from './helpers';
+import { clearRoutes, inviteLink, login, openTab, seedLockedCrawl } from './helpers';
 import { expectSaneLayout, type LayoutRule } from './layoutRules';
 import { copy } from '../../src/lib/labels';
 
@@ -39,10 +39,8 @@ async function sweep(page: Page, states: State[]) {
 }
 
 test('signed-out pages', async ({ page }) => {
-  await stubTurnstile(page);
   await sweep(page, [
     { name: 'login, password', open: (p) => p.goto('/login'), ready: (p) => p.getByTestId('password-input') },
-    { name: 'login, code', open: (p) => p.getByTestId('use-code').click(), ready: (p) => p.getByTestId('send-code') },
     { name: 'forgot password', open: (p) => p.goto('/login/forgot'), ready: (p) => p.getByTestId('send-link') },
     { name: 'reset form', open: (p) => p.goto('/reset-password#layout-sweep'), ready: (p) => p.getByTestId('set-password') },
     { name: 'reset, dead link', open: (p) => p.goto('/reset-password'), ready: (p) => p.getByTestId('reset-dead') },
@@ -61,26 +59,13 @@ test('signed-out pages', async ({ page }) => {
   ]);
 });
 
-test('authentication recovery and approval states', async ({ page }) => {
-  await stubTurnstile(page);
+test('password recovery states', async ({ page }) => {
   await page.goto('/login');
-  await page.route('**/api/collections/users/request-otp', r => r.fulfill({ json: { otpId: 'layout-otp' } }));
-  await page.route('**/api/collections/users/auth-with-otp', r => r.fulfill({ status: 400, json: { message: copy.codeError } }));
   await page.route('**/api/collections/users/request-password-reset', r => r.fulfill({ status: 204 }));
   await page.route('**/api/collections/users/confirm-password-reset', r => r.fulfill({ status: 204 }));
-  async function google(mode: 'join' | 'login') {
-    await page.evaluate((mode) => sessionStorage.setItem('chugalug_google', JSON.stringify({ mode, name: '', state: 'layout-state', codeVerifier: 'v'.repeat(43), redirectUrl: location.origin + '/auth/google' })), mode);
-    await page.goto('/auth/google?state=layout-state&code=layout-code');
-  }
   await sweep(page, [
-    { name: 'sign-in code entry', open: async (p) => { await p.getByTestId('email-input').fill('alex@example.com'); await p.getByTestId('use-code').click(); }, ready: p => p.getByTestId('code-input') },
-    { name: 'sign-in code error', open: async (p) => { await p.getByTestId('code-input').fill('123456'); await p.getByTestId('sign-in').click(); }, ready: p => p.getByTestId('error') },
-    { name: 'sign-in code resent', open: p => p.getByTestId('resend-code').click(), ready: p => p.getByRole('status') },
     { name: 'reset email sent', open: async (p) => { await p.goto('/login/forgot'); await p.getByTestId('email-input').fill('alex@example.com'); await p.getByTestId('send-link').click(); }, ready: p => p.getByTestId('link-sent') },
-    { name: 'password set', open: async (p) => { await p.goto('/reset-password#layout-token'); await p.getByTestId('password-input').fill('layout-password'); await p.getByTestId('set-password').click(); }, ready: p => p.getByTestId('password-set') },
-    { name: 'Google crew name', open: () => google('join'), ready: p => p.getByTestId('request-join') },
-    { name: 'Google profile reload', open: p => p.reload().then(() => {}), ready: p => p.getByTestId('google-retry') },
-    { name: 'Google callback error', open: async (p) => { await p.route('**/api/collections/users/auth-with-oauth2', r => r.fulfill({ status: 400, json: { message: copy.genericError } })); await google('login'); }, ready: p => p.getByTestId('google-retry') }
+    { name: 'password set', open: async (p) => { await p.goto('/reset-password#layout-token'); await p.getByTestId('password-input').fill('layout-password'); await p.getByTestId('set-password').click(); }, ready: p => p.getByTestId('password-set') }
   ]);
 });
 

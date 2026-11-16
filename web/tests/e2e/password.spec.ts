@@ -83,7 +83,7 @@ test('Your ticket emails a link to set a password', async ({ page }) => {
   expect(await resetLinkFor(email)).toContain('/reset-password#');
 });
 
-test('the password field fills its row and passwordless sign-in is a full-width alternative', async ({ page }) => {
+test('the password field fills its row', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto('/login');
   const field = await page.getByTestId('email-input').boundingBox();
@@ -92,7 +92,4 @@ test('the password field fills its row and passwordless sign-in is a full-width 
   expect(input!.width).toBeGreaterThan(field!.width * 0.6);
   expect(show!.width).toBeLessThan(field!.width * 0.3);
   expect(Math.abs((input!.y + input!.height / 2) - (show!.y + show!.height / 2))).toBeLessThan(4);
-  const useCode = page.getByTestId('use-code');
-  expect((await useCode.boundingBox())!.width).toBeGreaterThan(field!.width * 0.95);
-  await expect(useCode).toHaveCSS('background-color', 'rgba(0, 0, 0, 0)');
 });

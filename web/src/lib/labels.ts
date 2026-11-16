@@ -1,7 +1,5 @@
 // Developer term -> UI label. The README glossary is the source of truth; keep them in sync.
 export const labels = {
-  boardPage: 'Board',
-  boardingRequest: 'Boarding request',
   manifest: 'Manifest',
   yourTicket: 'Your ticket',
   planningPhase: 'Route Planner',
@@ -52,18 +50,13 @@ export function label(key: LabelKey): string {
 
 // UI copy lives alongside the glossary so it can be changed in one place.
 export const copy = {
-  waitingToBoard: 'Waiting to board',
-  letAboard: 'Let aboard',
-  turnAway: 'Turn away',
   later: 'Later',
   alreadyAnswered: 'Someone already answered this one.',
   putOff: 'Put off',
   letBackOn: 'Let back on',
-  approvedBy: 'Let aboard by',
   lastSeen: 'Last seen',
   never: 'never',
   accessLog: 'Access log',
-  recentRequests: 'Recent boarding requests',
   allEvents: 'All events',
   /** Shown where a value is missing (no approver, no country). */
   none: '—',
@@ -105,12 +98,9 @@ export const copy = {
   appSubtitle: 'Your next stop starts here.',
   loginTitle: 'Welcome back',
   loginIntro: 'Sign in to catch up with the crew.',
-  loginIntroNoGoogle: 'Sign in to catch up with the crew.',
   passwordMismatch: "That email and password don't match. Try a sign-in code, or reset your password.",
   passwordMissing: 'Enter your password.',
   forgotPassword: 'Forgot password?',
-  useCodeInstead: 'Email me a sign-in code',
-  usePasswordInstead: 'Use a password instead',
   forgotTitle: 'Reset your password',
   forgotIntro: 'Enter the email you use for Chug-a-Lug. We’ll send you a link to set a new password.',
   emailMeLink: 'Send reset link',
@@ -122,34 +112,20 @@ export const copy = {
   resetLinkDead: 'That link expired or was already used.',
   askNewLink: 'Ask for a new link',
   rehearsalIntro: 'Shakedown Run: your name and the rehearsal password.',
-  continueGoogle: 'Continue with Google',
   emailLabel: 'Email address',
   emailPlaceholder: 'you@example.com',
-  emailMeCode: 'Email me a code',
   codeLabel: '6-digit code',
-  codeSentTo: 'We sent a code to',
-  noCodeHint: 'Didn’t get a code? Check your spam folder, resend after a minute, or use Google.',
   /** noCodeHint when Google sign-in is off (PUBLIC_GOOGLE_ENABLED != '1'). */
-  noCodeHintNoGoogle: 'Didn’t get a code? Check your spam folder or resend after a minute.',
   /** The boarding page's code step: confirming the code files the request; it does not sign in. */
   confirmCode: 'Verify email',
+  noCodeHintNoGoogle: 'Didn’t get a code? Check your spam folder or resend after a minute.',
   sendAgain: 'Resend code',
   signIn: 'Sign in',
-  newHereBoard: 'New here? Sign up',
-  haveSeatSignIn: 'Already have an account? Sign in',
   boardTitle: 'Create an account',
   boardIntro: 'Join the Chug-a-Lug crew with the link the Conductor shared.',
-  orEmail: 'or continue with email',
-  sendCode: 'Send my code',
-  requestSent: 'A crew member needs to approve your account before you can sign in.',
-  requestSentHint: 'You can close this page. We’ll email you when you’re approved.',
-  youreAboard: "You're aboard!",
   turnedAway: 'The crew turned this request away.',
-  requestExpired: 'This request expired. Sign up again to send a new request.',
-  boardAgain: 'Sign up again',
   emailError: 'Enter a valid email address.',
   codeError: 'Enter the 6-digit code.',
-  humanCheck: 'Checking you are human…',
   name: 'Your name',
   namePlaceholder: 'How the crew knows you',
   password: 'Crew password',
@@ -506,29 +482,17 @@ export const recordingCopy = {
 export const venueIcons: Record<string, string> = { bar: '🍺', restaurant: '🍽️' };
 export const drinkIcons: Record<string, string> = { shot: '🥃', cocktail: '🍸', beer: '🍺', water: '🧃', food: '🍽️' };
 
-// The Manifest's display names for stored values (boarding_requests.status, access_log.method and
-// access_log.event, crew-access migration). A value missing here shows as stored.
-export const requestStatusLabels: Record<string, string> = {
-  unverified: 'Code not confirmed',
-  waiting: 'Waiting to board',
-  aboard: 'Let aboard',
-  turned_away: 'Turned away',
-  expired: 'Expired'
-};
+// The Manifest's display names for stored values (access_log.method and access_log.event). Old rows keep
+// their retired methods and events, so those stay named. A value missing here shows as stored.
 export const authCopy = {
+  needSeat: 'Need a seat? Ask the Conductor for a join link.',
   continue: 'Continue',
-  signUp: 'Sign up',
-  newHere: 'New here?',
   alreadyAccount: 'Already have an account?',
   nameHint: 'Use the name your crew knows you by.',
   nextVerify: 'Next, we’ll send a code to verify your email.',
   codeTitle: 'Check your email',
   codeIntro: 'Enter the 6-digit code sent to',
-  codeNoEmail: 'Check the email address you used with Google for a code or next steps.',
-  codeRequestTitle: 'Sign in with a code',
-  codeRequestIntro: 'We’ll email you a code. No password needed.',
   changeEmail: 'Change email',
-  requestChanged: 'This request can no longer be edited.',
   resent: 'A new code is on its way.',
   /** The server's link message (join.js LINK), shown for no link, a dead link and a link that dies mid-sign-up. */
   linkDead: 'This link is used up or expired. Ask the Conductor for a new one.',
@@ -538,33 +502,13 @@ export const authCopy = {
   maybeReadyIntro: 'We lost the answer on the way. If the code was right, your account exists: sign in with your email and password.',
   inboxTitle: 'Check your inbox',
   resetHint: 'Check your spam folder if you don’t see it.',
-  profileTitle: 'What should we call you?',
-  profileIntro: 'One last detail so the crew can recognize your request.',
-  requestJoin: 'Request to join',
-  backToSignUp: 'Back to sign up',
-  restoringTitle: 'Checking your request',
-  restoringIntro: 'Your request is saved. We’re checking its latest status.',
-  waitingTitle: 'Your request is in',
   verified: 'Email verified',
   pending: 'Waiting for crew approval',
-  nextSignIn: 'Sign in after approval',
   approvedTitle: 'Welcome aboard',
-  approvedIntro: 'Your account is approved. Sign in to join the crew.',
-  declinedTitle: 'Request declined',
-  expiredTitle: 'Request expired',
   checkFailed: 'Verification couldn’t load.',
-  checkHelp: 'Check your connection and try again, or continue with Google.',
-  checkHelpNoGoogle: 'Check your connection and try again.',
-  checkExpired: 'Verification expired. Please try again.',
-  checkComplete: 'Verification complete.',
   retry: 'Try again',
   showPassword: 'Show password',
   hidePassword: 'Hide password',
-  googleTitle: 'Continue with Google',
-  googleFailedTitle: 'Google sign-in didn’t finish',
-  googleReturnError: 'This Google sign-in link is missing or expired. Please start again.',
-  googleRetry: 'Try Google again',
-  googleRetryHint: 'Start a new Google sign-in to try again.',
   resetIntro: 'Choose a new password for your account.'
 } as const;
 

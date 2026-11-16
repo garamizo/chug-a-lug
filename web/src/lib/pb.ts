@@ -53,14 +53,7 @@ export async function rehearsalLogin(name: string, password: string): Promise<vo
   pb.authStore.save(res.token, res.record);
 }
 
-/** Email code sign-in (PocketBase OTP). The SDK saves the session into the cookie store. */
-export async function requestCode(email: string): Promise<string> {
-  return (await pb.collection('users').requestOTP(email.trim().toLowerCase())).otpId;
-}
-export async function signInWithCode(otpId: string, code: string): Promise<void> {
-  await pb.collection('users').authWithOTP(otpId, code.trim());
-}
-/** Email + password sign-in (password spec §2.1). Lowercased like requestCode: addresses are stored lowercased. */
+/** Email + password sign-in (password spec §2.1). Lowercased: addresses are stored lowercased. */
 export async function signInWithPassword(email: string, password: string): Promise<void> {
   await pb.collection('users').authWithPassword(email.trim().toLowerCase(), password);
 }

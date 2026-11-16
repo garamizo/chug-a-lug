@@ -10,3 +10,12 @@ test('password reset focuses the confirmation then the corrected email', async (
   await page.getByTestId('change-email').click();
   await expect(page.getByTestId('email-input')).toBeFocused();
 });
+
+test('sign-in offers only email and password', async ({ page }) => {
+  await page.goto('/login');
+  await expect(page.getByTestId('password-sign-in')).toBeVisible();
+  await expect(page.getByTestId('use-code')).toHaveCount(0);
+  await expect(page.getByTestId('google')).toHaveCount(0);
+  await expect(page.getByText(authCopy.needSeat)).toBeVisible();
+  await expect(page.locator('a[href^="/join"]')).toHaveCount(0);
+});

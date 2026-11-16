@@ -199,13 +199,6 @@ export async function resetLinkFor(to: string): Promise<string> {
   }
   throw new Error(`No reset link mailed to ${to}`);
 }
-/** Turnstile without the network: the widget script is replaced by one that passes at once. */
-export async function stubTurnstile(page: Page) {
-  await page.route('https://challenges.cloudflare.com/**', (route) => route.fulfill({ contentType: 'text/javascript',
-    body: "(function(){var n=0,cb=null;function fresh(){setTimeout(function(){cb('ok-e2e-'+Date.now()+'-'+(++n))})}" +
-      "window.turnstile={render:function(el,o){cb=o.callback;fresh();return 'w'},reset:function(){fresh()},remove:function(){}}})();" }));
-}
-
 export const CREDIT_PUBLISHED = '11/14/26 02:20:03 AM America/Chicago';
 /** Answers /api/metra/status as the live stack would (the test stack's `file:` timetable never gives the
  *  Metra credit a date). With `hold`, every answer waits for that promise. `liveDay` reads the same

@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
-import { labels, label, copy, accessEventLabels, requestStatusLabels, signInMethodLabels } from '../../src/lib/labels';
+import { labels, label, copy, accessEventLabels, signInMethodLabels } from '../../src/lib/labels';
 
 describe('labels', () => {
   it('names the Crew Board and its Bulletin statuses', () => {
@@ -35,14 +35,14 @@ describe('labels', () => {
       expect((copy as Record<string, string>)[k], k).toBeTruthy();
     }
   });
-  it('names every stored boarding status, sign-in method and access-log event the Manifest shows', () => {
+  it('names every stored sign-in method and access-log event the Manifest shows', () => {
     const migration = readFileSync('../pocketbase/pb_migrations/1758900000_crew_access.js', 'utf8');
     const values = (field: string, after = 0) => {
       const at = migration.indexOf(`name: '${field}', type: 'select'`, after);
       return JSON.parse(/values: (\[[^\]]*\])/.exec(migration.slice(at))![1].replace(/'/g, '"')) as string[];
     };
     const log = migration.indexOf("name: 'access_log'");
-    for (const [map, field, after] of [[requestStatusLabels, 'status', 0], [signInMethodLabels, 'method', log], [accessEventLabels, 'event', log]] as const) {
+    for (const [map, field, after] of [[signInMethodLabels, 'method', log], [accessEventLabels, 'event', log]] as const) {
       const stored = values(field, after);
       expect(stored.length, field).toBeGreaterThan(2);
       for (const v of stored) expect(map[v], `${field}=${v}`).toBeTruthy();
@@ -57,7 +57,7 @@ describe('labels', () => {
     for (const v of added('method')) expect(signInMethodLabels[v], v).toBeTruthy();
   });
   it('has copy for password sign-in and reset', () => {
-    for (const k of ['passwordMismatch', 'passwordMissing', 'forgotPassword', 'useCodeInstead', 'usePasswordInstead', 'forgotTitle', 'forgotIntro',
+    for (const k of ['passwordMismatch', 'passwordMissing', 'forgotPassword', 'forgotTitle', 'forgotIntro',
       'emailMeLink', 'linkMaybeSent', 'backToSignIn', 'resetTitle', 'setPassword', 'passwordSetSignIn', 'resetLinkDead', 'askNewLink']) {
       expect((copy as Record<string, string>)[k], k).toBeTruthy();
     }
