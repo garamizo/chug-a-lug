@@ -15,18 +15,20 @@
 - User-visible strings live only in `web/src/lib/labels.ts`; README's UI glossary names them.
 - `copy.notAffiliated` = `'Schedule from Metra’s public feed. Not affiliated with Metra.'` (typographic ’).
 - `copy.timetablePublished` = `'Timetable published'`.
-- Date shown only when `source === 'live'`, `staticSource` is `'download'` or `'cache'`, and `staticPublishedAt` matches `MM/DD/YY hh:mm:ss AM|PM <zone>`; formatted `Nov 14, 2026`, taken as written (no time-zone conversion).
-- Refresh interval: 10 minutes (`600_000` ms).
-- Tests before code; each task ends green: `cd web && npm test && npm run check && npm run test:e2e`, plus `bash scripts/test-hooks.sh` once at the end (no hook changes). Never run e2e/hooks while another worktree runs them (fixed ports).
+- Date shown only when `source === 'live'`, `staticSource` is `'download'` or `'cache'`, and the whole of `staticPublishedAt` matches `MM/DD/YY hh:mm:ss AM|PM <zone>` with a real calendar date and a valid 12-hour time; formatted `Nov 14, 2026`, taken as written (no time-zone conversion).
+- Refresh interval: 10 minutes (`600_000` ms), single-flight: a tick while a request is outstanding is skipped.
+- Simulation clock revisions do not restart or refresh the watcher (simulation never shows a date anyway); only a change of signed-in user id does.
+- Tests before code; each task ends green: `cd web && npm test && npm run check && npm run test:e2e && cd .. && bash scripts/test-hooks.sh`. Never run e2e/hooks while another worktree runs them (fixed ports).
 - Stage explicit paths only; read `git status --short` before each commit.
 
 ## Review Focus
 
-1. An answer arriving after logout (or after a user switch) must not show a date — unit test in Task 1.
-2. Token renewal or a rename republishes `$auth.user`; it must not restart the watcher — the effect keys on `$auth.user?.id` (Task 2, code review; mirrors `(app)/+layout.svelte`).
+1. An answer arriving after logout (or after a user switch) must not show a date — unit test in Task 1; logout clearing a visible date — e2e in Task 2.
+2. Token renewal, a rename or a simulation clock revision must not restart the watcher: the effect reads only `$auth.user?.id`, and starts the watcher inside `untrack` because `authed()` reads `clientClock.revision` synchronously (Task 2; code review, the effect has no other reactive reads).
 3. On Live with the tab bar, the footer must sit fully above the bar after scrolling down — e2e in Task 2.
 4. `12/31/26 11:59:59 PM America/Chicago` must read `Dec 31, 2026`, not roll into the next day — unit test in Task 1.
 5. A failing status call (503 in a misconfigured simulation, offline) shows the credit without a date and no error — unit test in Task 1.
+6. A slow request must not overlap or overwrite a newer one — single-flight, unit test in Task 1.
 
 ---
 
@@ -42,7 +44,7 @@
 - Produces:
   - `type CreditStatus = Pick<MetraStatus, 'source' | 'staticPublishedAt' | 'staticSource'>`
   - `creditDate(status: CreditStatus): string` — `'Nov 14, 2026'` or `''`.
-  - `watchCreditDate(fetchStatus: () => Promise<CreditStatus>, onDate: (date: string) => void, intervalMs = 600_000): () => void` — calls `fetchStatus` at once and every `intervalMs`; passes `creditDate(answer)` to `onDate`, or `''` when the call rejects; the returned dispose stops the timer, calls `onDate('')`, and ignores any answer still in flight.
+  - `watchCreditDate(fetchStatus: () => Promise<CreditStatus>, onDate: (date: string) => void, intervalMs = 600_000): () => void` — calls `fetchStatus` at once and every `intervalMs`, skipping a tick while a call is outstanding; passes `creditDate(answer)` to `onDate`, or `''` when the call rejects; the returned dispose stops the timer, calls `onDate('')`, and ignores any answer still in flight.
   - `fetchStatus()` in `feed.ts` additionally returns `source?: MetraSource; staticPublishedAt: string; staticSource: string` (use `MetraStatus`'s field types).
   - `copy.notAffiliated`, `copy.timetablePublished` as in Global Constraints.
 
@@ -66,6 +68,15 @@ describe('creditDate', () => {
     expect(creditDate(live(''))).toBe('');
     expect(creditDate(live('garbage'))).toBe('');
     expect(creditDate(live('13/40/26 02:20:03 AM America/Chicago'))).toBe('');
+    expect(creditDate(live('02/31/26 02:20:03 AM America/Chicago'))).toBe('');   // no Feb 31
+    expect(creditDate(live('02/29/27 02:20:03 AM America/Chicago'))).toBe('');   // 2027 is not leap
+    expect(creditDate(live('11/14/26 13:20:03 PM America/Chicago'))).toBe('');   // 12-hour clock
+    expect(creditDate(live('11/14/26 02:61:03 AM America/Chicago'))).toBe('');
+    expect(creditDate(live('11/14/26 02:20:03 AM'))).toBe('');                   // zone required
+    expect(creditDate(live('11/14/26 02:20:03 AM America/Chicago junk'))).toBe('');
+  });
+  it('accepts Feb 29 in a leap year', () => {
+    expect(creditDate(live('02/29/28 09:00:00 AM America/Chicago'))).toBe('Feb 29, 2028');
   });
 });
 
@@ -83,6 +94,11 @@ describe('watchCreditDate', () => {
     // resolve it, flush → still [''];
     // vi.advanceTimersByTime(600_000) → fetch still called once.
   });
+  it('never overlaps calls', async () => {
+    // first fetch is a hand-resolved promise; advanceTimersByTime(600_000) twice → fetch called once;
+    // resolve it with live('11/14/26 …'), flush → onDate('Nov 14, 2026');
+    // advanceTimersByTime(600_000) → fetch called twice.
+  });
 });
 ```
 
@@ -95,12 +111,16 @@ Expected: FAIL (module `metraCredit` not found; label mismatch).
 
 - [ ] **Step 3: Implement** `creditDate` and `watchCreditDate` in `web/src/lib/metraCredit.ts`, extend `fetchStatus`'s type, and change the labels (keep the comment above `notAffiliated`, reworded to say the footer renders it).
 
-`creditDate`: match `/^(\d{2})\/(\d{2})\/(\d{2}) \d{2}:\d{2}:\d{2} [AP]M\b/`, reject month outside 1–12 or day outside 1–31, year = 2000 + YY; format with a fixed English month table (`Jan`…`Dec`) as `${mon} ${day} ${year}` with the comma — no `Date` or `Intl`, so no time zone can shift it.
+`creditDate`: match the whole string with `/^(\d{2})\/(\d{2})\/(\d{2}) (\d{2}):(\d{2}):(\d{2}) (AM|PM) (\S+)$/`; require hour 01–12, minute and second 00–59, month 01–12 and a day that exists in that month (leap years by the Gregorian rule), year = 2000 + YY; format with a fixed English month table (`Jan`…`Dec`) as `${mon} ${day}, ${year}` — no `Date` or `Intl`, so no time zone can shift it.
 
-- [ ] **Step 4: Run to verify they pass**
+`watchCreditDate`: a `disposed` flag and an `inFlight` flag; the tick returns early when either is set.
 
-Run: `cd web && npx vitest run tests/unit/metraCredit.test.ts tests/unit/labels.test.ts && npm run check`
-Expected: PASS, 0 errors.
+- [ ] **Step 4: Run to verify they pass, then the full gate**
+
+Run: `cd web && npx vitest run tests/unit/metraCredit.test.ts tests/unit/labels.test.ts`
+Expected: PASS.
+Run: `cd web && npm test && npm run check && npm run test:e2e && cd .. && bash scripts/test-hooks.sh`
+Expected: all green (nothing renders the new code yet, so e2e and hooks prove the label change broke nothing). A one-off e2e failure in an unrelated spec is known noise: re-run that spec alone before blaming this change.
 
 - [ ] **Step 5: Commit**
 
@@ -114,7 +134,7 @@ git commit -m "feat(web): Metra credit date — only Metra's real publish date, 
 **Files:**
 - Modify: `web/src/routes/+layout.svelte` (effect, footer markup after `<main>`, style)
 - Modify: `README.md` (UI glossary row)
-- Test: `web/tests/e2e/practice.spec.ts`, `web/tests/e2e/login.spec.ts`
+- Test: `web/tests/e2e/practice.spec.ts`, `web/tests/e2e/login.spec.ts`, `web/tests/e2e/helpers.ts` (`stubLiveStatus`)
 
 **Interfaces:**
 - Consumes: `watchCreditDate`, `fetchStatus` (Task 1), `copy.notAffiliated`, `copy.timetablePublished`.
@@ -122,48 +142,89 @@ git commit -m "feat(web): Metra credit date — only Metra's real publish date, 
 
 - [ ] **Step 1: Write the failing e2e tests**
 
-In `login.spec.ts`:
+The test stack's `file:` timetable never yields a date, so tests that need one stub the status call with a
+live answer. Put this helper in `helpers.ts`. `liveDay` (`day.svelte.ts:364`) also reads this endpoint for
+the board's mode; the stub answers `schedule_only` with no fetch time, which is what the test stack and a
+practice day report anyway, so the board is unchanged:
 
 ```ts
-test('the Metra credit shows signed out, without a date', async ({ page }) => {
+export const CREDIT_PUBLISHED = '11/14/26 02:20:03 AM America/Chicago';
+/** Answers /api/metra/status as the live stack would, optionally after `delayMs`. */
+export async function stubLiveStatus(page: Page, delayMs = 0) {
+  const feed = { fetchedAt: null, ageSec: null, mode: 'schedule_only' };
+  await page.route('**/api/metra/status', async (r) => {
+    if (delayMs) await new Promise((res) => setTimeout(res, delayMs));
+    await r.fulfill({ json: { source: 'live', revision: null, staticPublishedAt: CREDIT_PUBLISHED, staticSource: 'download',
+      rtFetchedAt: null, rtAgeSec: null, mode: 'schedule_only', feeds: { positions: feed, tripupdates: feed, alerts: feed } } })
+      .catch(() => {});   // the page may have moved on
+  });
+}
+```
+
+In `login.spec.ts` (add `import { copy } from '../../src/lib/labels';` and the helpers to the imports):
+
+```ts
+test('the Metra credit shows signed out without a date, signed in with it, and loses it at logout', async ({ page }) => {
   await page.goto('/login');
   const credit = page.getByTestId('metra-credit');
   await expect(credit).toHaveText(copy.notAffiliated);
-  await expect(credit).not.toContainText(copy.timetablePublished);
+  await stubLiveStatus(page);
+  await login(page, 'E2E Credit', 'crew-test-password');
+  await openHome(page, 'E2E Credit');
+  await expect(credit).toHaveText(`${copy.notAffiliated} ${copy.timetablePublished} Nov 14, 2026.`);
+  await page.getByTestId('menu').click();
+  await page.getByTestId('logout').click();
+  await expect(page).toHaveURL(/\/login$/);
+  await expect(credit).toHaveText(copy.notAffiliated);
+});
+
+test('a status answer that lands after logout never shows its date', async ({ page }) => {
+  await stubLiveStatus(page, 3000);
+  await login(page, 'E2E Credit Late', 'crew-test-password');
+  await openHome(page, 'E2E Credit Late');
+  await page.getByTestId('menu').click();
+  await page.getByTestId('logout').click();
+  await expect(page).toHaveURL(/\/login$/);
+  await page.waitForTimeout(3500);   // past the stubbed delay; a sleep is the point of this test
+  await expect(page.getByTestId('metra-credit')).toHaveText(copy.notAffiliated);
 });
 ```
 
-In `practice.spec.ts`, using the existing `practise()` helper:
+In `practice.spec.ts`, using the existing `practise()` helper and the dated (longer, wrapping) text:
 
 ```ts
 test('the Metra credit sits above the tab bar at the bottom of Live', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
+  await stubLiveStatus(page);
   await practise(page, 'E2E Practice Credit');
   await page.goto('/live');
   await expect(page.getByTestId('tab-bar')).toBeVisible();
+  const credit = page.getByTestId('metra-credit');
+  await expect(credit).toContainText('Nov 14, 2026');
   await page.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight));
-  const credit = await page.getByTestId('metra-credit').boundingBox();
-  const bar = await page.getByTestId('tab-bar').boundingBox();
-  expect(credit!.y + credit!.height).toBeLessThanOrEqual(bar!.y);
-  await expect(page.getByTestId('metra-credit')).toBeInViewport({ ratio: 1 });
+  await expect.poll(async () => {
+    const c = await credit.boundingBox(); const bar = await page.getByTestId('tab-bar').boundingBox();
+    return c && bar ? bar.y - (c.y + c.height) : -1;
+  }).toBeGreaterThanOrEqual(0);
+  await expect(credit).toBeInViewport({ ratio: 1 });
 });
 ```
 
 - [ ] **Step 2: Run to verify they fail**
 
-Run: `cd web && npx playwright test tests/e2e/login.spec.ts tests/e2e/practice.spec.ts -g "Metra credit"`
-Expected: FAIL (no `metra-credit` element).
+Run: `cd web && npx playwright test tests/e2e/login.spec.ts tests/e2e/practice.spec.ts -g "Metra credit|after logout"`
+Expected: FAIL on a missing `metra-credit` element (not on an import or reference error).
 
 - [ ] **Step 3: Implement** in `web/src/routes/+layout.svelte`:
   - `let creditDate = $state('')`; `const creditUser = $derived($auth.user?.id ?? '')`.
-  - `$effect(() => { if (!creditUser) return; return watchCreditDate(fetchStatus, (d) => { creditDate = d; }); })` — reading only `creditUser` so renewals do not restart it; dispose clears the date on logout.
+  - `$effect(() => { if (!creditUser) return; return untrack(() => watchCreditDate(fetchStatus, (d) => { creditDate = d; })); })` (`untrack` from `svelte`) — the effect's only reactive read is `creditUser`, so renewals, renames and clock revisions (which `authed()` reads synchronously) do not restart it; dispose clears the date on logout or a user change.
   - After `<main class="col">…</main>`: `<footer class="col credit" data-testid="metra-credit">{copy.notAffiliated}{#if creditDate} {copy.timetablePublished} {creditDate}.{/if}</footer>`.
   - Style: `.credit { font-size: 12px; line-height: 1.5; color: #888; padding-block: 32px 16px; }`.
   - README glossary, after the "Practice day" row: `| Metra credit | **Schedule from Metra’s public feed. Not affiliated with Metra. Timetable published …** | Plain | Footer on every page; Metra's license. The date shows only when signed in |`.
 
 - [ ] **Step 4: Run to verify they pass, then the full gate**
 
-Run: `cd web && npx playwright test tests/e2e/login.spec.ts tests/e2e/practice.spec.ts -g "Metra credit"`
+Run: `cd web && npx playwright test tests/e2e/login.spec.ts tests/e2e/practice.spec.ts -g "Metra credit|after logout"`
 Expected: PASS.
 Run: `cd web && npm test && npm run check && npm run test:e2e && cd .. && bash scripts/test-hooks.sh`
 Expected: all green. A one-off e2e failure in an unrelated spec is known noise: re-run that spec alone before blaming this change. Also confirm `layoutSweep.spec.ts` passes with the footer present.
@@ -171,6 +232,6 @@ Expected: all green. A one-off e2e failure in an unrelated spec is known noise: 
 - [ ] **Step 5: Commit**
 
 ```bash
-git add web/src/routes/+layout.svelte web/tests/e2e/login.spec.ts web/tests/e2e/practice.spec.ts README.md
+git add web/src/routes/+layout.svelte web/tests/e2e/login.spec.ts web/tests/e2e/practice.spec.ts web/tests/e2e/helpers.ts README.md
 git commit -m "feat(web): Metra credit footer on every page"
 ```

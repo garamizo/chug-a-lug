@@ -74,7 +74,10 @@ the route's date is a Saturday. README's UI glossary gets a "Metra credit" row.
   - `/login`, signed out: the credit is visible and ends after "Not affiliated with Metra."
   - Live on a practice day at phone width, where the tab bar shows: after scrolling to the bottom,
     the footer is fully visible and its bottom edge is above the tab bar's top edge.
-  - Logout clears the date (the test stack's `file:` timetable gives no date, so this is covered by
-    the unit rule plus a check that a signed-out page never shows "Timetable published").
+  - With `/api/metra/status` stubbed as the live stack would answer (the test stack's `file:`
+    timetable never gives a date): Home shows the date, logout clears it, and an answer delayed past
+    logout never shows it. The tab-bar check uses the dated, longer text.
+- Unit (`watchCreditDate`): fetches at once and every 10 minutes, never overlaps calls, reports no
+  date on failure, and ignores an answer that lands after dispose.
 - The layout sweep keeps running over every page state; its generic rules do not hit-test plain
   text, which is why the tab-bar case has its own assertion.
