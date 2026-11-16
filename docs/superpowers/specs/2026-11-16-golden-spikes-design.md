@@ -145,10 +145,10 @@ A single getter on `liveDay` used by chat, the Crew Board and the celebration:
   (`closingLeg`); `crawlEnd`'s fallbacks (last stop's departure, legacy routes without a run home) never make a
   Closing Time. So legacy routes and impossible runs home get no Caboose.
 - On the event day: `crawlEnd(...).at` as an ISO string.
-- On a practice day `crawlEnd` is on the plan date (`planClock.ts`), but the feed holds today's real rows: map the plan
-  time back onto the activity day — the same America/Chicago wall-clock time on `liveDay.today` (through
-  `$lib/time.ts`, DST-safe) — the inverse of `projectToPlanDate`. A helper `planToActivityDay(plan: Date, eventDate,
-  today): string` in `planClock.ts`, unit-tested across a DST change.
+- On a practice day `crawlEnd` is on the plan date (`planClock.ts`), but the feed holds today's real rows: shift it by
+  the plan clock's own offset, `crawlEnd.at - (liveDay.now - liveDay.realNow)`, so the crawl ending (plan clock) and
+  activity no longer counting (activity clock) happen at the same instant. (A wall-clock inverse of
+  `projectToPlanDate` is not defined across a DST gap.)
 
 ### The animation — winner's phone only
 
@@ -213,8 +213,8 @@ Crew chat bullet loses "firsts, lead changes" in favour of spikes.
   Caboose only with `closedAt` and shared on ties, rows after `closedAt` ignored, other days ignored, proof photos and
   videos excluded from Railfan, Triple Header across two stops at one station, ids unchanged when an earlier row is
   deleted, same output for shuffled input, undo removes a spike; `spikeTally`.
-- Unit `planClock.test.ts`: `planToActivityDay` on the event day, before and after it, and across a DST change;
-  `liveDay.closedAt` null for a legacy route, an impossible run home, and before `after`.
+- Unit `liveDay.test.ts`: `closedAt` null for a legacy route, an impossible run home, and before `after`; on a
+  practice day it matches `realNow` at the instant the crawl turns `after`, including across a DST offset difference.
 - Unit `milestones.test.ts` updated (first-of-day and lead removed; first photo ignores proofs), `chat.test.ts` for
   spike entries.
 - Unit `celebrate.test.ts` with a fake clock: only mine; key scoping (another day/route/run/user is new); the
