@@ -142,11 +142,15 @@ describe('join link sign-up (spec §4.2)', () => {
       expect((await signUp(ips[Math.floor(i / 10)])).status, `sign-up ${i}`).toBe(200);
     }
     await truncate('signups');
-    const over = await signUp(randomIp());
-    expect(over.status).toBe(429);
-    expect(over.json.message).toBe(BUSY);
+    // A relative who keeps trying the spent link is refused, but their address budget stays whole.
+    const relative = `relative${uid()}@test.invalid`;
+    for (let i = 0; i < 3; i++) {
+      const over = await signUp(randomIp(), { email: relative });
+      expect(over.status, `try ${i}`).toBe(429);
+      expect(over.json.message).toBe(BUSY);
+    }
     link = await invite(5);
-    expect((await signUp(randomIp())).status).toBe(200);
+    expect((await signUp(randomIp(), { email: relative })).status).toBe(200);
   }, 60_000);
 
   it('at most ten open sign-ups', async () => {

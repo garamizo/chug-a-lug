@@ -17,12 +17,17 @@ const newCode = () => $security.randomStringWithAlphabet(6, '0123456789')
 const codeMail = (email, code) => ({ to: [email], subject: 'Your Chug-a-Lug boarding code', text: `Your Chug-a-Lug boarding code: ${code}\n\nIt works for 15 minutes.` })
 
 // Both code-mail budgets: every code mail, first send and resend alike, spends one of each, so
-// replacing a sign-up never resets an address, and a leaked link sends at most 40 an hour.
+// replacing a sign-up never resets an address, and a leaked link sends at most 40 an hour. Both are
+// checked before either is spent: a refusal sends no mail, so it must cost neither budget (a relative
+// refused by a spent link still has their own three mails for the next one).
 function mailBudget(tx, email, linkId) {
   const crew = require(`${__hooks}/crew.js`)
   const limits = require(`${__hooks}/limits.js`)
-  return limits.consumeInTransaction(tx, 'join-mail:' + crew.hash(email), 3, 3600) &&
-    limits.consumeInTransaction(tx, 'join-mail-link:' + linkId, 40, 3600)
+  const budgets = [['join-mail:' + crew.hash(email), 3], ['join-mail-link:' + linkId, 40]]
+  if (!budgets.every(([key, max]) => limits.availableInTransaction(tx, key, max, 3600))) return false
+  // Cannot refuse now: the transaction is serialised and both counts were just checked.
+  for (const [key, max] of budgets) limits.consumeInTransaction(tx, key, max, 3600)
+  return true
 }
 
 // The signup row named by the body, if its secret matches; read inside the caller's transaction.

@@ -11,6 +11,14 @@ function consumeInTransaction(app, key, maximum, seconds) {
   return true
 }
 exports.consumeInTransaction = consumeInTransaction
+// availableInTransaction(app, key, maximum, seconds): true when one more attempt fits, spending nothing.
+// Lets a caller check several budgets first and spend them only if all fit.
+exports.availableInTransaction = function (app, key, maximum, seconds) {
+  const now = Math.floor(Date.now() / 1000)
+  const row = new DynamicModel({ count: 0 })
+  app.db().newQuery('SELECT COUNT(*) AS count FROM _crawl_limits WHERE key = {:key} AND at > {:cutoff}').bind({ key, cutoff: now - seconds }).one(row)
+  return row.count < maximum
+}
 // consume(key, maximum, seconds) returns true when the attempt is allowed and records it.
 exports.consume = function (key, maximum, seconds) {
   let allowed = false
