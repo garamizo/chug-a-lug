@@ -352,7 +352,7 @@ PocketBase hook sends it, the SvelteKit server checks it), so rotate it with
 ## Shakedown Run (M4)
 
 Live runs every day on the one real stack; there is no separate rehearsal deployment or
-`REHEARSAL` switch (see README ["Practice days"](../README.md#practice-days)). `just up` runs
+`REHEARSAL` switch (see ["Practice days"](FEATURES.md#practice-days)). `just up` runs
 `docker compose -f compose.yml up -d --build` against the real database, `~/.chug-a-lug/pb_data`. On the
 current route's `event_date` it is the event day; any other day, Live shows the route at today's
 Chicago time against that date's timetable, with a Practice badge, and nothing people post that
@@ -364,18 +364,7 @@ at a time. Never test against the regular stack ports 3000/8090. The advanced st
 remains available through `node web/scripts/sim.mjs` for isolated developer runs, independent of the
 real stack.
 
-To capture or index an archive, supply its service date and explicit UTC playback window:
-
-```bash
-just record NAME DATE WINDOW_START WINDOW_END
-just index-recording NAME MATCHING_GTFS_ZIP DATE WINDOW_START WINDOW_END
-just inspect-recording NAME
-```
-
- The recorder archives GTFS and per-feed poll observations.
-Use `just index-recording` with the matching zip/date/window for legacy snapshots. Indexing cannot
-recover successful unchanged polls; legacy freshness remains conservative. Never re-date protobuf
-headers to pretend the recording is from another Saturday.
+To capture or index an archive, see [Recording and indexing train feeds](#recording-and-indexing-train-feeds).
 
 After upgrading to crew access, delete existing `.simulations/<run>` folders and start fresh runs: the
 migration wipes their users while their marker still says ready.
@@ -403,3 +392,41 @@ The Route, then verifies resynchronization and excluded API caches. Browser scre
 under `web/test-results/sim/` and `web/test-results/sim-offline/`. Record device/browser/build/source
 and each manual checkpoint using [the rehearsal template](rehearsals/m4-template.md). Automated
 fixtures do not establish real Saturday recording or physical-phone acceptance.
+
+## Recording and indexing train feeds
+
+Recording requires Node 22.18+, `METRA_API_TOKEN`, and an explicit original Chicago service date and
+UTC window that includes the current time. For example, when recording on December 26:
+
+```bash
+just record saturday 2026-12-26 2026-12-26T16:00:00Z 2026-12-27T04:00:00Z
+```
+
+The command first archives `GTFS_URL` (or Metra's default static zip), verifies BNSF service for that
+date, and creates `~/.chug-a-lug/recordings/saturday/`. It refuses an existing name. Each feed is polled at
+least 30 real seconds apart; duplicate snapshots still get successful poll observations. Ctrl-C or
+SIGTERM finishes the in-flight tick before stopping. Fetch/decode/snapshot-write failures become
+failed observations; an observation-storage failure stops recording. Tokens and raw errors are not
+written into the recording.
+
+To index an old snapshot-only folder, supply the **known matching** static zip, original date and
+window explicitly; the indexer cannot establish the historical provenance of a zip for you:
+
+```bash
+just index-recording saturday /path/to/matching-schedule.zip 2026-12-26 2026-12-26T16:00:00Z 2026-12-27T04:00:00Z
+just inspect-recording saturday
+just sim-fixture
+```
+
+Legacy metadata declares that poll history is unavailable, so future replay will use conservative
+snapshot-timestamp freshness. Inspection reports truncated trailing poll data, missing/corrupt
+snapshots, and unmatched trip entities. Snapshot names remain `<headerEpoch>.<feed>.pb`. New
+recordings add `manifest.json`, `schedule.zip` and `polls.ndjson`. If a crash leaves manifest observation
+bounds behind the append log, the complete poll rows remain authoritative. Incomplete final JSON is
+ignored and reported; malformed complete rows are rejected.
+
+`just sim-fixture` regenerates the small [deterministic fixture](../web/tests/fixtures/sim/recording/README.md).
+The isolated recording test plays this synthetic fixture with its archived timetable. Practice days
+never use a recording; they always run on that date's published timetable, schedule-only.
+
+Never re-date protobuf headers to pretend the recording is from another Saturday.
