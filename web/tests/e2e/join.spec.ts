@@ -102,17 +102,47 @@ test('a verify answered 404 offers sign-in', async ({ page }) => {
   await expect(page.getByTestId('join-maybe-ready').getByRole('link')).toHaveAttribute('href', '/login');
 });
 
-test('an email with a seat is told to sign in', async ({ page }) => {
+test('an email with a seat is told to sign in', async ({ page: first, browser }) => {
+  let page = first;
   const n = uid(), email = `seat${n}@test.invalid`;
   await clearMails();
   await page.goto(await inviteLink());
   await fillForm(page, `Join Seat ${n}`, email);
   await enterCode(page, email);
   await expect(page.getByTestId('name')).toBeVisible();
-  await page.context().clearCookies();
-  await page.evaluate(() => { localStorage.clear(); sessionStorage.clear(); });
-  await page.goto('/login');
+  // A second visitor: a fresh browser context, signed out.
+  const other = await browser.newContext({ baseURL: 'http://127.0.0.1:15173' });
+  page = await other.newPage();
   await page.goto(await inviteLink());
   await fillForm(page, `Join Seat Two ${n}`, email);
   await expect(page.getByTestId('error')).toHaveText('That email already has a seat. Sign in instead.');
+});
+
+test('Back from Sign in returns to the join page, with no token in the address bar', async ({ page }) => {
+  await page.goto(await inviteLink());
+  await expect(page.getByTestId('name-input')).toBeVisible();
+  expect(page.url()).not.toContain('#');
+  await page.getByRole('link', { name: 'Sign in' }).first().click();
+  await expect(page).toHaveURL(/\/login$/);
+  await page.goBack();
+  await expect(page).toHaveURL(/\/join$/);
+  await expect(page.getByTestId('name-input')).toBeVisible();
+});
+
+test('an expired code says so and starts again with the name and email kept', async ({ page }) => {
+  const n = uid(), name = `Join Expired ${n}`, email = `expired${n}@test.invalid`;
+  await clearMails();
+  await page.goto(await inviteLink());
+  await fillForm(page, name, email);
+  await expect(page.getByTestId('code-input')).toBeVisible();
+  await page.route('**/api/crawl/join/verify', (route) => route.fulfill({ status: 410, json: { message: 'That code expired. Start again.' } }));
+  await page.getByTestId('code-input').fill('123456');
+  await page.getByTestId('verify').click();
+  await expect(page.getByTestId('error')).toHaveText('That code expired. Start again.');
+  await page.getByTestId('start-again').click();
+  await expect(page.getByTestId('name-input')).toHaveValue(name);
+  await expect(page.getByTestId('email-input')).toHaveValue(email);
+  await page.reload();
+  await expect(page.getByTestId('name-input')).toBeVisible();
+  await expect(page.getByTestId('code-input')).toHaveCount(0);
 });

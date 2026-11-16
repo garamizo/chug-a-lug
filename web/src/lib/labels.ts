@@ -532,6 +532,7 @@ export const authCopy = {
   resent: 'A new code is on its way.',
   /** The server's link message (join.js LINK), shown for no link, a dead link and a link that dies mid-sign-up. */
   linkDead: 'This link is used up or expired. Ask the Conductor for a new one.',
+  startAgain: 'Start again',
   linkChecking: 'Checking your link…',
   maybeReadyTitle: 'Your seat may be ready',
   maybeReadyIntro: 'We lost the answer on the way. If the code was right, your account exists: sign in with your email and password.',

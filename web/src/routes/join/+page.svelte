@@ -28,16 +28,27 @@
   onMount(() => {
     const stored = loadSignup(sessionStorage);
     const fromHash = tokenFromHash(location.hash);
-    if (location.hash) history.replaceState(null, '', '/join');
+    if (location.hash) history.replaceState(history.state, '', '/join');
     // A mailed code outranks the link check: on the last seat the link may already read as full.
     if (stored?.codeSent && stored.signupId && stored.secret && !(fromHash && fromHash !== stored.token)) {
       current = stored; name = stored.name ?? ''; email = stored.email ?? ''; step = 'code'; return;
     }
     const token = fromHash ?? stored?.token ?? null;
     if (!token) { dead(); return; }
+    checkLink(token);
+  });
+  function checkLink(token: string) {
     keep({ token, savedAt: Date.now() });
     void checkJoinLink(token).then(() => { if (step === 'checking') step = 'form'; }, (e) => { if (status(e) === 410) dead(); else { error = message(e); step = 'form'; } });
-  });
+  }
+  // The code step cannot go on (code expired, name or seat taken): say why, offer a fresh start.
+  let stuck = $state(false);
+  const refused = (e: unknown) => status(e) === 410 || status(e) === 409;
+  const startAgain = () => {
+    const token = current?.token; error = ''; notice = ''; stuck = false; code = ''; password = '';
+    if (!token) { dead(); return; }
+    step = 'checking'; checkLink(token);
+  };
 
   async function run(action: () => Promise<void>) {
     if (busy) return; error = ''; notice = ''; busy = true;
@@ -70,6 +81,7 @@
       catch (e) {
         if (isLinkDead(e)) { dead(); return; }
         if (status(e) === 404) { clearSignup(sessionStorage); current = null; typedEmail.set(email); step = 'maybe-ready'; return; }
+        if (refused(e)) stuck = true;
         throw e;
       }
       clearSignup(sessionStorage); current = null;
@@ -77,7 +89,7 @@
   const again = () => void run(async () => {
     const s = current; if (!s) return;
     try { await resendSignup(s.signupId!, s.secret!); code = ''; notice = authCopy.resent; }
-    catch (e) { if (isLinkDead(e)) dead(); else throw e; }
+    catch (e) { if (isLinkDead(e)) dead(); else { if (refused(e)) stuck = true; throw e; } }
   });
 </script>
 
@@ -107,6 +119,7 @@
     </form>
     <p class="resend">{copy.noCodeHintNoGoogle}<br /><button type="button" class="text-button" onclick={again} disabled={busy} data-testid="resend-code">{copy.sendAgain}</button></p>
     {#if notice}<p class="notice" role="status">{notice}</p>{/if}
+    {#if stuck}<button type="button" class="primary" onclick={startAgain} data-testid="start-again">{authCopy.startAgain}</button>{/if}
   {:else}
     <div data-testid="join-maybe-ready">
       <p class="intro">{authCopy.maybeReadyIntro}</p>
