@@ -113,7 +113,7 @@ async function poll<T>(probe: () => Promise<T | undefined>, what: string): Promi
     await new Promise((r) => setTimeout(r, 25));
   }
 }
-/** The last 6-digit code mailed to `to`, polling briefly because PocketBase sends OTP mail asynchronously. */
+/** The last 6-digit code mailed to `to`, polling briefly in case the mail is still on its way. */
 export const codeFor = (to: string): Promise<string> => poll(async () =>
   (await mails(to)).map((m) => /\b(\d{6})\b/.exec(m.text)?.[1]).filter(Boolean).at(-1), `No code mailed to ${to}`);
 /** The last password-reset link mailed to `to` (text or HTML part), polling: PocketBase mails after replying. */
@@ -122,17 +122,17 @@ export const resetLinkFor = (to: string): Promise<{ url: string; token: string }
   return hit ? { url: hit[1], token: hit[2] } : undefined;
 }, `No reset link mailed to ${to}`);
 /**
- * Proof that mail sent before now has had its chance to arrive: a code requested for a fresh member
- * goes through the same asynchronous mailer, so once it lands, an earlier mail would have too. Use it
- * before asserting that something was NOT mailed.
+ * Proof that mail sent before now has had its chance to arrive: a reset link requested for a fresh
+ * member goes through the same asynchronous mailer, so once it lands, an earlier mail would have too.
+ * Use it before asserting that something was NOT mailed.
  */
 export async function mailBarrier(): Promise<void> {
   const name = `Mail Barrier ${Math.floor(Math.random() * 1e9)}`;
   await loginToken(name);
   const email = hexEmail(name.toLowerCase());
-  const res = await post('/api/collections/users/request-otp', { email });
-  if (!res.ok) throw new Error(`Barrier code request failed: ${res.status}`);
-  await codeFor(email);
+  const res = await post('/api/collections/users/request-password-reset', { email });
+  if (!res.ok) throw new Error(`Barrier reset request failed: ${res.status}`);
+  await resetLinkFor(email);
 }
 /** A fresh documentation-range IP, so each test owns its own rate-limit buckets. */
 export const randomIp = () => `10.${Math.floor(Math.random() * 250)}.${Math.floor(Math.random() * 250)}.${1 + Math.floor(Math.random() * 250)}`;
@@ -159,12 +159,6 @@ export async function waitFor<T>(probe: () => Promise<T | null | undefined | fal
     await new Promise((r) => setTimeout(r, 25));
   }
 }
-let tokens = 0;
-/** A Turnstile token the fake accepts exactly once. */
-export const turnstileToken = () => `ok-${process.pid}-${++tokens}-${Math.random().toString(36).slice(2)}`;
-/** A code the fake OIDC provider exchanges for this identity. */
-export const oidcCode = (identity: { sub: string; email: string; email_verified?: boolean; name?: string }) =>
-  Buffer.from(JSON.stringify({ email_verified: true, name: 'Fake Person', ...identity })).toString('base64url');
 /** Makes a join link as the Conductor does on the host: the internal secret, no CF-Connecting-IP. */
 export async function invite(seats = 5, days = 14): Promise<{ url: string; token: string; expires_at: string }> {
   const res = await fetch(`${PB}/api/crawl/invite`, {

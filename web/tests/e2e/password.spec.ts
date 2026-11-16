@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test';
-import { clearMails, codeFor, login, resetLinkFor, sessionFor } from './helpers';
+import { clearMails, login, resetLinkFor, sessionFor } from './helpers';
 import { copy } from '../../src/lib/labels';
 
 const uid = () => Math.floor(Math.random() * 1e6);
@@ -51,29 +51,26 @@ test('a mangled reset link is dead at once, and the fragment is gone', async ({ 
   await expect(page).toHaveURL(/\/reset-password$/);
 });
 
-test('email me a code instead still signs in', async ({ page }) => {
-  const name = `Pw Coder ${uid()}`, email = emailOf(name);
+test('after a reset the old password is refused and the new one signs in', async ({ page }) => {
+  const name = `Pw Reset ${uid()}`, email = emailOf(name);
   await sessionFor(name); await clearMails();
-  await page.goto('/login');
-  await page.getByTestId('use-code').click();
+  await page.goto('/login/forgot');
   await page.getByTestId('email-input').fill(email);
-  await page.getByTestId('send-code').click();
-  await page.getByTestId('code-input').fill(await codeFor(email));
-  await page.getByTestId('sign-in').click();
+  await page.getByTestId('send-link').click();
+  await expect(page.getByTestId('link-sent')).toHaveText(copy.linkMaybeSent);
+  await page.goto(await resetLinkFor(email));
+  await page.getByTestId('password-input').fill('brand-new-pass-1');
+  await page.getByTestId('set-password').click();
   await expect(page.getByTestId('name')).toHaveText(name);
-});
-
-test('the code step has a way back to the password form', async ({ page }) => {
-  const name = `Pw Back ${uid()}`, email = emailOf(name);
-  await sessionFor(name); await clearMails();
+  await page.context().clearCookies(); // the session lives in a cookie (pb.ts)
   await page.goto('/login');
-  await page.getByTestId('use-code').click();
   await page.getByTestId('email-input').fill(email);
-  await page.getByTestId('send-code').click();
-  await expect(page.getByTestId('code-input')).toBeVisible();
-  await page.getByTestId('use-password').click();
-  await expect(page.getByTestId('password-input')).toBeVisible();
-  await expect(page.getByTestId('code-input')).toHaveCount(0);
+  await page.getByTestId('password-input').fill('seed-test-password-1');
+  await page.getByTestId('password-sign-in').click();
+  await expect(page.getByTestId('error')).toHaveText(copy.passwordMismatch);
+  await page.getByTestId('password-input').fill('brand-new-pass-1');
+  await page.getByTestId('password-sign-in').click();
+  await expect(page.getByTestId('name')).toHaveText(name);
 });
 
 test('Your ticket emails a link to set a password', async ({ page }) => {

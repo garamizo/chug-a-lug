@@ -2,8 +2,7 @@
 // so this is onBootstrap, which runs BEFORE the application migrations (first deploy) and also
 // during `pocketbase superuser upsert`. Hence two parts, both idempotent:
 //   - settings (mail, app name, rate limits) are applied every time;
-//   - the users collection (Google provider, the Conductor) only once its schema is ready; on a
-//     first deploy the migration itself does both.
+//   - the Conductor only once the users schema is ready; on a first deploy the migration mints it.
 onBootstrap((e) => {
   e.next()
   const env = (k) => $os.getenv(k) || ''
@@ -25,9 +24,5 @@ onBootstrap((e) => {
   let users = null
   try { users = $app.findCollectionByNameOrId('users') } catch (_) { return }
   if (!users.fields.getByName('blocked')) return
-  const id = env('GOOGLE_CLIENT_ID'), secret = env('GOOGLE_CLIENT_SECRET')
-  users.oauth2.providers = id && secret ? [{ name: 'google', clientId: id, clientSecret: secret }] : []
-  users.oauth2.enabled = !!(id && secret)
-  $app.save(users)
   require(`${__hooks}/crew.js`).ensureConductor($app, env('CONDUCTOR_EMAIL'))
 })

@@ -27,12 +27,16 @@ exports.manifest = function (e) {
   const s = (r, k) => r.getString(k)
   return e.json(200, {
     people: users.map((u) => ({ id: u.id, name: s(u, 'name'), email: u.email(), is_admin: u.getBool('is_admin'), blocked: u.getBool('blocked'),
-      approved_by: names[s(u, 'approved_by')] || '', last_seen: s(u, 'last_seen'), created: s(u, 'created') })),
-    requests: $app.findRecordsByFilter('boarding_requests', 'decoy = false', '-created', 50, 0).map((r) => ({ id: r.id, name: s(r, 'name'), email: s(r, 'email'),
-      method: s(r, 'method'), status: s(r, 'status'), country: s(r, 'country'), city: s(r, 'city'), user_agent: s(r, 'user_agent'), created: s(r, 'created'),
-      decided_by: names[s(r, 'decided_by')] || '' })),
+      last_seen: s(u, 'last_seen'), created: s(u, 'created') })),
     log: $app.findRecordsByFilter('access_log', "id != ''", '-created', 200, 0).map((r) => ({ id: r.id, created: s(r, 'created'), event: s(r, 'event'),
       method: s(r, 'method'), name: s(r, 'name'), email: s(r, 'email'), user: names[s(r, 'user')] || '', actor: names[s(r, 'actor')] || '',
       ip: s(r, 'ip'), country: s(r, 'country'), city: s(r, 'city'), user_agent: s(r, 'user_agent'), detail: s(r, 'detail') }))
   })
+}
+
+// The access log keeps 90 days and at most 10,000 rows (cron crew_access_daily).
+exports.daily = function (app) {
+  const ago = new Date(Date.now() - 90 * 86400e3).toISOString().replace('T', ' ')
+  app.db().newQuery('DELETE FROM access_log WHERE created < {:t}').bind({ t: ago }).execute()
+  app.db().newQuery('DELETE FROM access_log WHERE id NOT IN (SELECT id FROM access_log ORDER BY created DESC LIMIT 10000)').execute()
 }

@@ -197,7 +197,8 @@ it('crew access can be rolled back and applied again', async () => {
     const run = (...args: string[]) => execFileSync(resolve('../pocketbase/pocketbase'), ['migrate', ...args, '--dir', join(dir, 'data'),
       '--migrationsDir', migrations, '--hooksDir', hooks], { encoding: 'utf8', timeout: 15000, input: 'y\n', stdio: 'pipe', env: { ...process.env, CONDUCTOR_EMAIL: 'conductor@test.invalid' } });
     run('up');
-    const down = run('down', '3');
+    const down = run('down', '4');
+    expect(down).toContain('Reverted 1759100001_retire_boarding');
     expect(down).toContain('Reverted 1759100000_join_link');
     expect(down).toContain('Reverted 1759000000_password_sign_in');
     expect(down).toContain('Reverted 1758900000_crew_access');
@@ -230,7 +231,7 @@ it('password sign-in applies its settings, rolls back keeping history, and appli
     const run = (...args: string[]) => execFileSync(resolve('../pocketbase/pocketbase'), ['migrate', ...args, '--dir', join(dir, 'data'),
       '--migrationsDir', migrations, '--hooksDir', hooks], { encoding: 'utf8', timeout: 15000, input: 'y\n', stdio: 'pipe', env: { ...process.env, CONDUCTOR_EMAIL: 'conductor@test.invalid' } });
     expect(run('up')).toContain('1759000001_check_up');
-    expect(run('down', '3')).toContain('Reverted 1759000000_password_sign_in');
+    expect(run('down', '4')).toContain('Reverted 1759000000_password_sign_in');
     // An older, unapplied file runs first on the next `up`, so it sees the rolled-back state.
     await writeFile(join(migrations, '1758999999_check_down.js'), `migrate(app => {
       const u = app.findCollectionByNameOrId('users');
@@ -285,7 +286,8 @@ it('join link adds its collections and rolls back', async () => {
     const run = (...args: string[]) => execFileSync(resolve('../pocketbase/pocketbase'), ['migrate', ...args, '--dir', join(dir, 'data'),
       '--migrationsDir', migrations, '--hooksDir', hooks], { encoding: 'utf8', timeout: 15000, input: 'y\n', stdio: 'pipe', env: { ...process.env, CONDUCTOR_EMAIL: 'conductor@test.invalid' } });
     expect(run('up')).toContain('1759100000_zcheck_up');
-    const down = run('down', '2');
+    const down = run('down', '3');
+    expect(down).toContain('Reverted 1759100001_retire_boarding');
     expect(down).toContain('Reverted 1759100000_zcheck_up');
     expect(down).toContain('Reverted 1759100000_join_link');
     await writeFile(join(migrations, '1759099999_check_down.js'), `migrate(app => {
@@ -294,5 +296,73 @@ it('join link adds its collections and rolls back', async () => {
     const again = run('up');
     expect(again).toContain('1759099999_check_down');
     expect(again).toContain('1759100000_join_link');
+  } finally { await rm(dir, { recursive: true, force: true }); }
+});
+
+it('retire boarding drops the queue and survives a log row pointing at a request', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'chugalug-retire-'));
+  try {
+    const migrations = join(dir, 'migrations'), hooks = join(dir, 'hooks');
+    await mkdir(migrations); await mkdir(hooks);
+    for (const name of await readdir('../pocketbase/pb_migrations')) await copyFile(`../pocketbase/pb_migrations/${name}`, join(migrations, name));
+    // Sorts between 1759100000_join_link.js and 1759100001_retire_boarding.js: the schema retire meets in production.
+    await writeFile(join(migrations, '1759100000_zretire_fixture.js'), `migrate(app => {
+      const users = app.findCollectionByNameOrId('users');
+      users.oauth2.providers = [{ name: 'google', clientId: 'fixture-id', clientSecret: 'fixture-secret' }];
+      users.oauth2.enabled = true;
+      app.save(users);
+      if (!users.otp.enabled) throw new Error('fixture expects OTP on');
+      const u = new Record(users);
+      u.set('name', 'Boarded'); u.set('name_key', 'boarded'); u.setEmail('boarded@test.invalid'); u.setPassword('legacy-password-only'); app.save(u);
+      const ext = new Record(app.findCollectionByNameOrId('_externalAuths'));
+      ext.set('collectionRef', users.id); ext.set('recordRef', u.id); ext.set('provider', 'google'); ext.set('providerId', 'fixture-sub'); app.save(ext);
+      const r = new Record(app.findCollectionByNameOrId('boarding_requests'));
+      r.set('name', 'Boarded'); r.set('name_key', 'boarded'); r.set('email', 'boarded@test.invalid'); r.set('method', 'email'); r.set('status', 'aboard'); app.save(r);
+      const log = new Record(app.findCollectionByNameOrId('access_log'));
+      log.set('id', 'retirefixture01'); log.set('event', 'let_aboard'); log.set('request', r.id); log.set('user', u.id); app.save(log);
+    }, app => {})`);
+    await writeFile(join(migrations, '1759100001_zcheck_retire.js'), `migrate(app => {
+      let found = true; try { app.findCollectionByNameOrId('boarding_requests') } catch (_) { found = false }
+      if (found) throw new Error('boarding_requests kept');
+      const log = app.findCollectionByNameOrId('access_log');
+      if (log.fields.getByName('request')) throw new Error('access_log.request kept');
+      if (app.findRecordById('access_log', 'retirefixture01').getString('event') !== 'let_aboard') throw new Error('history lost');
+      const u = app.findCollectionByNameOrId('users');
+      if (u.otp.enabled) throw new Error('otp on');
+      if (u.oauth2.enabled || u.oauth2.providers.length !== 0) throw new Error('oauth2 on');
+      if (u.fields.getByName('approved_by')) throw new Error('approved_by kept');
+      if (u.updateRule.indexOf('approved_by') >= 0) throw new Error('updateRule mentions approved_by: ' + u.updateRule);
+      for (const f of ['email', 'is_admin', 'blocked', 'name_key', 'verified', 'password', 'last_seen']) {
+        if (u.updateRule.indexOf('@request.body.' + f + ':isset = false') < 0) throw new Error('updateRule leaves ' + f + ' open');
+      }
+      if (app.findRecordsByFilter('_externalAuths', "collectionRef = {:c}", '', 0, 0, { c: u.id }).length) throw new Error('external auths kept');
+      const labels = app.settings().rateLimits.rules.map((r) => r.label);
+      for (const l of ['users:requestOTP', 'users:authWithOTP', 'users:authWithOAuth2']) if (labels.indexOf(l) >= 0) throw new Error('rule kept ' + l);
+      if (labels.indexOf('users:authWithPassword') < 0) throw new Error('password rule lost');
+    }, app => {})`);
+    const run = (...args: string[]) => execFileSync(resolve('../pocketbase/pocketbase'), ['migrate', ...args, '--dir', join(dir, 'data'),
+      '--migrationsDir', migrations, '--hooksDir', hooks], { encoding: 'utf8', timeout: 15000, input: 'y\n', stdio: 'pipe', env: { ...process.env, CONDUCTOR_EMAIL: 'conductor@test.invalid' } });
+    expect(run('up')).toContain('1759100001_zcheck_retire');
+    const down = run('down', '2');
+    expect(down).toContain('Reverted 1759100001_zcheck_retire');
+    expect(down).toContain('Reverted 1759100001_retire_boarding');
+    // Unapplied and older than retire, so the next `up` runs it first, on the rolled-back schema.
+    await writeFile(join(migrations, '1759100000_zzcheck_down.js'), `migrate(app => {
+      const requests = app.findCollectionByNameOrId('boarding_requests');
+      for (const f of ['name', 'email', 'method', 'status', 'decoy', 'password_hash', 'decided_by', 'user', 'notified_at']) if (!requests.fields.getByName(f)) throw new Error('boarding_requests.' + f);
+      const rel = app.findCollectionByNameOrId('access_log').fields.getByName('request');
+      if (!rel || rel.collectionId !== requests.id) throw new Error('access_log.request');
+      const u = app.findCollectionByNameOrId('users');
+      if (!u.otp.enabled) throw new Error('otp off');
+      if (!u.fields.getByName('approved_by')) throw new Error('approved_by');
+      if (u.updateRule.indexOf('@request.body.approved_by:isset = false') < 0) throw new Error('updateRule: ' + u.updateRule);
+      const labels = app.settings().rateLimits.rules.map((r) => r.label);
+      for (const l of ['users:requestOTP', 'users:authWithOTP', 'users:authWithOAuth2']) if (labels.indexOf(l) < 0) throw new Error('rule missing ' + l);
+      if (app.findRecordById('access_log', 'retirefixture01').getString('request') !== '') throw new Error('request link came back');
+    }, app => {})`);
+    const again = run('up');
+    expect(again).toContain('1759100000_zzcheck_down');
+    expect(again).toContain('1759100001_retire_boarding');
+    expect(again).toContain('1759100001_zcheck_retire');
   } finally { await rm(dir, { recursive: true, force: true }); }
 });

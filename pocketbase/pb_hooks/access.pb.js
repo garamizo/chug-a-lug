@@ -2,7 +2,7 @@
 // so only real sign-ins are guarded and logged here; refreshes have their own hook. Every non-empty
 // method is guarded, including one this app does not offer (a new auth method
 // switched on in the admin UI, say): it is logged with the method left empty, because access_log
-// only knows ours. Password, email code and Google are the three it offers.
+// only knows ours. Password is the one it offers (the join link's verify answers as password too).
 onRecordAuthRequest((e) => {
   if (e.authMethod) {
     const crew = require(`${__hooks}/crew.js`)
@@ -21,24 +21,15 @@ onRecordAuthRefreshRequest((e) => {
   e.next()
 }, 'users')
 
-// PocketBase sends OTP mail after replying, so success is logged only once the send returns.
-// A put-off seat gets no code: skipping e.next() skips only the send. The request was already
-// answered with an otpId, exactly as for an address that has no seat, so nothing is revealed.
-onMailerRecordOTPSend((e) => {
-  if (e.record.getBool('blocked')) return
-  e.next()
-  require(`${__hooks}/crew.js`).logEvent($app, { event: 'code_sent', method: 'email', user: e.record.id, email: e.record.email() })
-}, 'users')
-
 // Password sign-in (password spec §3.2). Every try counts against the typed address, member or not,
 // before PocketBase compares the password: the limit reveals nothing, and it holds with
-// PB_RATE_LIMITS=off. The person locked out keeps email code and Google.
+// PB_RATE_LIMITS=off. The person locked out can still reset their password.
 onRecordAuthWithPasswordRequest((e) => {
   const crew = require(`${__hooks}/crew.js`)
   const identity = String(e.identity || '').trim().toLowerCase()
   if (!require(`${__hooks}/limits.js`).consume('password:' + identity, 10, 900)) {
     crew.logEvent($app, { event: 'rate_limited', method: 'password', detail: 'password', email: identity }, crew.clientInfo(e))
-    return e.json(429, { message: 'Too many tries for this address. Use an email code or Google, or try again in 15 minutes.' })
+    return e.json(429, { message: 'Too many tries for this address. Reset your password or try again in 15 minutes.' })
   }
   e.next()
 }, 'users')
@@ -84,6 +75,7 @@ onRecordConfirmPasswordResetRequest((e) => {
 routerAdd('POST', '/api/crawl/users/{id}/put-off', (e) => require(`${__hooks}/access.js`).setBlocked(e, true))
 routerAdd('POST', '/api/crawl/users/{id}/let-back-on', (e) => require(`${__hooks}/access.js`).setBlocked(e, false))
 routerAdd('GET', '/api/crawl/manifest', (e) => require(`${__hooks}/access.js`).manifest(e))
+cronAdd('crew_access_daily', '17 3 * * *', () => require(`${__hooks}/access.js`).daily($app))
 
 // Names (spec §2.11): normalised and kept unique for every editor, the admin UI included.
 // PocketBase loads the record before this hook runs, so the save happens in a transaction against a
@@ -101,7 +93,7 @@ onRecordUpdateRequest((e) => {
       e.app = tx
       const fresh = tx.findRecordById('users', e.record.id)
       if (byCrew && fresh.getBool('blocked')) { refusal = [403, 'Your seat was taken away. Ask the Conductor.']; return }
-      for (const k of ['blocked', 'is_admin', 'email', 'emailVisibility', 'verified', 'approved_by', 'last_seen']) if (!named(k)) e.record.set(k, fresh.get(k))
+      for (const k of ['blocked', 'is_admin', 'email', 'emailVisibility', 'verified', 'last_seen']) if (!named(k)) e.record.set(k, fresh.get(k))
       // A password this request sets (a superuser in the admin UI) stands; otherwise the stored hash
       // does, so an edit loaded before a reset never writes the old password back (password spec §3.2).
       if (!named('password')) e.record.setRaw('password', fresh.getRaw('password'))

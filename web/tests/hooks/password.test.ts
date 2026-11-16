@@ -40,7 +40,7 @@ describe('password sign-in (spec §3.2)', () => {
     for (let i = 0; i < 10; i++) expect((await signIn(m.email, `wrong-password-${i}`)).status).toBe(400);
     const capped = await signIn(m.email, SEED);
     expect(capped.status).toBe(429);
-    expect((await capped.json()).message).toContain('email code or Google');
+    expect((await capped.json()).message).toBe('Too many tries for this address. Reset your password or try again in 15 minutes.');
     // The Conductor sees whose address was targeted. logEvent runs after the answer.
     const rows = await waitFor(async () => { const r = await logRows(`event="rate_limited" && detail="password" && email=${JSON.stringify(m.email)}`); return r.length ? r : null; });
     expect(rows[0].method).toBe('password');
@@ -51,7 +51,7 @@ describe('password sign-in (spec §3.2)', () => {
     for (let i = 0; i < 10; i++) expect((await signIn(ghost, `wrong-password-${i}`)).status).toBe(400);
     const capped = await signIn(ghost, SEED);
     expect(capped.status).toBe(429);
-    expect((await capped.json()).message).toBe('Too many tries for this address. Use an email code or Google, or try again in 15 minutes.');
+    expect((await capped.json()).message).toBe('Too many tries for this address. Reset your password or try again in 15 minutes.');
     const rows = await waitFor(async () => { const r = await logRows(`event="rate_limited" && email=${JSON.stringify(ghost)}`); return r.length ? r : null; });
     expect(rows[0].detail).toBe('password');
   });

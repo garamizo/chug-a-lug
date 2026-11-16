@@ -1,8 +1,8 @@
-// Shared crew-access helpers. Everything is a function so this file loads outside PocketBase too
-// (web/tests/unit/oauthDecision.test.ts); nothing touches $app or a global at load time.
-const DENIALS = ['rate_limited', 'turnstile_failed', 'sign_in_refused']
+// Shared crew-access helpers. Everything is a function, so nothing touches $app or a global at load time.
+const DENIALS = ['rate_limited', 'sign_in_refused']
 
-exports.METHODS = { otp: 'email', oauth2: 'google', rehearsal: 'rehearsal', password: 'password' }
+// PocketBase auth method → access_log.method. Old rows may still say email or google; they render as logged.
+exports.METHODS = { password: 'password', rehearsal: 'rehearsal' }
 
 // Works for a plain request event and for the auth events, which wrap theirs in `requestEvent`.
 exports.clientInfo = function (e) {
@@ -20,7 +20,7 @@ exports.normalizeEmail = function (x) {
 }
 
 // Password spec §3.2. Counted in code points, as PocketBase's password field counts min and max, and
-// capped at bcrypt's 72 bytes: /join installs its hash by SQL, skipping field validation, so it must
+// capped at bcrypt's 72 bytes: the join link's verify installs its hash by SQL, skipping field validation, so it must
 // accept exactly what a reset would. web/src/lib/password.ts mirrors this.
 exports.passwordProblem = function (p) {
   const refusal = 'Pick a password of 8 to 64 characters.'
@@ -91,16 +91,6 @@ exports.ensureConductor = function (app, raw) {
   c.set('blocked', false)
   app.save(c)
   return c
-}
-
-// Spec §2.5. Pure. PocketBase resolves `record` by existing link, then by the *authenticated
-// caller*, then by email, so an existing record does not imply a matching email.
-exports.oauthDecision = function (x) {
-  if (!x.oauthEmailVerified) return 'refuse_unverified'
-  if (x.isNewRecord) return x.hasName ? 'request' : 'refuse_new'
-  if (x.blocked) return 'refuse_blocked'
-  if (String(x.recordEmail || '').toLowerCase() !== String(x.oauthEmail || '').toLowerCase()) return 'refuse_mismatch'
-  return 'continue'
 }
 
 // Every way a session is issued passes here (spec §2.8).
