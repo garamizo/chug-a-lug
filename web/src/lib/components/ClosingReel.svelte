@@ -11,7 +11,7 @@
   import { fmtDate, fmtTime } from '$lib/time';
   import { liveDay } from '$lib/live/day.svelte';
   import { buildReel, REEL_DURATIONS, stopWindows, type Slide } from '$lib/live/reel';
-  import { closingKey, closingSession, closingStore } from '$lib/live/closing';
+  import { closingKey, closingSession, closingStore, liveIsBehind } from '$lib/live/closing';
   import {
     advance, isPaused, nextSlide, pauseReel, prevSlide, progressOf, replayReel, resumeReel, skipSlide, startReel, type ReelState
   } from '$lib/live/reelPlayer';
@@ -68,14 +68,15 @@
     play = skipSlide(play, index, performance.now());
   }
 
-  // Preloading: the next few photos, each fetched once. A photo that cannot load is dropped before its turn.
+  // Preloading: the next few images, each fetched once. A photo that cannot load is dropped before its
+  // turn; a stop whose venue photo cannot load shows without it.
   const preloaded = new Set<number>();
   $effect(() => {
     if (!reel || !play) return;
-    const { slides, images } = reel;
-    for (let i = play.index; i < Math.min(slides.length, play.index + PRELOAD_AHEAD + 1); i++) {
+    const { images } = reel;
+    for (let i = play.index; i < Math.min(images.length, play.index + PRELOAD_AHEAD + 1); i++) {
       const url = images[i];
-      if (!url || preloaded.has(i) || slides[i].kind !== 'photo') continue;
+      if (!url || preloaded.has(i)) continue;
       preloaded.add(i);
       const img = new Image();
       img.onerror = () => fail(i);
@@ -83,18 +84,27 @@
     }
   });
 
-  // Leaving: back to Live when Live is what opened the reel in this session, else replace this entry
-  // with Live (a direct entry or a reload has nothing of ours behind it). Once: a double tap pops once.
-  let cameFromLive = false;
+  // Leaving: back when Live is the entry behind the reel (`liveIsBehind`), else replace this entry with
+  // Live, so a direct entry, a reload or a Back into the reel never steps out of the app. Once: a double
+  // tap pops once. A way out that does not happen leaves ✕ and Done working.
+  const BACK_GRACE_MS = 1000;
+  let liveBehind = false;
   let leaving = false;
-  afterNavigate(({ from, type }) => { cameFromLive = type !== 'enter' && from?.url.pathname === '/live'; });
-  // Any way out (Back included) counts as leaving, so the dialog's close on the way out cannot pop a second entry.
-  beforeNavigate(() => { leaving = true; });
+  let navigating = false;
+  let destroyed = false;
+  let backTimer: ReturnType<typeof setTimeout> | undefined;
+  afterNavigate((nav) => { liveBehind = liveIsBehind(nav); });
+  // Any way out (Back included) is under way: the dialog's close on the way out must not start another.
+  beforeNavigate(() => { navigating = leaving = true; });
+  function replaceWithLive() {
+    void goto('/live', { replaceState: true }).finally(() => { if (!destroyed) navigating = leaving = false; });
+  }
   function leave() {
     if (leaving) return;
     leaving = true;
-    if (cameFromLive) history.back();
-    else void goto('/live', { replaceState: true });
+    if (!liveBehind) { replaceWithLive(); return; }
+    history.back();
+    backTimer = setTimeout(() => { if (!destroyed && !navigating) replaceWithLive(); }, BACK_GRACE_MS);
   }
 
   let opener: Element | null = null;
@@ -110,6 +120,7 @@
     const onkey = (e: KeyboardEvent) => {
       if (!play) return;
       const now = performance.now();
+      if (e.altKey || e.ctrlKey || e.metaKey) return;
       if (e.key === 'ArrowRight') { e.preventDefault(); play = nextSlide(play, now); }
       else if (e.key === 'ArrowLeft') { e.preventDefault(); play = prevSlide(play, now); }
       else if (e.key === ' ' && !(e.target instanceof Element && e.target.closest('button, a'))) {
@@ -122,7 +133,8 @@
   });
 
   onDestroy(() => {
-    leaving = true;
+    leaving = destroyed = true;
+    clearTimeout(backTimer);
     clearTimeout(press?.timer);
     // Left before it played (✕, or Back while it was still loading): not shown, but not to be opened
     // again by itself this session either.
@@ -192,7 +204,7 @@
             <p class="sub">{fmtDate(s.date)}</p>
           {:else if s.kind === 'stop'}
             {#if reel.images[i] && !brokenStops.includes(i)}
-              <img class="backdrop drift" src={reel.images[i]} alt="" onerror={() => fail(i)} />
+              <img class="backdrop drift" src={reel.images[i]} alt="" draggable="false" onerror={() => fail(i)} />
             {/if}
             <div class="over">
               {#if s.at}<p class="eyebrow">{fmtTime(s.at)}</p>{/if}
@@ -200,7 +212,7 @@
               <p class="sub">{s.station}</p>
             </div>
           {:else if s.kind === 'photo'}
-            {#if reel.images[i]}<img class="photo drift" src={reel.images[i]} alt={s.caption} onerror={() => fail(i)} />{/if}
+            {#if reel.images[i]}<img class="photo drift" src={reel.images[i]} alt={s.caption} draggable="false" onerror={() => fail(i)} />{/if}
             <div class="caption">
               <span>{s.caption}</span>
               {#if s.cheers}<span class="cheers">{s.cheers} {copy.closingCheers}</span>{/if}
@@ -241,9 +253,11 @@
     {/if}
   {:else}
     <div class="wait">
-      {#if liveDay.closedAt === null}
+      {#if !liveDay.routeKnown || !liveDay.clockKnown}
+        <p data-testid="reel-loading" role="status">{copy.closingLoading}</p>
+      {:else if liveDay.closedAt === null}
         <p data-testid="reel-not-yet">{copy.closingNotYet}</p>
-        <a href="/live">{copy.backToLive}</a>
+        <a href="/live" onclick={(e) => { e.preventDefault(); leave(); }}>{copy.backToLive}</a>
       {:else if liveDay.feedError}
         <p role="alert">{copy.noSignal}</p>
         <button type="button" data-testid="reel-retry" onclick={() => void liveDay.loadFeed()}>{copy.closingRetry}</button>

@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { closingKey, closingSession, closingStore, shouldAutoOpen } from '../../src/lib/live/closing';
+import { closingKey, closingSession, closingStore, liveIsBehind, shouldAutoOpen } from '../../src/lib/live/closing';
 
 /** A localStorage stand-in; `fail` makes every call throw, as a private window can. */
 function stubStorage(fail = false) {
@@ -99,5 +99,26 @@ describe('closingSession', () => {
     closingSession.left.add('r1:2026-12-26:');
     expect(closingSession.left.has('r1:2026-12-26:')).toBe(true);
     closingSession.left.clear();
+  });
+});
+
+describe('liveIsBehind: may the reel close by going back?', () => {
+  const live = { url: new URL('http://x/live') };
+  it('when Live opened it with a link or goto', () => {
+    expect(liveIsBehind({ type: 'link', from: live })).toBe(true);
+    expect(liveIsBehind({ type: 'goto', from: { url: new URL('http://x/live?stop=s1') } })).toBe(true);
+  });
+  it('when Forward went from Live to the reel, one step', () => {
+    expect(liveIsBehind({ type: 'popstate', delta: 1, from: live })).toBe(true);
+    expect(liveIsBehind({ type: 'popstate', delta: 2, from: live })).toBe(false);
+  });
+  it('not when Back came to the reel from Live: Live is ahead of it, not behind', () => {
+    expect(liveIsBehind({ type: 'popstate', delta: -1, from: live })).toBe(false);
+  });
+  it('not on a direct entry, a reload or an arrival from another screen', () => {
+    expect(liveIsBehind({ type: 'enter', from: null })).toBe(false);
+    expect(liveIsBehind({ type: 'enter', from: { url: null } })).toBe(false);
+    expect(liveIsBehind({ type: 'goto', from: { url: new URL('http://x/plan') } })).toBe(false);
+    expect(liveIsBehind({ type: 'link', from: null })).toBe(false);
   });
 });

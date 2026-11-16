@@ -20,6 +20,8 @@ export class LiveDay {
   stops = $state<Stop[]>([]);
   legs = $state<Leg[]>([]);
   fromMirror = $state(false);
+  /** The current route has been read (or remembered from the mirror): `itinerary` is an answer, not a blank. */
+  routeKnown = $state(false);
   mirrorSavedAt = $state<string | null>(null);
   anchor = $state<{ stopId: string; at: string } | null>(null);
   trips = $state<NextTrip[]>([]);
@@ -258,7 +260,7 @@ export class LiveDay {
     if (clientClock.enabled && runId && this.routeRun !== runId) {
       this.itinerary = null; this.stops = []; this.legs = []; this.anchor = null;
       this.bulletins = []; this.ackedIds = []; this.acking = []; this.feed = { drinks: [], media: [], messages: [], reactions: [] };
-      this.fromMirror = false; this.mirrorSavedAt = null; this.routeRun = runId; this.scopeKey = '';
+      this.fromMirror = false; this.mirrorSavedAt = null; this.routeRun = runId; this.scopeKey = ''; this.routeKnown = false;
       await scopeMirror(runId);
     }
     const usingEarly = fresh && early!.runId === runId;
@@ -269,7 +271,7 @@ export class LiveDay {
       if (!read) {
         const had = this.itinerary;
         this.itinerary = null; this.stops = []; this.legs = []; this.anchor = null;
-        this.fromMirror = false; this.mirrorSavedAt = null;
+        this.fromMirror = false; this.mirrorSavedAt = null; this.routeKnown = true;
         void clearMirror(readStartedAt);
         this.syncPlan();
         if (had) this.enterScope();
@@ -281,7 +283,7 @@ export class LiveDay {
       if (!clientClock.enabled || clientClock.runId) void saveMirror(mirrorPayload(itinerary, stops, legs, new Date(), clientClock.runId));
       const switched = this.itinerary?.id !== itinerary.id;
       this.itinerary = itinerary; this.stops = stops; this.legs = legs;
-      this.fromMirror = false; this.mirrorSavedAt = null;
+      this.fromMirror = false; this.mirrorSavedAt = null; this.routeKnown = true;
       this.syncPlan();
       // A different route is a new scope: clear the old route's activity now, then reload it all.
       if (switched) this.enterScope(); else await this.loadAnchor();
@@ -295,7 +297,7 @@ export class LiveDay {
       this.stops = mirror.stops;
       this.legs = mirror.legs;
       this.mirrorSavedAt = mirror.savedAt;
-      this.fromMirror = true;
+      this.fromMirror = true; this.routeKnown = true;
       this.syncPlan();
       if (switched) this.enterScope();
     }

@@ -893,3 +893,27 @@ describe('the run home', () => {
     expect(mocks.fetchNext).toHaveBeenCalledWith('LAGRANGE', 'AURORA', '2026-12-26', expect.any(Date), false);
   });
 });
+
+describe('routeKnown: whether the current route has been read yet', () => {
+  it('is false until the first read answers, then true with a route', async () => {
+    mocks.resolve.mockResolvedValue(route);
+    mocks.getFullList.mockResolvedValue([]);
+    const day = new LiveDay();
+    expect(day.routeKnown).toBe(false);
+    await day.loadRoute();
+    expect(day.routeKnown).toBe(true);
+  });
+  it('is true when the answer is that no route is locked', async () => {
+    mocks.resolve.mockResolvedValue(null);
+    const day = new LiveDay();
+    await day.loadRoute();
+    expect(day.itinerary).toBeNull();
+    expect(day.routeKnown).toBe(true);
+  });
+  it('stays false offline with nothing remembered', async () => {
+    mocks.resolve.mockRejectedValue(new Error('offline'));
+    const day = new LiveDay();
+    await day.loadRoute().catch(() => {});
+    expect(day.routeKnown).toBe(false);
+  });
+});

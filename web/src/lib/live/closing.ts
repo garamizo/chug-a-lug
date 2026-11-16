@@ -49,3 +49,14 @@ export function closingStore(): { has(key: string): boolean; add(key: string): v
 
 /** In memory only: reels entered and left before they played, which must not open again this session. */
 export const closingSession: { left: Set<string> } = { left: new Set() };
+
+/**
+ * Whether the history entry before the reel is Live, so closing it may go back: the reel was opened from
+ * Live by a link or `goto`, or Forward took one step from Live to it. Back from Live into the reel puts
+ * Live ahead of it, not behind; a direct entry or a reload has nothing of the app's behind it.
+ */
+export function liveIsBehind(nav: { type: string; delta?: number | null; from: { url: URL | null } | null }): boolean {
+  // SvelteKit's first navigation has a `from` whose url is null.
+  if (nav.from?.url?.pathname !== '/live') return false;
+  return nav.type === 'link' || nav.type === 'goto' || (nav.type === 'popstate' && nav.delta === 1);
+}
