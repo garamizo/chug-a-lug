@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
-import { labels, label, copy, accessEventLabels, signInMethodLabels } from '../../src/lib/labels';
+import { labels, label, copy, proofCaption, accessEventLabels, signInMethodLabels } from '../../src/lib/labels';
 
 describe('labels', () => {
   it('names the Crew Board and its Bulletin statuses', () => {
@@ -67,5 +67,15 @@ describe('labels', () => {
       expect((copy as Record<string, string>)[k], k).toBeTruthy();
     }
     expect(copy.loginIntro).toBe('Sign in to catch up with the crew.');
+  });
+  it('has the photo Tab copy and captions', () => {
+    expect(copy.tabProofHint).toBe('Snap it to count it.');
+    expect(copy.tabSending).toBe('Sending…');
+    expect(copy.tabRetry).toBe('Retry');
+    expect(copy.proofNeedsImage).toBe('Take a photo — a video does not count.');
+    expect(copy.proofNeedsStop).toBe('Drinks count at a stop on today’s route.');
+    expect(proofCaption('beer', 'Ana')).toBe('🍺 Beer · Ana');
+    expect(proofCaption('', 'Ana')).toBe('Ana');
+    expect(proofCaption(undefined, 'Ana')).toBe('Ana');
   });
 });

@@ -43,3 +43,12 @@ it('counts Cheers per entry and remembers which one is mine', () => {
   expect(summary.get('message:m')).toEqual({ count: 1, mine: null });
   expect(summary.get('bulletin:x')).toBeUndefined();
 });
+
+it('shows a drink with a photo only as its photo entry; a legacy drink keeps its announcement', () => {
+  const drinks = [
+    { id: 'p', kind: 'beer', at: '2026-12-26T17:00:00Z', media: 'p' },
+    { id: 'old', kind: 'shot', at: '2026-12-26T17:01:00Z' }
+  ] as unknown as DrinkEntry[];
+  const media = [{ id: 'p', at: '2026-12-26T17:00:00Z', kind: 'image', user: 'u', stop: 's', drink_kind: 'beer' }] as unknown as Media[];
+  expect(chatEntries(drinks, [], { media }).map(r => r.id)).toEqual(['photo:p', 'drink:old']);
+});

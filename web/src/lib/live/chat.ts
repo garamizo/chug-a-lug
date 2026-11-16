@@ -8,7 +8,8 @@ export type ChatEntry = {
 
 export function chatEntries(drinks: DrinkEntry[], bulletins: Broadcast[], extra: { messages?: ChatMessage[]; media?: Media[]; milestones?: ChatEntry[] } = {}): ChatEntry[] {
   return [
-    ...drinks.map((d): ChatEntry => ({ id: `drink:${d.id}`, at: d.at, created: d.created ?? '', order: d.action_order ?? 0,
+    // A drink with a photo is shown as that photo (and Cheers target the media); only legacy drinks announce themselves.
+    ...drinks.filter((d) => !d.media).map((d): ChatEntry => ({ id: `drink:${d.id}`, at: d.at, created: d.created ?? '', order: d.action_order ?? 0,
       author: d.expand?.user?.name || copy.chatCrew, userId: d.user, stop: d.expand?.stop?.name || '', kind: d.kind as string, body: '',
       target: { kind: 'drink', id: d.id } })),
     ...bulletins.map((b): ChatEntry => ({ id: `bulletin:${b.id}`, at: b.at || b.created, created: b.created ?? '', order: 0,

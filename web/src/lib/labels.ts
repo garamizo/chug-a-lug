@@ -280,6 +280,11 @@ export const copy = {
   drink_water: 'NA',
   drink_food: 'Food',
   undoDrink: 'Undo',
+  tabProofHint: 'Snap it to count it.',
+  tabSending: 'Sending…',
+  tabRetry: 'Retry',
+  proofNeedsImage: 'Take a photo — a video does not count.',
+  proofNeedsStop: 'Drinks count at a stop on today’s route.',
   tabYou: 'you',
   tabAdded: '+1',
   undoLast: 'Undo my last one here',
@@ -529,3 +534,9 @@ export const accessEventLabels: Record<string, string> = {
   password_reset_sent: 'Password link sent',
   password_set: 'Set a password'
 };
+
+/** The line under a drink's photo: "🍺 Beer · Ana". Without a kind (an ordinary photo) just the author. */
+export function proofCaption(kind: string | undefined, author: string): string {
+  const name = kind ? (copy as Record<string, string>)[`drink_${kind}`] : undefined;
+  return name ? `${drinkIcons[kind as string] ?? ''} ${name} · ${author}`.trim() : author;
+}
