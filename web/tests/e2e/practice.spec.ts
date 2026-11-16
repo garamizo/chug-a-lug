@@ -144,6 +144,30 @@ test('a watcher falls back after the Conductor deletes the current route', async
   await crew.close();
 });
 
+test('on a practice day the crew gets the tab bar on The Route and the Crew Board, and The Route stays read-only', async ({ page, browser }) => {
+  await practise(page, 'E2E Practice Crew Nav');
+  const crew = await browser.newPage();
+  try {
+    await crew.route('**/api/metra/alerts', (r) => r.fulfill({ json: { mode: 'schedule_only', fetchedAt: null, alerts: [] } }));
+    await crew.clock.install({ time: PRACTICE });
+    await login(crew, 'E2E Practice Crew Rider', CREW);
+    await crew.goto('/live');
+    await expect(crew.getByTestId('tab-bar')).toBeVisible();
+    await crew.getByTestId('tab-route').click();
+    await expect(crew).toHaveURL(/\/route$/);
+    await expect(crew.getByTestId('tab-bar')).toBeVisible();
+    await expect(crew.getByTestId('tab-route')).toHaveAttribute('aria-current', 'page');
+    await expect(crew.getByTestId('locked-on')).toBeVisible();
+    for (const id of ['edit-route', 'set-here-0', 'remove-0', 'dwell-0', 'up-1', 'add-stop', 'start-time']) await expect(crew.getByTestId(id)).toHaveCount(0);
+    await crew.getByTestId('tab-crew').click();
+    await expect(crew).toHaveURL(/\/crew$/);
+    await expect(crew.getByTestId('tab-bar')).toBeVisible();
+    // The planner stays practice-free.
+    await crew.goto('/plan');
+    await expect(crew.getByTestId('tab-bar')).toHaveCount(0);
+  } finally { await crew.close(); }
+});
+
 test('the Metra credit sits above the tab bar and the Practice strip at the bottom of Live', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await stubLiveStatus(page);

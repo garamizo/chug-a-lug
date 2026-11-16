@@ -17,7 +17,6 @@
   import { stripStops } from '$lib/live/strip';
   import { clockFailure, sameScope, sendProof, type ProofScope, type ProofSend, type ProofTap } from '$lib/live/proof';
   import { drinkCount } from '$lib/live/crew';
-  import { topLine } from '$lib/live/leaderboard';
   import { newRecordId } from '$lib/live/staged';
   import CrewChat from '$lib/components/CrewChat.svelte';
   import StopSheet from '$lib/components/StopSheet.svelte';
@@ -29,7 +28,6 @@
   import { ui } from '$lib/ui.svelte';
   import { onDestroy, onMount, tick } from 'svelte';
   import FreightStrip from '$lib/components/FreightStrip.svelte';
-  import Leaderboard from '$lib/components/Leaderboard.svelte';
 
   let error = $state('');
   // The Tab sheet is Live's: leaving Live closes it.
@@ -64,7 +62,6 @@
   });
   // Only saved rows count, by the server's day.
   const dayTotal = $derived(drinkCount(liveDay.feed.drinks, me, liveDay.today));
-  const leaders = $derived($auth.user ? topLine(liveDay.feed.drinks, { id: $auth.user.id, name: $auth.user.name }, liveDay.today) : []);
   const showToast = (id: string, kind: DrinkKind) => {
     clearTimeout(toastTimer);
     toast = { id, kind, failed: false };
@@ -290,9 +287,12 @@
   <RouteStrip items={strip} onopen={openStop} />
 {/if}
 {#if liveDay.practice}<p class="practice-banner" data-testid="practice-badge" title={copy.practiceHint}>{copy.practiceBadge}</p>{/if}
-<div class="actions">
-  <button class="action speaker" data-testid="action-bulletin" disabled={!$auth.user?.is_admin || !liveDay.itinerary} title={!$auth.user?.is_admin ? copy.conductorBulletinOnly : copy.tellTheCrew} onclick={() => liveDay.composing = true}><span aria-hidden="true">📣</span>{copy.bulletinAction}</button>
-</div>
+<!-- Bulletins are the Conductor's alone, so the crew never sees the button. -->
+{#if $auth.user?.is_admin}
+  <div class="actions">
+    <button class="action speaker" data-testid="action-bulletin" disabled={!liveDay.itinerary} title={copy.tellTheCrew} onclick={() => liveDay.composing = true}><span aria-hidden="true">📣</span>{copy.bulletinAction}</button>
+  </div>
+{/if}
 {#if tabStop && liveDay.media.length}<FreightStrip media={liveDay.media} />{/if}
 {#if error && !ui.tabOpen}<p role="alert">{error}</p>{/if}
 {#snippet toastView()}
@@ -328,8 +328,6 @@
 {:else}
   {@render toastView()}
 {/if}
-
-<Leaderboard {leaders} />
 
 {#if liveDay.itinerary && $auth.user}<CrewChat itineraryId={liveDay.itinerary.id} userId={$auth.user.id}
   onfiles={(files) => upload(files)} onunsaved={(u) => (chatUnsaved = u)} {uploading} {uploadError} />{/if}

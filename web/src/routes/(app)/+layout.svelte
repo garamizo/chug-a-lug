@@ -41,6 +41,8 @@
   });
   const here = $derived(liveDay.here);
   const onLive = $derived(page.url.pathname === '/live');
+  // The tab bar's own screens: on a practice day they carry it too, so the crew can move between them.
+  const onTabScreen = $derived(['/live', '/route', '/crew'].includes(page.url.pathname));
   // Practice interrupts only the screen that is practising; planning and voting stay quiet.
   const quiet = $derived(liveDay.practice && !onLive);
   // Closing Time's reel is a presentation: nothing of the app's own sits over it or hears its taps and keys.
@@ -117,8 +119,8 @@
   {/if}
   {#if error}<p role="alert">{error}</p>{/if}
   {@render children()}
-  <!-- The Tab opens from the tab bar, so a practice day's Live needs it too; practice stays off the other screens. -->
-  {#if !presenting && (liveDay.isEventDay || (liveDay.practice && onLive))}<TabBar />{/if}
+  <!-- The Tab opens from the tab bar, so a practice day's Live, Route and Crew Board need it too; the planner stays practice-free. -->
+  {#if !presenting && (liveDay.isEventDay || (liveDay.practice && onTabScreen))}<TabBar />{/if}
   <Lightbox />
   <!-- Paused, not dropped, under the reel: its queue waits as it does for practice's quiet, and a card cut short comes back. -->
   <SpikeCelebration scope={celebrationScope} quiet={quiet || presenting} />

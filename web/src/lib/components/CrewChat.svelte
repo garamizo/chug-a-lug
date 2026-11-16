@@ -29,7 +29,8 @@
   const marks = $derived(milestones(liveDay.feed.drinks, liveDay.feed.media, liveDay.stops, liveDay.today));
   const golden = $derived(spikeEntries(liveDay.spikeEvents));
   const all = $derived(chatEntries(liveDay.feed.drinks, liveDay.bulletins, { messages: liveDay.feed.messages, media: liveDay.feed.media, milestones: [...marks, ...golden] }));
-  const entries = $derived(all.slice(-shown));
+  // Newest first, under the chat box: what just happened is the first thing anyone reads.
+  const entries = $derived(all.slice(-shown).reverse());
   const cheers = $derived(reactionSummary(liveDay.feed.reactions, userId));
   const photos = $derived(all.filter((e) => e.media));
   const viewer = $derived<LightboxItem[]>(photos.map((e) => ({ url: pb.files.getURL(e.media!, e.media!.file, { thumb: '1200x0' }), full: pb.files.getURL(e.media!, e.media!.file), kind: e.media!.kind, caption: proofCaption(e.media!.drink_kind, e.author) })));
@@ -91,7 +92,14 @@
 
 <section class="chat" data-testid="crew-chat">
   <h2>{copy.crewChat}</h2>
-  {#if all.length > shown}<button type="button" class="more secondary" onclick={() => (shown += 40)} data-testid="chat-more">{copy.showEarlier}</button>{/if}
+  {#if error}<p role="status">{error}</p>{/if}
+  {#if uploadError}<p role="alert" class="upload-error">{uploadError}</p>{/if}
+  <!-- The box heads a newest-first thread. Its own wrapper is its sticky containing block, so it stays
+       put up here instead of the bottom pinning it does under Comments. -->
+  <div class="compose">
+    <ChatBox onsend={send} {onfiles} {onunsaved} busy={uploading} status={uploading ? copy.uploading : undefined} maxlength={280} placeholder={copy.messagePlaceholder}
+      inputTestid="chat-input" sendTestid="chat-send" fileTestid="freight-input" cameraTestid="freight-camera" />
+  </div>
   <div class="log" role="log" aria-label={copy.crewChat} aria-live="polite" aria-relevant="additions text">
     {#each entries as entry (entry.id)}
       {@const key = entry.target ? `${entry.target.kind}:${entry.target.id}` : null}
@@ -128,10 +136,7 @@
       </article>
     {:else}<p class="empty">{copy.chatEmpty}</p>{/each}
   </div>
-  {#if error}<p role="status">{error}</p>{/if}
-  {#if uploadError}<p role="alert" class="upload-error">{uploadError}</p>{/if}
-  <ChatBox onsend={send} {onfiles} {onunsaved} busy={uploading} status={uploading ? copy.uploading : undefined} maxlength={280} placeholder={copy.messagePlaceholder}
-    inputTestid="chat-input" sendTestid="chat-send" fileTestid="freight-input" cameraTestid="freight-camera" />
+  {#if all.length > shown}<button type="button" class="more secondary" onclick={() => (shown += 40)} data-testid="chat-more">{copy.showEarlier}</button>{/if}
 </section>
 
 <style>

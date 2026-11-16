@@ -89,10 +89,12 @@ Goal: nobody misses a train, nobody is lost, and the plan can change without cha
   Bulletin. Ranking uses shot + cocktail + beer, then non-alcoholic drinks, then food. It does not track individual locations.
 - **Live** reads top to bottom: the route strip (punched stops, 🚂 where the crew is, tap any stop), the
   Departure Board, the current stop (tap for its sheet: hours, walking directions, call, photos), the
-  Bulletin, the leaderboard line and the crew chat, whose chat box also sends photos and videos at any
-  time. On the event day a tab bar (Live · The Route · Crew Board · Tab) replaces the back links; the
-  menu stays in the header. Opening the app lands on Live, but the logo still reaches Home. On a
-  practice day Live shows the tab bar too, under the Practice strip. Stop sheets and the photo viewer close with the back
+  Conductor's Bulletin button (the crew does not see it) and the crew chat, newest first under its chat
+  box, which also sends photos and videos at any time. On the event day a tab bar (Live · The Route ·
+  Crew Board · Tab) replaces the back links; the menu stays in the header. Opening the app lands on
+  Live, but the logo still reaches Home. On a practice day Live, The Route and the Crew Board show the
+  tab bar too (Live's sits under the Practice strip); the planner does not. The Route is read-only
+  for the crew: only the Conductor sees its edit button. Stop sheets and the photo viewer close with the back
   gesture and never leave the screen underneath.
 - **Crew chat** merges Tab activity, Bulletins, Freight, computed milestones (crew totals, the first photo at
   each stop), Golden Spikes and messages anyone can post (280 characters, own delete).

@@ -160,14 +160,13 @@ test('a Freight photo is labelled in chat, back closes its viewer, and a fast do
   await expect(page.getByTestId('departure-board')).toBeVisible();
 });
 
-test('the first beer is celebrated in chat, and the leaderboard line puts me on the podium and opens the Crew Board', async ({ page }) => {
+test('the first beer is celebrated in chat, and Live leaves the Crew Board to the tab bar', async ({ page }) => {
   await liveDay(page, 'E2E Podium');
   await openTab(page);
   await tapDrink(page, 'beer');
   await expect(page.getByTestId('crew-chat').locator('article.spike').filter({ hasText: 'Pathfinder' })).toContainText('Pathfinder · E2E Podium — first 🍺 Beer');
   await page.getByTestId('tab-close').click();
-  await expect(page.getByTestId('leaderboard')).toContainText('you 1');
-  await expect(page.getByRole('link', { name: /Leaderboard: .*you 1/ })).toBeVisible();
-  await page.getByTestId('leaderboard').click();
+  await expect(page.getByTestId('leaderboard')).toHaveCount(0);
+  await page.getByTestId('tab-crew').click();
   await expect(page).toHaveURL(/\/crew$/);
 });

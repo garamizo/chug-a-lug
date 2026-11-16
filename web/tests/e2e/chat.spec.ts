@@ -14,7 +14,9 @@ test('live actions open the Tab and camera choices and share activity with the c
     await other.clock.install({ time: new Date('2026-12-26T19:00:00Z') });
     await login(other, 'Chat Crew', process.env.CREW_PASSWORD ?? 'crew-test-password');
     await other.goto('/live');
-    await expect(other.getByTestId('action-bulletin')).toBeDisabled();
+    // Bulletins are the Conductor's: the crew does not see the button at all.
+    await expect(other.getByTestId('crew-chat')).toBeVisible();
+    await expect(other.getByTestId('action-bulletin')).toHaveCount(0);
     await openTab(page);
     await tapDrink(page, 'beer');
     await expect(other.getByTestId('crew-chat')).toContainText('Chat Conductor');
@@ -45,6 +47,22 @@ async function liveChat(page: import('@playwright/test').Page, name: string) {
   await page.goto('/live');
   await expect(page.getByTestId('route-strip').locator('[aria-current="step"]')).toBeVisible();
 }
+
+test('the crew chat shows the newest first, under its chat box', async ({ page }) => {
+  await liveChat(page, 'Chat Order Conductor');
+  const chat = page.getByTestId('crew-chat');
+  await page.getByTestId('chat-input').fill('Older line');
+  await page.getByTestId('chat-input').press('Enter');
+  await expect(chat).toContainText('Older line');
+  await page.getByTestId('chat-input').fill('Newer line');
+  await page.getByTestId('chat-input').press('Enter');
+  const log = chat.getByRole('log');
+  await expect(log.locator('article').first()).toContainText('Newer line');
+  await expect(log.locator('article').last()).toContainText('Older line');
+  const box = await page.getByTestId('chat-input').boundingBox();
+  const top = await log.boundingBox();
+  expect(box && top && box.y < top.y).toBe(true);
+});
 
 test('the chat box sends with Enter, never sends blanks, inserts emoji at the caret, and never loses typing to a slow or failed send', async ({ page }) => {
   await liveChat(page, 'Chat Box Conductor');

@@ -1,6 +1,7 @@
 <script lang="ts">
   // The one composer: text, a tray of crawl emoji, gallery and camera pickers, and a round button
-  // that is the camera until there is something to send. Pinned to the bottom of the page.
+  // that is the camera until there is something to send. Sticky to the bottom of its parent: under
+  // Comments that pins it to the page's foot; Crew chat wraps it to keep it atop its thread.
   import { onDestroy, tick } from 'svelte';
   import { copy } from '$lib/labels';
   import { CHAT_EMOJI, composerMode, draftAfterFailedSend, insertAt } from '$lib/chatBox';

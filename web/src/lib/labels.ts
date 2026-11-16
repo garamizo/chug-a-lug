@@ -294,7 +294,6 @@ export const copy = {
   notificationTimeUnknown: 'Time not supplied',
   venueReviews: 'Reviews from Google',
   bulletinAction: 'Bulletin',
-  conductorBulletinOnly: 'Only the Conductor can send Bulletins',
   crewChat: 'Crew chat',
   chatCrew: 'Crew',
   chatAdded: 'Added',
@@ -443,7 +442,6 @@ export const copy = {
   googlePhoto: 'Photo via Google',
   addThisStop: 'Add stop',
   venueDetails: 'Venue details',
-  leaderboard: 'Leaderboard',
   you: 'you',
   // Home: the current route as a ticket, other phases as a station board.
   ticketKicker: 'The Route · Admit crew',
