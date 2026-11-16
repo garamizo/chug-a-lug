@@ -11,7 +11,7 @@ export type PlanActions = {
   /** Absent on the live editor: The Route's start time is fixed once the crew is riding it. */
   setStartTime?: (hm: string) => void | Promise<void>;
   /** Absent on the live editor, like `setStartTime`. The station the crew boards at; null clears it. */
-  setStartStation?: (station: { id: string; name: string } | null) => void | Promise<void>;
+  setStartStation?: (station: { id: string; name: string }) => void | Promise<void>;
   setDwell: (stopId: string, dwellMin: number) => void | Promise<void>;
   move: (stopId: string, dir: -1 | 1) => void | Promise<void>;
   remove: (stopId: string) => void | Promise<void>;
@@ -36,7 +36,7 @@ export function recordActions(itineraryId: string, onerror: (message: string) =>
       try { await pb.collection('itineraries').update(itineraryId, { start_time: hm }); } catch (err) { fail(err); }
     },
     async setStartStation(station) {
-      try { await pb.collection('itineraries').update(itineraryId, { start_station: station?.id ?? '', start_station_name: station?.name ?? '' }); } catch (err) { fail(err); }
+      try { await pb.collection('itineraries').update(itineraryId, { start_station: station.id, start_station_name: station.name }); } catch (err) { fail(err); }
     },
     async setDwell(stopId, dwellMin) {
       try { await pb.collection('stops').update(stopId, { dwell_min: dwellMin }); } catch (err) { fail(err); }

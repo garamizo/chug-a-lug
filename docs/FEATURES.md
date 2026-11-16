@@ -27,6 +27,9 @@ Goal: by early December, one locked itinerary that everyone has seen and voted o
   Highball, and the edit screen (`/plan/<id>/edit`) with the controls. Tapping a stop opens its details
   in a sheet over the editor; Edit details from there leaves for the full stop page, and both the sheet
   and that page return to the editor.
+- **Run home.** Every route boards at a station (Aurora by default, never empty) and the planner closes
+  the day with a last leg, "Run home to Aurora", from the final stop. Finish is that train's arrival; if
+  no train gets home before midnight the leg is flagged and Save names it.
 - Build an itinerary draft: ordered stops, each tied to a station and a planned dwell time. The app fills
   in train legs and walks from the Saturday Metra schedule, so the draft shows real train times and flags
   any leg that doesn't work.
@@ -55,6 +58,8 @@ name (even re-cased) is never a clash.
 
 Goal: nobody misses a train, nobody is lost, and the plan can change without chaos.
 
+- **The crawl ends when the train home arrives.** After the last stop the board counts down to the run
+  home, then shows the crew riding it, and goes quiet on arrival.
 - **Departure Board** is read-only: the full board on Live and a compact banner on every other
   signed-in screen on the event day. It shows the current stop, next train (scheduled and live ETA),
   walk time to the platform and countdown, with Last Call and All Aboard warnings. On Live it is cut

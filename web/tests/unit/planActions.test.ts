@@ -51,11 +51,6 @@ describe('recordActions', () => {
     expect(calls.update[0]).toEqual(['it1', { start_station: 'AURORA', start_station_name: 'Aurora' }]);
   });
 
-  it('clears the Board at station', async () => {
-    await recordActions('it1', () => {}).setStartStation?.(null);
-    expect(calls.update[0]).toEqual(['it1', { start_station: '', start_station_name: '' }]);
-  });
-
   it('deletes a stop', async () => {
     await recordActions('itinerary000001', () => {}).remove('a');
     expect(calls.remove).toEqual(['a']);

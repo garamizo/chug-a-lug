@@ -68,6 +68,9 @@ Goal: the memories and the bragging rights. Nothing here is needed *on* Dec 26: 
 event log are already stored per route, so M5 can land after the crawl if time runs short. The Crew
 Board already ranks drinks for the day.
 
+- [x] Prerequisite: the ride home. The planner closes every route with a run home to Aurora (or the
+  chosen Board at station), and Live ends the crawl when that train arrives.
+
 **Must have**
 - Album (Roundhouse) per stop, swipeable lightbox, download originals one by one or as a zip.
   Includes admin retagging of Freight (Decision 5).

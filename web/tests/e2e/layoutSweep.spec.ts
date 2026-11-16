@@ -74,12 +74,12 @@ test('password recovery states', async ({ page }) => {
   ]);
 });
 
-async function eventDay(page: Page, name: string, when = EVENT_DAY) {
+async function eventDay(page: Page, name: string, when = EVENT_DAY, startStation?: { id: string; name: string }) {
   await stubDepartures(page);
   await login(page, name, ADMIN);
   await clearRoutes();
   const ids = await seedLockedCrawl({ ownerName: name, eventDate: '2026-12-26', startTime: '12:00',
-    departAt: '2026-12-26T20:34:00Z', arriveAt: '2026-12-26T20:49:00Z', extraVenueAtFirstStation: true });
+    departAt: '2026-12-26T20:34:00Z', arriveAt: '2026-12-26T20:49:00Z', extraVenueAtFirstStation: true, startStation });
   await page.clock.install({ time: when });
   return ids;
 }
@@ -110,6 +110,13 @@ test('crew pages on the event day', async ({ page, browser }) => {
   } finally {
     await context.close();
   }
+});
+
+test('a route with a run home', async ({ page }) => {
+  const ids = await eventDay(page, 'E2E Sweep Home', EVENT_DAY, { id: 'AURORA', name: 'Aurora' });
+  await sweep(page, [
+    { name: 'route view, run home', open: (p) => p.goto(`/plan/${ids.itineraryId}`), ready: (p) => p.getByTestId('closing-leg') }
+  ]);
 });
 
 test('Conductor pages', async ({ page }) => {

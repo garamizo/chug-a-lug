@@ -22,6 +22,11 @@ describe('labels', () => {
     expect(label('scoreboard')).toBe('Hall of Fame');
     expect(label('walk')).toBe('Walk');
   });
+  it('names the run home', () => {
+    expect(copy.runHome).toBe('Run home to');
+    expect(copy.runHomeMidnight).toBe('The last train home must arrive before midnight.');
+    expect(copy).not.toHaveProperty('boardAtPick');
+  });
   it('has no empty labels', () => {
     for (const [k, v] of Object.entries(labels)) expect(v, k).not.toBe('');
   });

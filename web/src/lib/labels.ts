@@ -148,7 +148,8 @@ export const copy = {
   /** The Start input's label once Board at is set: Start is then when the crew boards, not stop 1. */
   startTimeBoard: 'At the boarding station by',
   boardAt: 'Board at',
-  boardAtPick: 'Pick where the crew boards',
+  runHome: 'Run home to',
+  runHomeMidnight: 'The last train home must arrive before midnight.',
   stops: 'Stops',
   addStop: 'Add a stop',
   noStops: 'No stops yet. Add the first bar.',

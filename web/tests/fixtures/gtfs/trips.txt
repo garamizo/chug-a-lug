@@ -18,4 +18,6 @@ BNSF,A2A,BN1,Aurora,,,0
 BNSF,A2A,BN3,Aurora,,,0
 BNSF,A2A,BN2,Chicago Union Station,,,1
 BNSF,A2A,BN4,Chicago Union Station,,,1
+BNSF,A2A,BN5,Aurora,,,0
+BNSF,A2A,BN6,Chicago Union Station,,,1
 HC,A1A,HC1,Joliet,,,0

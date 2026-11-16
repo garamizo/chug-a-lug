@@ -56,20 +56,21 @@ test('draft with real train times, layover change, card edits, votes, comments, 
   await page.getByTestId('sheet-add').click();
   await expect(page).toHaveURL(editUrl);
   await expect(page.getByTestId('stop-row-0')).toContainText('Naperville Wine Bar');
-  await expect(page.getByTestId('stop-row-0')).toContainText('11:00 AM');
+  // Board at defaults to Aurora: BN2 leaves it at 11:42 and reaches Naperville 12:05, plus the 2 min walk.
+  await expect(page.getByTestId('stop-row-0')).toContainText('12:07 PM');
 
   // The picker itself offers only the BNSF line, Aurora first and Union Station last.
   await page.goto(`${draftUrl}/add`);
   await expect(page.getByTestId('station-ELMHURST')).toHaveCount(0);
-  await expect(page.getByTestId('station-select').locator('option')).toHaveText(['Pick a station', 'Naperville', 'La Grange Road', 'Chicago Union Station']);
+  await expect(page.getByTestId('station-select').locator('option')).toHaveText(['Pick a station', 'Aurora', 'Naperville', 'La Grange Road', 'Chicago Union Station']);
   await page.getByTestId('station-select').selectOption('LAGRANGE');
   await expect(page.getByTestId('venue-p1')).toContainText('★ 4.6 (312)');
   await page.getByTestId('venue-p1').click();
   await page.getByTestId('sheet-add').click();
   await expect(page.getByTestId('stop-row-1')).toContainText('Test Tavern');
   await expect(page.getByTestId('leg-0')).toContainText('BNSF');
-  await expect(page.getByTestId('leg-0')).toContainText('12:05 PM');
-  await expect(page.getByTestId('stop-row-1')).toContainText('12:32 PM');
+  await expect(page.getByTestId('leg-0')).toContainText('2:05 PM');
+  await expect(page.getByTestId('stop-row-1')).toContainText('2:32 PM');
   // Both are going stops, each in its station's row of the outbound half.
   await expect(page.getByTestId('map-row-NAPERVILLE').getByTestId('stop-row-0')).toHaveAttribute('data-side', 'left');
   await expect(page.getByTestId('map-row-LAGRANGE').getByTestId('stop-row-1')).toHaveAttribute('data-side', 'left');
@@ -94,9 +95,9 @@ test('draft with real train times, layover change, card edits, votes, comments, 
   await page.getByTestId('remove-2').click();
   await expect(page.getByTestId('stop-row-3')).toHaveCount(0);
 
-  // The departure is chosen by train: arrive 11:00, 2 min walk, so the 2:05 PM train is a 3 h 3 min layover.
-  await expect(page.getByTestId('dwell-0').locator('option')).toContainText(['1 h layover (current)', '12:05 PM · 1 h 3 min layover', '2:05 PM · 3 h 3 min layover']);
-  await page.getByTestId('dwell-0').selectOption('183');
+  // The departure is chosen by train: arrive 12:07, 2 min walk, so the 2:05 PM train is a 1 h 56 min layover.
+  await expect(page.getByTestId('dwell-0').locator('option')).toContainText(['1 h layover (current)', '2:05 PM · 1 h 56 min layover']);
+  await page.getByTestId('dwell-0').selectOption('116');
   await expect(page.getByTestId('leg-0')).toContainText('2:05 PM');
   await expect(page.getByTestId('stop-row-0')).toContainText('Leave 2:03 PM');
 
@@ -143,7 +144,7 @@ test('draft with real train times, layover change, card edits, votes, comments, 
   await expect(page.getByTestId('station-dot-LAGRANGE')).toHaveCount(0);
   await expect(page.getByTestId('station-dot-back-LAGRANGE')).toHaveCount(0);
   await expect(page.getByTestId('dwell-0')).toHaveCount(0);
-  await expect(page.getByTestId('stop-row-0')).toContainText('3 h 3 min layover');
+  await expect(page.getByTestId('stop-row-0')).toContainText('1 h 56 min layover');
   await page.getByTestId('vote-up').click();
   await expect(page.getByTestId('vote-up-count')).toHaveText('1');
   await page.getByTestId('comment-input').fill('Nice route');
@@ -178,6 +179,23 @@ test('draft with real train times, layover change, card edits, votes, comments, 
   await expect(page.getByTestId('dwell-0')).toHaveCount(0);
 });
 
+test('a new route boards at Aurora and runs home to it', async ({ page }) => {
+  await login(page, 'E2E Skipper', ADMIN);
+  await openHome(page, 'E2E Skipper');
+  await page.getByTestId('nav-plan').click();
+  await page.getByTestId('draft-title').fill(`Run Home ${RUN}`);
+  await page.getByTestId('create-draft').click();
+  await expect(page).toHaveURL(/\/edit$/);
+  // Board at starts as Aurora, and there is no way to leave it empty.
+  await expect(page.getByTestId('board-at')).toHaveValue('AURORA');
+  await expect(page.getByTestId('board-at').locator('option[value=""]')).toHaveCount(0);
+  await page.getByTestId('station-dot-LAGRANGE').click();
+  await page.getByTestId('venue-p1').click();
+  await page.getByTestId('sheet-add').click();
+  await expect(page.getByTestId('stop-row-0')).toBeVisible();
+  await expect(page.getByTestId('closing-leg')).toContainText(`${copy.runHome} Aurora`);
+});
+
 test('Board at counts the ride in to the first stop', async ({ page }) => {
   await login(page, 'E2E Skipper', ADMIN);
   await openHome(page, 'E2E Skipper');
@@ -188,7 +206,6 @@ test('Board at counts the ride in to the first stop', async ({ page }) => {
   await page.getByTestId('station-dot-LAGRANGE').click();
   await page.getByTestId('venue-p1').click();
   await page.getByTestId('sheet-add').click();
-  await expect(page.getByTestId('stop-row-0')).toContainText('Arrive 11:00 AM');
   await page.getByTestId('board-at').selectOption('NAPERVILLE');
   // BN2 leaves Naperville 12:05, reaches La Grange 12:30, plus the 2 min walk.
   await expect(page.getByTestId('opening-leg')).toContainText('12:05 PM');
@@ -196,10 +213,7 @@ test('Board at counts the ride in to the first stop', async ({ page }) => {
   await expect(page.getByTestId('stop-row-0')).toContainText('Arrive 12:32 PM');
   // With Board at set, Start is the boarding time, not the time at stop 1.
   await expect(page.getByLabel(copy.startTimeBoard)).toHaveValue('11:00');
-  await page.getByTestId('board-at').selectOption('');
-  await expect(page.getByTestId('opening-leg')).toHaveCount(0);
-  await expect(page.getByTestId('stop-row-0')).toContainText('Arrive 11:00 AM');
-  await expect(page.getByLabel(copy.startTime)).toHaveValue('11:00');
+  await expect(page.getByTestId('closing-leg')).toContainText(`${copy.runHome} Naperville`);
 });
 
 test('Back from the editor after an add does not reopen the venue sheet', async ({ page }) => {

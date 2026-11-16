@@ -36,7 +36,7 @@ describe('buildSchedule', () => {
     expect(upw.stations.map((x) => x.id)).toEqual(['OTC', 'OAKPARK', 'ELMHURST', 'WHEATON', 'GENEVA']);
     expect(upw.stations[0].name).toBe('Chicago OTC');
     expect(s.lines.map((l) => l.routeId)).toEqual(['UP-W', 'MD-W', 'BNSF']);
-    expect(s.lines.find((l) => l.routeId === 'BNSF')!.stations.map((x) => x.id)).toEqual(['CUS', 'LAGRANGE', 'NAPERVILLE']);
+    expect(s.lines.find((l) => l.routeId === 'BNSF')!.stations.map((x) => x.id)).toEqual(['CUS', 'LAGRANGE', 'NAPERVILLE', 'AURORA']);
   });
   it('exposes stations with coordinates', () => {
     expect(s.stations.get('OTC')).toEqual({ id: 'OTC', name: 'Chicago OTC', lat: 41.8822222, lon: -87.6405556 });
@@ -57,7 +57,7 @@ describe('servicesOn', () => {
 describe('stationsServedOn', () => {
   const s = fixtureSchedule();
   it('lists the stations some trip of the line stops at that day', () => {
-    expect([...stationsServedOn(s, 'BNSF', '2026-12-26')].sort()).toEqual(['CUS', 'LAGRANGE', 'NAPERVILLE']);
+    expect([...stationsServedOn(s, 'BNSF', '2026-12-26')].sort()).toEqual(['AURORA', 'CUS', 'LAGRANGE', 'NAPERVILLE']);
   });
   it('is empty when no service of the line runs', () => {
     expect(stationsServedOn(s, 'BNSF', '2026-12-27').size).toBe(0);

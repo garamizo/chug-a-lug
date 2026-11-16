@@ -11,6 +11,7 @@
   import BoardRow from '$lib/components/BoardRow.svelte';
   import IconButton from '$lib/components/IconButton.svelte';
   import type { Itinerary, UserRecord } from '$lib/types';
+  import { HOME_STATION } from '$lib/homeStation';
 
   // `created` is redeclared explicitly (RecordModel otherwise only implies it through its index
   // signature) so `sortRoutes`'s `Pick<Itinerary, 'status' | 'created'>` constraint is satisfied.
@@ -61,7 +62,7 @@
     if (busy || !title.trim()) return;
     busy = true; error = '';
     try {
-      const record = await pb.collection('itineraries').create<Itinerary>({ title: title.trim(), created_by: $auth.user?.id });
+      const record = await pb.collection('itineraries').create<Itinerary>({ title: title.trim(), created_by: $auth.user?.id, start_station: HOME_STATION.id, start_station_name: HOME_STATION.name });
       await goto(`/plan/${record.id}/edit`);
     } catch (err) { error = titleError(err) ?? ((err as Error).message || copy.genericError); }
     finally { busy = false; }

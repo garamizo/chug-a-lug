@@ -132,7 +132,8 @@ users see. Bars and restaurants keep their plain names.
 | Account page `/account` | **Your ticket** | Rail | Name edit, email, sign out |
 | User roster | **Crew Board** | Rail | |
 | Stop (a bar or restaurant on the route) | **Stop** | Plain | A station is always a Metra station |
-| Start station | **Board at** | Plain | Draft header select; the station the crew boards at, at Start; the Start field then reads "At the boarding station by". Stop 1's arrival counts the ride in. |
+| Start station | **Board at** | Plain | Draft header select; the station the crew boards at, at Start; the Start field then reads "At the boarding station by". Stop 1's arrival counts the ride in. Defaults to Aurora and is never empty. |
+| Run home | **Run home to** | Plain | The planner's closing leg: the last train from the final stop back to Board at, which must arrive before midnight. Finish is its arrival. |
 | Dwell time at a stop | **Layover** | Rail | |
 | Train leg | **Run** | Rail, "the 8:40 run" | |
 | Walk between station and stop | **Walk** | Plain | |

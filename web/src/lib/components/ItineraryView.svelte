@@ -38,6 +38,8 @@
   // The ride in from Board at to stop 1: the one leg with no from_stop. legAfter never matches it.
   const opening = $derived(legs.find((l) => !l.from_stop && l.to_stop === sorted[0]?.id));
   const legAfter = (i: number) => legs.find((l) => !!l.from_stop && l.from_stop === sorted[i].id && l.to_stop === sorted[i + 1]?.id);
+  // The run home: from the last stop to Board at; it has no to_stop, so legAfter never matches it.
+  const closing = $derived(sorted.length ? legs.find((l) => l.from_stop === sorted[sorted.length - 1].id && !l.to_stop) : undefined);
   const arriveAt = (i: number): Date | null => {
     if (i === 0) return opening ? new Date(opening.arrive_at) : localToUtc(itinerary.event_date, parseHm(itinerary.start_time));
     const leg = legAfter(i - 1);
@@ -100,7 +102,11 @@
     }
   });
 
-  const finish = $derived(finishAt(sorted.map((_, i) => leaveAt(i))));
+  const finish = $derived(closing && closing.kind !== 'impossible' ? new Date(closing.arrive_at) : finishAt(sorted.map((_, i) => leaveAt(i))));
+  const homeName = $derived(itinerary.start_station_name || itinerary.start_station);
+  const closingReason = $derived(closing?.kind === 'impossible'
+    ? closing.reason === 'after_midnight' ? copy.runHomeMidnight : `${copy.runHome} ${homeName}: ${copy.noTrain}`
+    : undefined);
 
   // The name is edited in place. Leaving the box renames; a refused name stays in the box with the
   // reason under it, and the saved title only changes once the server accepts one.
@@ -138,6 +144,12 @@
     href="/plan/{itinerary.id}/stops/{stop.id}" onopen={onopenstop}
     onupdate={(patch) => { if (patch.dwell_min !== undefined) return actions.setDwell(stop.id, patch.dwell_min); }}
     onmove={(dir) => actions.move(stop.id, dir)} onremove={() => actions.remove(stop.id)} />
+  {#if i === sorted.length - 1 && closing}
+    <div class="closing" data-testid="closing-leg">
+      <p class="meta">{copy.runHome} {homeName}</p>
+      <LegRow leg={closing} index={sorted.length - 1} {names} reason={closingReason} />
+    </div>
+  {/if}
   {#if actions.setAnchor}
     <div class="under">
       <button type="button" class="here" class:on={actions.anchorStopId === stop.id}
@@ -183,8 +195,7 @@
   {#if canManage && actions.setStartStation}
     <label class="board">{copy.boardAt}
       <select value={itinerary.start_station ?? ''} data-testid="board-at"
-        onchange={(e) => { const id = (e.target as HTMLSelectElement).value; const st = (stations ?? []).find((s) => s.id === id); void actions.setStartStation?.(st ? { id: st.id, name: st.name } : null); }}>
-        <option value="">{copy.boardAtPick}</option>
+        onchange={(e) => { const id = (e.target as HTMLSelectElement).value; const st = (stations ?? []).find((s) => s.id === id); if (st) void actions.setStartStation?.({ id: st.id, name: st.name }); }}>
         {#each stations ?? [] as st (st.id)}<option value={st.id} disabled={st.served === false}>{stationLabel(st)}</option>{/each}
       </select>
     </label>
@@ -239,6 +250,8 @@
   .board select { font-family: var(--mono); font-size: 15px; padding: 4px; max-width: 220px; }
   .board strong { font-family: var(--mono); font-size: 15px; letter-spacing: normal; text-transform: none; color: var(--gold); }
   .opening { margin: 0 0 6px; }
+  .closing { margin: 6px 0 0; }
+  .closing .meta { margin: 0; font-size: 12px; color: #888; }
   .opening .meta { margin: 0; font-size: 12px; color: #888; }
   h2 { font-size: 18px; margin-top: 28px; }
   h3 { font-size: 15px; color: #aaa; margin: 20px 0 8px; }
