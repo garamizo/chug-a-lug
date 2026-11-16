@@ -44,6 +44,8 @@ routerAdd('POST', '/api/crawl/clone', (e) => {
     it.set('vote_open', false)
     it.set('created_by', who)
     for (const f of ['event_date', 'start_time', 'start_station', 'start_station_name']) it.set(f, src.get(f))
+    // A route made before the Board at station existed rides home to Aurora, like every route now.
+    if (!it.getString('start_station')) { it.set('start_station', 'AURORA'); it.set('start_station_name', 'Aurora') }
     tx.save(it)
 
     const stopsCol = tx.findCollectionByNameOrId('stops')

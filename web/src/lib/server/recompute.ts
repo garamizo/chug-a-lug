@@ -53,7 +53,7 @@ async function doRecompute(itineraryId: string, context: ClockContext) {
   for (const leg of old) await pb.collection('legs').delete(leg.id);
   for (const leg of computed) {
     await pb.collection('legs').create({
-      itinerary: itineraryId, from_stop: leg.fromStopId, to_stop: leg.toStopId, kind: leg.kind,
+      itinerary: itineraryId, from_stop: leg.fromStopId, to_stop: leg.toStopId, kind: leg.kind, reason: leg.reason ?? '',
       ready_at: leg.readyAt, depart_at: leg.departAt, arrive_at: leg.arriveAt,
       segments: leg.segments, computed_at: now
     });

@@ -172,6 +172,17 @@ it('writes the opening leg with an empty from_stop when the route has a start st
   const legs = state.created.filter((c) => c.collection === 'legs').map((c) => c.body);
   expect(legs).toHaveLength(2); // the opening leg and the run home
   expect(legs[0]).toMatchObject({ from_stop: '', to_stop: 's1', kind: 'train' });
+  expect(legs[1]).toMatchObject({ from_stop: 's1', to_stop: '' });
+});
+
+it('stores why a run home is impossible in the leg row', async () => {
+  vi.mocked(metra.getSchedule).mockResolvedValueOnce(fixtureSchedule());
+  state.startStation = 'LAGRANGE';
+  state.stops = [{ id: 's1', order: 1, station_id: 'LAGRANGE', dwell_min: 900, walk_min: 5 }];
+  await recomputeItinerary('aaaaaaaaaaaaaaa');
+  const legs = state.created.filter((c) => c.collection === 'legs').map((c) => c.body);
+  expect(legs[1]).toMatchObject({ to_stop: '', kind: 'impossible', reason: 'after_midnight' });
+  expect(legs[0]).toMatchObject({ reason: '' });
 });
 
 afterEach(() => { vi.useRealTimers(); });

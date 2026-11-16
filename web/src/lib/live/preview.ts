@@ -7,7 +7,7 @@ import type { Leg, Segment } from '$lib/types';
 type PreviewResponse = {
   clockRevision?: number;
   anchorAt: string | null;
-  legs: { fromStopId: string; toStopId: string; kind: Leg['kind']; readyAt: string; departAt: string; arriveAt: string; segments: Segment[] }[];
+  legs: { fromStopId: string; toStopId: string; kind: Leg['kind']; reason?: string; readyAt: string; departAt: string; arriveAt: string; segments: Segment[] }[];
 };
 
 export async function previewPlan(plan: StagedPlan, itineraryId: string): Promise<{ legs: Leg[]; clockRevision?: number }> {
@@ -26,6 +26,7 @@ export async function previewPlan(plan: StagedPlan, itineraryId: string): Promis
     from_stop: leg.fromStopId,
     to_stop: leg.toStopId,
     kind: leg.kind,
+    reason: leg.reason,
     ready_at: leg.readyAt,
     depart_at: leg.departAt,
     arrive_at: leg.arriveAt,

@@ -49,6 +49,11 @@ onRecordUpdateRequest((e) => {
       }
     }
   }
+  // A route always boards somewhere: its run home needs a station to ride to. Once set, the Board
+  // at station can be changed but not emptied, for the admin and the superuser too.
+  if (original.getString('start_station') !== '' && e.record.getString('start_station') === '') {
+    throw new BadRequestError('start_station_required')
+  }
   const titles = require(`${__hooks}/routeTitle.js`)
   // Only a title that is actually changing is validated: a stored legacy title that the rule
   // would refuse today must not block every other update to its route. Otherwise the stored

@@ -323,6 +323,9 @@ page; Cloudflare renames menus often, so re-check the page if a label is missing
     just up                                  # docker compose up -d --build
     docker compose logs -f web
 
+After the deploy that added the run home, run `just recompute-all` once: it replans every route so each
+gets its closing leg. It prints `{ok, failed}` and exits non-zero if any route failed; re-run it to retry.
+
 Migrations apply automatically when the `pocketbase` container starts. Environment changes need
 `docker compose up -d --force-recreate <service>`.
 

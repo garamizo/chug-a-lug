@@ -197,7 +197,7 @@ it('crew access can be rolled back and applied again', async () => {
     const run = (...args: string[]) => execFileSync(resolve('../pocketbase/pocketbase'), ['migrate', ...args, '--dir', join(dir, 'data'),
       '--migrationsDir', migrations, '--hooksDir', hooks], { encoding: 'utf8', timeout: 15000, input: 'y\n', stdio: 'pipe', env: { ...process.env, CONDUCTOR_EMAIL: 'conductor@test.invalid' } });
     run('up');
-    const down = run('down', '4');
+    const down = run('down', '5');
     expect(down).toContain('Reverted 1759100001_retire_boarding');
     expect(down).toContain('Reverted 1759100000_join_link');
     expect(down).toContain('Reverted 1759000000_password_sign_in');
@@ -231,7 +231,7 @@ it('password sign-in applies its settings, rolls back keeping history, and appli
     const run = (...args: string[]) => execFileSync(resolve('../pocketbase/pocketbase'), ['migrate', ...args, '--dir', join(dir, 'data'),
       '--migrationsDir', migrations, '--hooksDir', hooks], { encoding: 'utf8', timeout: 15000, input: 'y\n', stdio: 'pipe', env: { ...process.env, CONDUCTOR_EMAIL: 'conductor@test.invalid' } });
     expect(run('up')).toContain('1759000001_check_up');
-    expect(run('down', '4')).toContain('Reverted 1759000000_password_sign_in');
+    expect(run('down', '5')).toContain('Reverted 1759000000_password_sign_in');
     // An older, unapplied file runs first on the next `up`, so it sees the rolled-back state.
     await writeFile(join(migrations, '1758999999_check_down.js'), `migrate(app => {
       const u = app.findCollectionByNameOrId('users');
@@ -286,7 +286,7 @@ it('join link adds its collections and rolls back', async () => {
     const run = (...args: string[]) => execFileSync(resolve('../pocketbase/pocketbase'), ['migrate', ...args, '--dir', join(dir, 'data'),
       '--migrationsDir', migrations, '--hooksDir', hooks], { encoding: 'utf8', timeout: 15000, input: 'y\n', stdio: 'pipe', env: { ...process.env, CONDUCTOR_EMAIL: 'conductor@test.invalid' } });
     expect(run('up')).toContain('1759100000_zcheck_up');
-    const down = run('down', '3');
+    const down = run('down', '4');
     expect(down).toContain('Reverted 1759100001_retire_boarding');
     expect(down).toContain('Reverted 1759100000_zcheck_up');
     expect(down).toContain('Reverted 1759100000_join_link');
@@ -365,7 +365,7 @@ it('retire boarding drops the queue and survives a log row pointing at a request
     const run = (...args: string[]) => execFileSync(resolve('../pocketbase/pocketbase'), ['migrate', ...args, '--dir', join(dir, 'data'),
       '--migrationsDir', migrations, '--hooksDir', hooks], { encoding: 'utf8', timeout: 15000, input: 'y\n', stdio: 'pipe', env: { ...process.env, CONDUCTOR_EMAIL: 'conductor@test.invalid' } });
     expect(run('up')).toContain('1759100001_zcheck_retire');
-    const down = run('down', '2');
+    const down = run('down', '3');
     expect(down).toContain('Reverted 1759100001_zcheck_retire');
     expect(down).toContain('Reverted 1759100001_retire_boarding');
     // Unapplied and older than retire, so the next `up` runs it first, on the rolled-back schema.
@@ -386,5 +386,42 @@ it('retire boarding drops the queue and survives a log row pointing at a request
     expect(again).toContain('1759100000_zzcheck_down');
     expect(again).toContain('1759100001_retire_boarding');
     expect(again).toContain('1759100001_zcheck_retire');
+  } finally { await rm(dir, { recursive: true, force: true }); }
+});
+
+it('the run-home migration backfills Aurora where there was no Board at station and lets a leg end there', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'chugalug-runhome-'));
+  try {
+    const migrations = join(dir, 'migrations'), hooks = join(dir, 'hooks');
+    await mkdir(migrations); await mkdir(hooks);
+    for (const name of await readdir('../pocketbase/pb_migrations')) {
+      await copyFile(`../pocketbase/pb_migrations/${name}`, join(migrations, name));
+    }
+    await writeFile(join(migrations, '1759199000_run_home_fixture.js'), `migrate(app => {
+      const u = new Record(app.findCollectionByNameOrId('users'));
+      u.set('name', 'Home Runner'); u.set('name_key', 'home runner'); u.set('email', 'home@test.invalid'); u.setPassword('legacy-password-only'); app.save(u);
+      for (const [id, title, station] of [['homeemptyroute1', 'Empty', ''], ['homenaperroute1', 'Naper', 'NAPERVILLE']]) {
+        const it = new Record(app.findCollectionByNameOrId('itineraries'));
+        it.set('id', id); it.set('title', title); it.set('title_key', title.toLowerCase()); it.set('status', 'draft');
+        it.set('event_date', '2026-12-26'); it.set('start_time', '11:00'); it.set('created_by', u.id);
+        it.set('start_station', station); it.set('start_station_name', station ? 'Naperville' : '');
+        app.save(it);
+      }
+    }, app => {})`);
+    await writeFile(join(migrations, '1759200500_verify_run_home.js'), `migrate(app => {
+      const empty = app.findRecordById('itineraries', 'homeemptyroute1');
+      if (empty.getString('start_station') !== 'AURORA' || empty.getString('start_station_name') !== 'Aurora') throw new Error('Aurora backfill');
+      const naper = app.findRecordById('itineraries', 'homenaperroute1');
+      if (naper.getString('start_station') !== 'NAPERVILLE') throw new Error('Naperville kept');
+      const stop = new Record(app.findCollectionByNameOrId('stops'));
+      stop.set('itinerary', 'homeemptyroute1'); stop.set('name', 'Last'); stop.set('station_id', 'CUS'); app.save(stop);
+      const leg = new Record(app.findCollectionByNameOrId('legs'));
+      leg.set('itinerary', 'homeemptyroute1'); leg.set('from_stop', stop.id); leg.set('to_stop', ''); leg.set('kind', 'impossible');
+      leg.set('reason', 'after_midnight'); app.save(leg);
+      if (app.findRecordById('legs', leg.id).getString('reason') !== 'after_midnight') throw new Error('reason not stored');
+    }, app => {})`);
+    const output = execFileSync(resolve('../pocketbase/pocketbase'), ['migrate', 'up', '--dir', join(dir, 'data'),
+      '--migrationsDir', migrations, '--hooksDir', hooks], { encoding: 'utf8', timeout: 15000 });
+    expect(output).toContain('1759200500_verify_run_home');
   } finally { await rm(dir, { recursive: true, force: true }); }
 });

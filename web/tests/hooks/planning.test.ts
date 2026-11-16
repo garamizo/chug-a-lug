@@ -87,6 +87,31 @@ describe('itineraries', () => {
     expect((await del(`/api/collections/itineraries/records/${othersDraft}`, admin.token)).status).toBe(204);
   });
 
+  it('refuses to empty a Board at station, for crew and superuser alike, and leaves other updates alone', async () => {
+    const { id } = await (await createItinerary(crew.token, { title: 'Always Boards', start_station: 'AURORA', start_station_name: 'Aurora' })).json();
+    for (const token of [crew.token, await superuserToken()]) {
+      const res = await patch(`/api/collections/itineraries/records/${id}`, { start_station: '', start_station_name: '' }, token);
+      expect(res.status).toBe(400);
+      expect(JSON.stringify(await res.json())).toContain('Start_station_required');
+    }
+    const other = await patch(`/api/collections/itineraries/records/${id}`, { start_time: '12:15' }, crew.token);
+    expect(other.status).toBe(200);
+    expect(await other.json()).toMatchObject({ start_station: 'AURORA', start_time: '12:15' });
+    // A create with no station still succeeds (fixtures rely on it); it simply starts empty.
+    const bare = await (await createItinerary(crew.token, { title: 'No Station Yet' })).json();
+    expect(bare.start_station).toBe('');
+    expect((await patch(`/api/collections/itineraries/records/${bare.id}`, { start_time: '12:15' }, crew.token)).status).toBe(200);
+  });
+
+  it('accepts a closing leg with no to_stop and a reason', async () => {
+    const { id } = await (await createItinerary(crew.token, { title: 'Closing Leg' })).json();
+    const { id: stop } = await (await createStop(crew.token, id)).json();
+    const su = await superuserToken();
+    const leg = await post('/api/collections/legs/records', { itinerary: id, from_stop: stop, to_stop: '', kind: 'impossible', reason: 'after_midnight' }, su);
+    expect(leg.status).toBe(200);
+    expect(await leg.json()).toMatchObject({ to_stop: '', reason: 'after_midnight' });
+  });
+
   it('stores a start station and accepts an opening leg with no from_stop', async () => {
     const { id } = await (await createItinerary(crew.token, { title: 'Boarding' })).json();
     const set = await patch(`/api/collections/itineraries/records/${id}`, { start_station: 'AURORA', start_station_name: 'Aurora' }, crew.token);

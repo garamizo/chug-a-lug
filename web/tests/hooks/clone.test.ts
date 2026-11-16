@@ -43,6 +43,18 @@ beforeEach(async () => {
 });
 
 describe('POST /api/crawl/clone', () => {
+  it('gives a copy of a route with no Board at station Aurora, and keeps a station that is set', async () => {
+    const su = await superuserToken();
+    const bare = await (await post('/api/collections/itineraries/records', { title: 'Bare Crawl' }, owner.token)).json();
+    await patch(`/api/collections/itineraries/records/${bare.id}`, { status: 'locked' }, admin.token);
+    const a = newId();
+    expect((await clone(cloner.token, { source: bare.id, id: a, title: 'Copy of Bare Crawl' })).status).toBe(200);
+    expect(await (await get(`/api/collections/itineraries/records/${a}`, su)).json()).toMatchObject({ start_station: 'AURORA', start_station_name: 'Aurora' });
+    const b = newId();
+    expect((await clone(cloner.token, { source: source.id, id: b, title: 'Copy of Loop Crawl' })).status).toBe(200);
+    expect(await (await get(`/api/collections/itineraries/records/${b}`, su)).json()).toMatchObject({ start_station: 'CUS', start_station_name: 'Union Station' });
+  });
+
   it('makes a draft of the caller\'s own with the stops and a note on both routes', async () => {
     const id = newId();
     const res = await clone(cloner.token, { source: source.id, id, title: 'Copy of Loop Crawl' });
