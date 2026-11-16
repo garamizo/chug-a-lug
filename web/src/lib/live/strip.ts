@@ -8,7 +8,8 @@ export type StripStop = { stop: Stop; state: StripState; arriveAt: string | null
 
 export function stripStops(stops: Stop[], legs: Leg[], here: Current | null, startAt: Date): StripStop[] {
   const ordered = [...stops].sort((a, b) => a.order - b.order);
-  // The opening and closing legs have an empty end; they are not an arrival at any stop.
+  // The closing leg ends at the Board at station (`to_stop` ''), not at any stop. The opening leg's
+  // empty end is its `from_stop`; its arrival at the first stop is real and stays.
   legs = legs.filter((l) => l.to_stop !== '');
   const arrive = new Map(legs.map((l) => [l.to_stop, l.arrive_at]));
   // Only a train leg is drawn as track; a walk, or a leg the planner could not make, is a plain line.

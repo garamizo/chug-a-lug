@@ -31,7 +31,7 @@ build:
 up:
     bash scripts/up.sh
 
-# Replan every route once (after a deploy that changes how legs are planned). Re-run it to retry.
+# Replan every route from today on (after a deploy that changes how legs are planned). Re-run it to retry.
 recompute-all:
     curl --fail-with-body -sS -X POST -H "x-internal-secret: $INTERNAL_SECRET" "http://127.0.0.1:3000/api/internal/recompute?all=1"
 
