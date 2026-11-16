@@ -115,7 +115,6 @@ export const copy = {
   emailLabel: 'Email address',
   emailPlaceholder: 'you@example.com',
   codeLabel: '6-digit code',
-  /** noCodeHint when Google sign-in is off (PUBLIC_GOOGLE_ENABLED != '1'). */
   /** The boarding page's code step: confirming the code files the request; it does not sign in. */
   confirmCode: 'Verify email',
   noCodeHintNoGoogle: 'Didn’t get a code? Check your spam folder or resend after a minute.',

@@ -57,7 +57,7 @@ The harnesses bind fixed ports, so two worktrees cannot run them simultaneously:
 - Hooks (`bash scripts/test-hooks.sh`): **18090** for the normal pass's PocketBase, **18091** for the
   simulation pass's (the two run at once), **18095** for `recompute.test.ts`'s listener.
 - The production stack (`just up`): **8090** for PocketBase, **3000** for the web server.
-- **12525–12528** for the SMTP sink, its control API, the Turnstile fake and the fake OIDC provider
+- **12525–12526** for the SMTP sink and its control API
   (`web/scripts/test-fakes.mjs`).
 
 Never point a dev or test server at 8090 or 3000 — that is the live stack on this machine.
@@ -100,9 +100,9 @@ rebuild.
 - **Seeding stops fires the recompute hook.** The planner replaces seeded leg times with its own
   answer. A test clock based on the fixture's hand-written departure may be watching the wrong train.
 
-- **Users are keyed by email.** Production signs in only by OTP, password or Google, and every session passes
-  `crew.signInGuard`; boarding requests are not users, and a decoy request must stay
-  indistinguishable from a real one. Tests mint sessions by impersonation (`loginToken`,
+- **Users are keyed by email.** Production signs in by email and password only, and every sign-in passes
+  `crew.signInGuard`. Sign-up needs the Conductor's join link (`/api/crawl/join*`); there are no
+  boarding requests or decoys. Tests mint sessions by impersonation (`loginToken`,
   `sessionFor`), never through a backdoor route.
 
 - **Simulation has event time and wall time.** Use the shared clock for the live day, Tab, anchors,

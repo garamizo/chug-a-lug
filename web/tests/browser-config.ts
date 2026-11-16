@@ -57,8 +57,7 @@ export function browserConfig(sim = false, production = false) {
       {
         command: sim ? `node scripts/sim-test-web.mjs${production ? ' --production' : ''}` : 'npm run dev -- --host 127.0.0.1 --port 15173 --strictPort',
         url: 'http://127.0.0.1:15173/login',
-        env: { PUBLIC_PB_URL: 'http://127.0.0.1:18093', HOST: '127.0.0.1', PORT: '15173', ORIGIN: 'http://127.0.0.1:15173',
-          PUBLIC_TURNSTILE_SITE_KEY: 'test-site-key', PUBLIC_GOOGLE_ENABLED: '0' },
+        env: { PUBLIC_PB_URL: 'http://127.0.0.1:18093', HOST: '127.0.0.1', PORT: '15173', ORIGIN: 'http://127.0.0.1:15173' },
         reuseExistingServer: false, timeout: 60_000,
         gracefulShutdown: { signal: 'SIGTERM', timeout: 5000 }
       }

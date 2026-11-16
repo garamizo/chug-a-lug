@@ -123,21 +123,19 @@ dev (the PocketBase hook calls the SvelteKit server with that secret and URL aft
 
 Everyone has their own account, keyed by email. There is no shared password; each person may set their own.
 
-- **Boarding.** A newcomer opens `/join` (Board), enters a name, an email and a password, passes
-  Cloudflare Turnstile and confirms the emailed code. That creates a boarding request, not a user. Any
-  approved crew member can Let aboard or Turn away, from the popup or the Crew Board section. The chosen
-  password is installed when a crew member lets them aboard; until then the person cannot sign in.
-  Conductors get a batched email about waiting requests (at most one per 10 minutes).
-- **Signing in.** `/login` offers Google (when `PUBLIC_GOOGLE_ENABLED=1`), email and password,
-  "Forgot password?" and "Email me a code instead".
+- **Signing up.** A newcomer opens the Conductor's join link (see Making the join link below), enters a
+  name, an email and a password at `/join`, and confirms the emailed code. That creates the user; each
+  sign-up takes one seat of the link. There is no approval step. A forwarded link admits strangers up to
+  its seats until it expires or is revoked; only the Conductor can put someone off.
+- **Signing in.** `/login` takes email and password, with "Forgot password?".
 - **Passwords.** "Forgot password?" and Your ticket email a link that works once, for 30 minutes.
   Setting a password signs out every other session. There are 10 tries per address per 15 minutes;
-  when they are spent, the emailed code and Google still work. Reset mails are capped at 3 per
+  when they are spent, wait or use a reset link. Reset mails are capped at 3 per
   address per hour, and PocketBase limits each IP too. A person who is put off gets no reset mail and
-  cannot use a link. People who boarded before passwords existed, or with Google, set one through
-  "Forgot password?". The Conductor should use a long, unique password.
+  cannot use a link. Anyone who has no password
+  sets one through "Forgot password?". The Conductor should use a long, unique password.
 - **The Manifest** (`/crew/access`, Conductor only) lists people, their emails, status, when they came
-  aboard and who let them, last seen, and the access log (kept 90 days, at most 10,000 rows).
+  aboard, last seen, and the access log (kept 90 days, at most 10,000 rows).
 - **Put off / Let back on** (Manifest, Conductor only) blocks or unblocks a person. Blocking from the
   PocketBase admin UI (`users` -> the record -> `blocked`) also ends that user's sessions.
 - **Your ticket** (`/account`) lets a person rename themselves and email themselves a link to set a password. Nobody can change their own email; a
@@ -148,17 +146,15 @@ Everyone has their own account, keyed by email. There is no shared password; eac
 - **Add another Conductor:** PocketBase admin (http://127.0.0.1:8090/_/ on the box) -> Collections ->
   `users` -> the person's record -> tick `is_admin`; make sure `verified` is on too. The first Conductor is always the account
   for `CONDUCTOR_EMAIL`, recreated on every start. When you type an email into a user record in the
-  admin UI, type it in lowercase: sign-in and boarding look addresses up lowercased.
+  admin UI, type it in lowercase: sign-in and sign-up look addresses up lowercased.
 - **Mail troubleshooting.** `docker compose logs pocketbase` shows SMTP errors. Check `SMTP_HOST`,
   `SMTP_PORT=465` with `SMTP_TLS=1` (Resend uses implicit TLS), `SMTP_USERNAME=resend`, the API key in
   `SMTP_PASSWORD` and that the sending domain is verified in Resend. Settings are re-applied from `.env`
-  at every start. If mail is down, a join answers an error: its request is created and at once expired,
-  so nobody waits on it. Google sign-up still works. After a decision the decision stands and the
-  notification retries.
+  at every start. If mail is down, sign-up cannot send its code and answers an error, and
+  reset mails do not arrive.
 - **Conductor without mail.**
   1. Sign in with your password, if you set one.
-  2. If your Google account has the same email as your seat, sign in with Google.
-  3. Otherwise mint a session on the box (the admin UI and superuser API answer only there):
+  2. Otherwise mint a session on the box (the admin UI and superuser API answer only there):
      http://127.0.0.1:8090/_/ -> Collections -> `users` -> your record -> Impersonate, with a duration
      such as 86400 (a day), or the same by API:
 
@@ -195,6 +191,25 @@ Run on the host, against the live PocketBase (it refuses anything that came thro
 The link is shown once; lose it and make a new one. A new link kills the old one, including sign-ups
 halfway through. Needs `INTERNAL_SECRET` and `APP_URL` in `.env`.
 
+## Deploying the join link
+
+Migrations `1759100000_join_link.js` (adds the link and sign-up tables) and `1759100001_retire_boarding.js`
+(drops `boarding_requests` and the peer-approval fields) apply when PocketBase restarts. Existing users
+keep their password and their seat.
+
+1. `just backup`.
+2. Check what the migration will drop, with the host's `sqlite3` on a copy of the backup, not on live
+   data: `select (select count(*) from users), (select count(*) from boarding_requests)`. Open boarding
+   requests are discarded, so let any waiting person in or tell them to use the new link first.
+3. Remove the keys `TURNSTILE_SECRET`, `PUBLIC_TURNSTILE_SITE_KEY`, `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`
+   and `PUBLIC_GOOGLE_ENABLED` from `.env`; nothing reads them now. `INTERNAL_SECRET` and `APP_URL` stay,
+   `just invite` needs them.
+4. `just up` (the web image changes, so rebuild), then `just invite <seats>`.
+5. The Cloudflare Turnstile widget and the Google OAuth client are no longer used and can be deleted in
+   their dashboards.
+
+**Rollback:** restore the backup (Restore from backup below) and check out the code from before the join link.
+
 ## Deploying crew access
 
 The migration `1758900000_crew_access.js` is destructive: it wipes every user except the Conductor and
@@ -216,11 +231,10 @@ all personal activity (likes, comments, Tab, acks), keeps routes, and refuses to
    `pocketbase/pocketbase serve --dir /tmp/chugalug-dryrun/pb_data --http 127.0.0.1:18099`. Then
    `rm -rf /tmp/chugalug-dryrun`: it is a copy of production data.
 3. Fill the new `.env` keys (see `.env.example`): `CONDUCTOR_EMAIL`, `APP_URL`, `MAIL_FROM`, `SMTP_*`,
-   `TURNSTILE_SECRET`, `PUBLIC_TURNSTILE_SITE_KEY`, and optionally `GOOGLE_CLIENT_ID`,
-   `GOOGLE_CLIENT_SECRET` with `PUBLIC_GOOGLE_ENABLED=1`. Remove `CREW_PASSWORD` and `ADMIN_PASSWORD`.
-   Do the Cloudflare checklist below first for the Turnstile, Resend and Google values.
-4. `just up`, then sign in as the Conductor by email code.
-5. Tell the family to board at `/join`.
+   and `INTERNAL_SECRET`. Remove `CREW_PASSWORD` and `ADMIN_PASSWORD`.
+   Do the Cloudflare checklist below first for the Resend values.
+4. `just up`, then sign in as the Conductor with your password (set it through "Forgot password?").
+5. Make a join link (`just invite <seats>`) and send it to the family.
 6. Delete and recreate any rehearsal runs (`.simulations/<run>`): the migration wipes their users while
    their marker still says ready.
 7. Never publish port 8090 anywhere but the tunnel and the Docker network, because the
@@ -232,29 +246,24 @@ crew access. Reverting the code alone leaves email required on every user with n
 so nobody can sign in.
 
 **Rollback of password sign-in** (migration `1759000000_password_sign_in.js`): run
-`pocketbase/pocketbase migrate down 1` (or restore a backup), then deploy the old code. Open boarding
-requests lose their password hashes and fall back to the "emailed code or Google" notice. Existing
-passwords stay in `users.password` but cannot be used while password auth is off; email code and
-Google keep working.
+`pocketbase/pocketbase migrate down 1` (or restore a backup), then deploy the old code. Existing
+passwords stay in `users.password` but cannot be used while password auth is off.
 
 ### Manual acceptance
 
 The harness cannot prove these:
 
-- **Real Google round trip:** a phone boards by Google, and an existing member signs in by Google.
-- **Conductor-email batching:** two sign-ups a minute apart produce one email (tests run with
-  `NOTIFY_INTERVAL_SECONDS=0`).
+- **Join link on a real phone:** open the link from a chat app, sign up with the emailed code, and
+  sign in again with the password.
 - **Daily access-log retention:** after the 03:17 UTC job, rows older than 90 days and rows past the
   newest 10,000 are gone.
 - On the real stack after deploy:
   1. `https://pb.chugalug.app/_/` and the superusers auth endpoint, by name and by ID, return 404.
-  2. Sign-in as the Conductor works by email code.
-  3. A phone boards by Google.
-  4. A second phone boards by email.
-  5. Popup approval works from a third browser, and the popup clears on the other approver's screen.
-  6. Put off works.
-  7. The Manifest shows real visitor IPs and countries.
-  8. Cloudflare Security Insights clears the chugalug.app findings after the checklist.
+  2. Sign-in as the Conductor works with the password.
+  3. A phone signs up through the join link.
+  4. Put off works.
+  5. The Manifest shows real visitor IPs and countries.
+  6. Cloudflare Security Insights clears the chugalug.app findings after the checklist.
 - **Password reset mail, real Resend:** a reset mail arrives and its link opens
   `APP_URL/reset-password` through the tunnel.
 - **iPhone password path:** Safari sets the password from the emailed link, then the home-screen app
@@ -287,16 +296,9 @@ page; Cloudflare renames menus often, so re-check the page if a label is missing
 5. **Visitor location headers.** Rules -> Settings -> **Managed Transforms** tab -> enable **Add visitor
    location headers** (gives the Manifest its countries).
    Source: https://developers.cloudflare.com/rules/transform/managed-transforms/configure/
-6. **Turnstile.** Turnstile page -> **Add widget**: name, hostname `chugalug.app`, mode Managed ->
-   **Create**; copy the sitekey into `PUBLIC_TURNSTILE_SITE_KEY` and the secret key into
-   `TURNSTILE_SECRET`.
-   Source: https://developers.cloudflare.com/turnstile/get-started/widget-management/dashboard/
-7. **Resend.** In Resend, add the chugalug.app domain, publish the DNS records it shows in Cloudflare DNS
+6. **Resend.** In Resend, add the chugalug.app domain, publish the DNS records it shows in Cloudflare DNS
    (set them to DNS only), then create an API key; it is `SMTP_PASSWORD`. Find the exact steps from
    Resend's domain documentation.
-8. **Google Cloud.** Create an OAuth client of type Web application with redirect URI
-   `https://chugalug.app/auth/google`; its ID and secret are `GOOGLE_CLIENT_ID` and
-   `GOOGLE_CLIENT_SECRET`. Find the exact steps from Google's OAuth client documentation.
 
 ## Deploy a change
     git pull
@@ -320,11 +322,9 @@ Migrations apply automatically when the `pocketbase` container starts. Environme
 3. About 15 minutes; rehearse once before December.
 
 ## Rotate a secret
-Edit `.env`, then `docker compose up -d --force-recreate <service>`. PocketBase reads `SMTP_PASSWORD`,
-`GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET`, `TURNSTILE_SECRET` and the Metra token from its environment
-(the SMTP and Google settings are re-applied at start), so rotate those with
-`docker compose up -d --force-recreate pocketbase`. `PUBLIC_*` values (`PUBLIC_PB_URL`,
-`PUBLIC_TURNSTILE_SITE_KEY`, `PUBLIC_GOOGLE_ENABLED`) are baked into the web image, so changing one needs
+Edit `.env`, then `docker compose up -d --force-recreate <service>`. PocketBase reads `SMTP_PASSWORD`
+and the Metra token from its environment (the SMTP settings are re-applied at start), so rotate those with
+`docker compose up -d --force-recreate pocketbase`. `PUBLIC_*` values (`PUBLIC_PB_URL`) are baked into the web image, so changing one needs
 `just up`, a rebuild. The Cloudflare token is read by the `cloudflared` container at start
 (`docker compose up -d --force-recreate cloudflared`). `INTERNAL_SECRET` is read by both containers (the
 PocketBase hook sends it, the SvelteKit server checks it), so rotate it with

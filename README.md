@@ -32,9 +32,8 @@ with an album and a scoreboard to argue about at dinner.
 - **Event: Saturday, December 26, 2026.** Metra runs its Saturday timetable. About 10 users.
 - **Web only, no app stores.** Installable PWA is encouraged, never required.
 - **Works on a phone in a loud bar with one bar of signal.** Big buttons, cached plan, degrades gracefully.
-- **Private.** Everyone has their own account, keyed by email. A newcomer asks to board at
-  `/join`, any approved crew member lets them aboard, and from then on they sign in with email and
-  password, an emailed code or Google. No shared password.
+- **Private.** Everyone has their own account, keyed by email. Getting in takes the Conductor's
+  join link (limited seats, an end date); from then on sign-in is email and password. No shared password.
 - **Lines:** UP-W (Ogilvie), MD-W (Union Station, turns at Elgin on weekends), BNSF (Union Station).
   Ogilvie and Union are a 6 min walk apart, so the plan can switch lines downtown.
 - **The crawl is settled on the BNSF line** (Aurora to Union Station). The planner shows only that line;
@@ -65,7 +64,7 @@ users see. Bars and restaurants keep their plain names.
 | Wrap-up phase | **Closing Time** | Bar | |
 | Admin | **Conductor** | Rail | |
 | Users | **Crew** | Rail | |
-| Sign-in page `/login` | **Sign in** | Plain | "Welcome back"; password, emailed code, or Google |
+| Sign-in page `/login` | **Sign in** | Plain | "Welcome back"; email and password, with a reset link by email |
 | Sign-up page `/join` | **Sign up** | Plain | Name, email, password, then an emailed code; needs a join link |
 | Join link | **Join link** | Plain | The one link the Conductor shares; it has seats and an end date |
 | Conductor access panel `/crew/access` | **Manifest** | Rail | People, status, who let them aboard, last seen, access log |
@@ -363,11 +362,11 @@ Recommendation, not yet decided. See the references doc for the alternatives con
 - **Metra proxy**: SvelteKit server routes using `gtfs-realtime-bindings` and a pure-TypeScript GTFS loader
   (the feed is 700 KB; the three lines fit in memory). Polls Metra every 30 s, caches, computes "next train
   from station A to B", and serves the recorded replay in sim mode. The only component that talks to Metra.
-- **Auth**: per-person accounts keyed by email. Sign-in is email and password, an emailed one-time code (PocketBase OTP, sent
-  through Resend SMTP) or Google. A newcomer asks to board at `/join` (Cloudflare Turnstile guards the
-  form, the email is verified by code) and any approved crew member lets them aboard; only then does a
-  user record exist. The Conductor is the account minted from `CONDUCTOR_EMAIL`, and only the Conductor
-  can put someone off. No shared password.
+- **Auth**: per-person accounts keyed by email. Sign-in is email and password; a forgotten password is reset by a link
+  emailed through Resend SMTP. A newcomer follows the Conductor's join link to `/join`, picks a password and
+  confirms the email with a code; only then does a user record exist. The Conductor makes the link
+  (`just invite`), sets its seats and end date, and can revoke it. The Conductor is the account minted from
+  `CONDUCTOR_EMAIL`, and only the Conductor can put someone off. No shared password.
 - **Places**: Google Places (server-side, key never leaves the box) for the rated list near each station,
   text search by name, and venue-card photos fetched once per stop and stored on disk; Overpass
   (OpenStreetMap) is the fallback for the station list when no key is configured.
@@ -423,11 +422,10 @@ Numbered to match the earlier review; each is reversible.
 5. **Media is tagged from the shared crawl clock.** The uploader's board supplies the stop; the server
    accepts it only if it belongs to a locked route, otherwise keeps the file untagged. No GPS or EXIF
    location lookup. Admin retagging is permitted by the collection rules; the album UI belongs to M5.
-6. **Boarding is peer-approved, and accounts are keyed by email.** A newcomer asks to board at `/join`;
-   any approved crew member can Let them aboard or Turn them away, and from then on they sign in with
-   email and password, an emailed code or Google. There is no shared password and no SMS. Trade-off: the crew can let
-   anyone aboard, so one careless approval admits a stranger, and only the Conductor can put someone
-   off (and let them back on). That fits ten relatives who know each other and removes Twilio, SMS
+6. **Getting in takes the Conductor's join link, and accounts are keyed by email.** The Conductor shares one
+   join link with limited seats and an end date; sign-in is email and password, with password reset by email.
+   There is no shared password and no SMS. Trade-off: a forwarded link admits strangers up to its seats until
+   it expires or is revoked, and only the Conductor can put someone off (and let them back on). That fits ten relatives who know each other and removes Twilio, SMS
    costs and PIN resets entirely.
 7. **Domain is chugalug.app.** HTTPS is mandatory on `.app`; Cloudflare Tunnel handles that from home.
 8. **Home server trade-offs.** Simpler and free, but the event depends on your power and internet.
