@@ -1,7 +1,8 @@
 // The live collections' rules against a live PocketBase: Bulletins are the Conductor's alone, acks
 // and drinks belong to whoever wrote them, and everyone can read all of it.
+import { readFile } from 'node:fs/promises';
 import { beforeAll, describe, expect, it } from 'vitest';
-import { ADMIN_LOGIN_PASSWORD, del, get, loginToken, patch, post, superuserToken, truncate, PB } from './setup';
+import { ADMIN_LOGIN_PASSWORD, del, deleteUserByName, get, loginToken, patch, post, superuserToken, truncate, PB } from './setup';
 
 let conductor = '', crew = '', conductorId = '', crewId = '', itineraryId = '', stopId = '';
 
@@ -191,5 +192,241 @@ describe('bulletin bookkeeping', () => {
 
     const log = await get(`/api/collections/event_log/records?filter=${encodeURIComponent(`itinerary="${itineraryId}" && kind="bulletin"`)}`, conductor);
     expect((await log.json()).totalItems).toBeGreaterThan(0);
+  });
+});
+
+// Photo Tab: a media upload carrying `drink_kind` is a proof, and the server writes its drink in the
+// same transaction under the same id. Hook errors arrive sentence-cased ("Proof_needs_image.").
+describe('proof uploads', () => {
+  const JPEG = readFile(new URL('../fixtures/proof.jpg', import.meta.url)).then((bytes) => new Uint8Array(bytes));
+  const MP4 = Uint8Array.from([0, 0, 0, 0x18, 0x66, 0x74, 0x79, 0x70, 0x69, 0x73, 0x6f, 0x6d, 0, 0, 2, 0, 0x69, 0x73, 0x6f, 0x6d]);
+  let n = 0;
+  const newId = () => `proof${Date.now().toString(36).slice(-6)}${String(++n).padStart(4, '0')}`;
+  let strayStop = '';
+
+  type Proof = { id?: string; user?: string; stop?: string | null; kind?: string; drinkKind?: string;
+    bytes?: Uint8Array<ArrayBuffer> | string; type?: string; name?: string };
+  const send = async (token: string, p: Proof = {}) => {
+    const form = new FormData();
+    if (p.id) form.set('id', p.id);
+    form.set('user', p.user ?? crewId);
+    form.set('kind', p.kind ?? 'image');
+    form.set('taken_at', '2026-12-26T20:00:00.000Z');
+    const stop = p.stop === undefined ? stopId : p.stop;
+    if (stop !== null) form.set('stop', stop);
+    if (p.drinkKind !== '') form.set('drink_kind', p.drinkKind ?? 'beer');
+    form.set('file', new Blob([p.bytes ?? await JPEG], { type: p.type ?? 'image/jpeg' }), p.name ?? 'proof.jpg');
+    const res = await fetch(`${PB}/api/collections/media/records`, { method: 'POST', headers: { Authorization: token }, body: form });
+    return { status: res.status, body: await res.json() };
+  };
+  const record = async (collection: string, id: string) =>
+    get(`/api/collections/${collection}/records/${id}`, await superuserToken());
+  const exists = async (collection: string, id: string) => (await record(collection, id)).status === 200;
+  const counter = async () =>
+    (await (await get('/api/collections/action_sequence/records/eventactions001', await superuserToken())).json()).value as number;
+  const drinkCount = async () =>
+    (await (await get('/api/collections/drink_entries/records?perPage=1', await superuserToken())).json()).totalItems as number;
+
+  beforeAll(async () => {
+    const draft = await (await post('/api/collections/itineraries/records', {
+      title: 'Not the proof route', event_date: '2026-12-26', start_time: '12:00', created_by: conductorId
+    }, conductor)).json();
+    strayStop = (await (await post('/api/collections/stops/records', {
+      itinerary: draft.id, order: 1, name: 'Somewhere else', station_id: 'CUS', dwell_min: 60, walk_min: 5
+    }, conductor)).json()).id;
+  });
+
+  it('a proof creates its drink under the same id, stamped and numbered', async () => {
+    const before = await counter();
+    const id = newId();
+    const sent = await send(crew, { id, drinkKind: 'cocktail' });
+    expect(sent.status).toBe(200);
+    expect(sent.body).toMatchObject({ id, user: crewId, stop: stopId, itinerary: itineraryId, kind: 'image', drink_kind: 'cocktail', tagged_by: 'clock' });
+    const drink = await (await get(`/api/collections/drink_entries/records/${id}`, crew)).json();
+    expect(drink).toMatchObject({ id, user: crewId, stop: stopId, kind: 'cocktail', media: id });
+    expect(Date.parse(drink.at)).toBe(Date.parse(sent.body.at));
+    expect(drink.action_order).toBe(before + 1);
+    expect(await counter()).toBe(before + 1);
+  });
+
+  it('accepts PNG, WebP, HEIC and GIF photos as proof', async () => {
+    const ascii = (s: string) => [...s].map((c) => c.charCodeAt(0));
+    const photos: Array<[string, number[]]> = [
+      ['image/png', [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 0x0d]],
+      ['image/webp', [...ascii('RIFF'), 0x24, 0, 0, 0, ...ascii('WEBPVP8 ')]],
+      ['image/heic', [0, 0, 0, 0x18, ...ascii('ftypheic'), 0, 0, 0, 0, ...ascii('mif1heic')]],
+      ['image/gif', ascii('GIF89a\x01\x00\x01\x00')]
+    ];
+    for (const [type, bytes] of photos) {
+      const id = newId();
+      const sent = await send(crew, { id, type, name: 'proof', bytes: Uint8Array.from(bytes) });
+      expect(sent.status, type).toBe(200);
+      expect(await exists('drink_entries', id), type).toBe(true);
+    }
+  });
+
+  it('a video, non-image bytes, or kind=video is refused with proof_needs_image', async () => {
+    const drinks = await drinkCount();
+    const attempts: Proof[] = [
+      { bytes: MP4, type: 'image/jpeg', name: 'proof.jpg' },          // a video dressed as a photo
+      { bytes: 'not a photo at all', type: 'image/jpeg', name: 'proof.jpg' },
+      { kind: 'video' }                                                 // real JPEG bytes, but declared a video
+    ];
+    for (const attempt of attempts) {
+      const id = newId();
+      const sent = await send(crew, { id, ...attempt });
+      expect(sent.status).toBe(400);
+      expect(sent.body.message).toBe('Proof_needs_image.');
+      expect(await exists('media', id)).toBe(false);
+    }
+    expect(await drinkCount()).toBe(drinks);
+  });
+
+  it('a proof at a stop off the current route is refused with proof_needs_stop', async () => {
+    const drinks = await drinkCount();
+    for (const stop of [strayStop, null]) {
+      const id = newId();
+      const sent = await send(crew, { id, stop });
+      expect(sent.status).toBe(400);
+      expect(sent.body.message).toBe('Proof_needs_stop.');
+      expect(await exists('media', id)).toBe(false);
+    }
+    expect(await drinkCount()).toBe(drinks);
+  });
+
+  it('a proof for someone else is refused by the media rule', async () => {
+    const id = newId();
+    const sent = await send(crew, { id, user: conductorId });
+    expect(sent.status).toBe(400);
+    expect(await exists('media', id)).toBe(false);
+    expect(await exists('drink_entries', id)).toBe(false);
+  });
+
+  it('a failed drink save rolls back the photo and the action counter', async () => {
+    // A drink already holding the id makes the hook's drink save fail after the photo was saved.
+    const id = newId();
+    const su = await superuserToken();
+    expect((await post('/api/collections/drink_entries/records', {
+      id, user: crewId, stop: stopId, kind: 'water', at: '2026-12-26T20:00:00.000Z'
+    }, su)).status).toBe(200);
+    const before = await counter();
+    const drinks = await drinkCount();
+    const sent = await send(crew, { id });
+    expect(sent.status).toBe(400);
+    expect(await exists('media', id)).toBe(false);
+    expect(await counter()).toBe(before);
+    expect(await drinkCount()).toBe(drinks);
+    const kept = await (await record('drink_entries', id)).json();
+    expect(kept).toMatchObject({ kind: 'water', media: '' });
+    await del(`/api/collections/drink_entries/records/${id}`, su);
+  });
+
+  it('a repeated id is refused without a second drink', async () => {
+    // The lost-response retry: the first send landed, the phone sends the same id again.
+    const id = newId();
+    expect((await send(crew, { id })).status).toBe(200);
+    const before = await counter();
+    const drinks = await drinkCount();
+    const again = await send(crew, { id, drinkKind: 'shot' });
+    expect(again.status).toBe(400);
+    expect(again.body.data.id.code).toBe('validation_not_unique');
+    expect(await drinkCount()).toBe(drinks);
+    expect(await counter()).toBe(before);
+    expect((await (await record('drink_entries', id)).json()).kind).toBe('beer');
+  });
+
+  it('Undo removes the photo', async () => {
+    const id = newId();
+    expect((await send(crew, { id })).status).toBe(200);
+    expect((await del(`/api/collections/drink_entries/records/${id}`, crew)).status).toBe(204);
+    expect(await exists('drink_entries', id)).toBe(false);
+    expect(await exists('media', id)).toBe(false);
+  });
+
+  it('a failed photo delete keeps the drink', async () => {
+    const id = newId();
+    expect((await send(crew, { id })).status).toBe(200);
+    const su = await superuserToken();
+    // A throwaway collection with a required, non-cascading relation makes PocketBase refuse the photo delete.
+    const mediaCol = await (await get('/api/collections/media', su)).json();
+    try {
+      const hold = await post('/api/collections', { name: 'zz_proof_hold', type: 'base', fields: [
+        { name: 'photo', type: 'relation', collectionId: mediaCol.id, maxSelect: 1, required: true, cascadeDelete: false }
+      ] }, su);
+      expect(hold.status).toBe(200);
+      expect((await post('/api/collections/zz_proof_hold/records', { photo: id }, su)).status).toBe(200);
+      expect((await del(`/api/collections/drink_entries/records/${id}`, crew)).status).toBe(400);
+      expect(await exists('drink_entries', id)).toBe(true);
+      expect(await exists('media', id)).toBe(true);
+    } finally {
+      await del('/api/collections/zz_proof_hold', su);
+    }
+    expect((await del(`/api/collections/drink_entries/records/${id}`, crew)).status).toBe(204);
+    expect(await exists('media', id)).toBe(false);
+  });
+
+  it('the Conductor deleting the photo removes the drink', async () => {
+    const id = newId();
+    expect((await send(crew, { id })).status).toBe(200);
+    expect((await del(`/api/collections/media/records/${id}`, conductor)).status).toBe(204);
+    expect(await exists('media', id)).toBe(false);
+    expect(await exists('drink_entries', id)).toBe(false);
+  });
+
+  it('deleting the stop or the user removes both', async () => {
+    const su = await superuserToken();
+    const stop = (await (await post('/api/collections/stops/records', {
+      itinerary: itineraryId, order: 9, name: 'Last call', station_id: 'LAGRANGE', dwell_min: 30, walk_min: 5
+    }, su)).json()).id;
+    const atStop = newId();
+    expect((await send(crew, { id: atStop, stop })).status).toBe(200);
+    expect((await del(`/api/collections/stops/records/${stop}`, su)).status).toBe(204);
+    expect(await exists('drink_entries', atStop)).toBe(false);
+    expect(await exists('media', atStop)).toBe(false);
+
+    const leaver = await loginToken('Live Proof Leaver');
+    const byUser = newId();
+    expect((await send(leaver.token, { id: byUser, user: leaver.id })).status).toBe(200);
+    await deleteUserByName('Live Proof Leaver');
+    expect(await exists('drink_entries', byUser)).toBe(false);
+    expect(await exists('media', byUser)).toBe(false);
+  });
+
+  it('a proof cannot be edited', async () => {
+    const id = newId();
+    expect((await send(crew, { id })).status).toBe(200);
+    const path = `/api/collections/media/records/${id}`;
+    for (const change of [{ drink_kind: 'shot' }, { drink_kind: '' }, { kind: 'video' }, { user: conductorId },
+      { stop: '' }, { itinerary: '' }, { file: null }]) {
+      const res = await patch(path, change, conductor);
+      expect(res.status, JSON.stringify(change)).toBe(400);
+      expect((await res.json()).message, JSON.stringify(change)).toBe('Proof_locked.');
+    }
+    const form = new FormData();
+    form.set('file', new Blob([await JPEG], { type: 'image/jpeg' }), 'other.jpg');
+    const replaced = await fetch(`${PB}${path}`, { method: 'PATCH', headers: { Authorization: conductor }, body: form });
+    expect(replaced.status).toBe(400);
+    expect((await replaced.json()).message).toBe('Proof_locked.');
+    // Fields outside the pairing stay the Conductor's to fix.
+    expect((await patch(path, { tagged_by: 'manual' }, conductor)).status).toBe(200);
+
+    const plain = await send(crew, { id: newId(), drinkKind: '' });
+    expect(plain.status).toBe(200);
+    const promoted = await patch(`/api/collections/media/records/${plain.body.id}`, { drink_kind: 'beer' }, conductor);
+    expect(promoted.status).toBe(400);
+    expect((await promoted.json()).message).toBe('Proof_locked.');
+  });
+
+  it('plain Freight is unchanged', async () => {
+    const drinks = await drinkCount();
+    const photo = await send(crew, { drinkKind: '', stop: strayStop });
+    expect(photo.status).toBe(200);
+    expect(photo.body).toMatchObject({ drink_kind: '', stop: '', tagged_by: 'none' });
+    const video = await send(crew, { drinkKind: '', kind: 'video', bytes: MP4, type: 'video/mp4', name: 'clip.mp4' });
+    expect(video.status).toBe(200);
+    expect(video.body).toMatchObject({ kind: 'video', stop: stopId });
+    expect(await exists('drink_entries', photo.body.id)).toBe(false);
+    expect(await drinkCount()).toBe(drinks);
+    expect((await patch(`/api/collections/media/records/${photo.body.id}`, { stop: stopId, tagged_by: 'manual' }, conductor)).status).toBe(200);
   });
 });

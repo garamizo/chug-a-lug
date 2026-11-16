@@ -197,7 +197,7 @@ it('crew access can be rolled back and applied again', async () => {
     const run = (...args: string[]) => execFileSync(resolve('../pocketbase/pocketbase'), ['migrate', ...args, '--dir', join(dir, 'data'),
       '--migrationsDir', migrations, '--hooksDir', hooks], { encoding: 'utf8', timeout: 15000, input: 'y\n', stdio: 'pipe', env: { ...process.env, CONDUCTOR_EMAIL: 'conductor@test.invalid' } });
     run('up');
-    const down = run('down', '5');
+    const down = run('down', '6');
     expect(down).toContain('Reverted 1759100001_retire_boarding');
     expect(down).toContain('Reverted 1759100000_join_link');
     expect(down).toContain('Reverted 1759000000_password_sign_in');
@@ -231,7 +231,7 @@ it('password sign-in applies its settings, rolls back keeping history, and appli
     const run = (...args: string[]) => execFileSync(resolve('../pocketbase/pocketbase'), ['migrate', ...args, '--dir', join(dir, 'data'),
       '--migrationsDir', migrations, '--hooksDir', hooks], { encoding: 'utf8', timeout: 15000, input: 'y\n', stdio: 'pipe', env: { ...process.env, CONDUCTOR_EMAIL: 'conductor@test.invalid' } });
     expect(run('up')).toContain('1759000001_check_up');
-    expect(run('down', '5')).toContain('Reverted 1759000000_password_sign_in');
+    expect(run('down', '6')).toContain('Reverted 1759000000_password_sign_in');
     // An older, unapplied file runs first on the next `up`, so it sees the rolled-back state.
     await writeFile(join(migrations, '1758999999_check_down.js'), `migrate(app => {
       const u = app.findCollectionByNameOrId('users');
@@ -286,7 +286,7 @@ it('join link adds its collections and rolls back', async () => {
     const run = (...args: string[]) => execFileSync(resolve('../pocketbase/pocketbase'), ['migrate', ...args, '--dir', join(dir, 'data'),
       '--migrationsDir', migrations, '--hooksDir', hooks], { encoding: 'utf8', timeout: 15000, input: 'y\n', stdio: 'pipe', env: { ...process.env, CONDUCTOR_EMAIL: 'conductor@test.invalid' } });
     expect(run('up')).toContain('1759100000_zcheck_up');
-    const down = run('down', '4');
+    const down = run('down', '5');
     expect(down).toContain('Reverted 1759100001_retire_boarding');
     expect(down).toContain('Reverted 1759100000_zcheck_up');
     expect(down).toContain('Reverted 1759100000_join_link');
@@ -365,7 +365,7 @@ it('retire boarding drops the queue and survives a log row pointing at a request
     const run = (...args: string[]) => execFileSync(resolve('../pocketbase/pocketbase'), ['migrate', ...args, '--dir', join(dir, 'data'),
       '--migrationsDir', migrations, '--hooksDir', hooks], { encoding: 'utf8', timeout: 15000, input: 'y\n', stdio: 'pipe', env: { ...process.env, CONDUCTOR_EMAIL: 'conductor@test.invalid' } });
     expect(run('up')).toContain('1759100001_zcheck_retire');
-    const down = run('down', '3');
+    const down = run('down', '4');
     expect(down).toContain('Reverted 1759100001_zcheck_retire');
     expect(down).toContain('Reverted 1759100001_retire_boarding');
     // Unapplied and older than retire, so the next `up` runs it first, on the rolled-back schema.
@@ -423,5 +423,65 @@ it('the run-home migration backfills Aurora where there was no Board at station 
     const output = execFileSync(resolve('../pocketbase/pocketbase'), ['migrate', 'up', '--dir', join(dir, 'data'),
       '--migrationsDir', migrations, '--hooksDir', hooks], { encoding: 'utf8', timeout: 15000 });
     expect(output).toContain('1759200500_verify_run_home');
+  } finally { await rm(dir, { recursive: true, force: true }); }
+});
+
+it('photo Tab pairs a drink with its photo and rolls back', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'chugalug-phototab-'));
+  try {
+    const migrations = join(dir, 'migrations'), hooks = join(dir, 'hooks');
+    await mkdir(migrations); await mkdir(hooks);
+    for (const name of await readdir('../pocketbase/pb_migrations')) await copyFile(`../pocketbase/pb_migrations/${name}`, join(migrations, name));
+    // Sorts after 1759300000_photo_tab.js, so it runs after the migration under test.
+    await writeFile(join(migrations, '1759300000_zcheck_up.js'), `migrate(app => {
+      const media = app.findCollectionByNameOrId('media');
+      const kind = media.fields.getByName('drink_kind');
+      if (!kind || kind.type() !== 'select' || kind.required || kind.maxSelect !== 1) throw new Error('media.drink_kind');
+      if (JSON.stringify(kind.values) !== JSON.stringify(['beer', 'cocktail', 'shot', 'water', 'food'])) throw new Error('drink_kind values ' + JSON.stringify(kind.values));
+      const drinks = app.findCollectionByNameOrId('drink_entries');
+      const rel = drinks.fields.getByName('media');
+      if (!rel || rel.type() !== 'relation' || rel.collectionId !== media.id || rel.maxSelect !== 1 || rel.required || !rel.cascadeDelete) throw new Error('drink_entries.media');
+      if (!drinks.indexes.some((i) => i.includes('UNIQUE') && i.includes('idx_drinks_media'))) throw new Error('unique index');
+      // Two drinks cannot share a photo; any number of legacy drinks have none. Seeded on the first
+      // run only: the second \`up\` runs this again over the rolled-back rows.
+      let seeded = true; try { app.findRecordById('drink_entries', 'legacydrink0001') } catch (_) { seeded = false }
+      if (seeded) return;
+      const u = new Record(app.findCollectionByNameOrId('users'));
+      u.set('name', 'Proof'); u.set('name_key', 'proof'); u.set('email', 'proof@test.invalid'); u.setPassword('legacy-password-only'); app.save(u);
+      const it = new Record(app.findCollectionByNameOrId('itineraries'));
+      it.set('title', 'Proof'); it.set('title_key', 'proof'); it.set('status', 'draft'); it.set('event_date', '2026-12-26');
+      it.set('start_time', '11:00'); it.set('created_by', u.id); app.save(it);
+      const stop = new Record(app.findCollectionByNameOrId('stops'));
+      stop.set('itinerary', it.id); stop.set('name', 'Proof'); stop.set('station_id', 'CUS'); app.save(stop);
+      const m = new Record(media);
+      m.set('id', 'proofmedia00001'); m.set('user', u.id); m.set('kind', 'image'); m.set('drink_kind', 'beer');
+      m.set('file', 'proof_abc123.jpg'); app.saveNoValidate(m);
+      let order = 1000;
+      const drink = (id, photo) => {
+        const d = new Record(drinks);
+        d.set('id', id); d.set('user', u.id); d.set('stop', stop.id); d.set('kind', 'beer');
+        d.set('at', '2026-12-26T18:00:00Z'); d.set('media', photo); d.set('action_order', ++order); app.save(d);
+      };
+      drink('legacydrink0001', ''); drink('legacydrink0002', ''); drink('proofmedia00001', 'proofmedia00001');
+      let shared = true; try { drink('proofdrink00002', 'proofmedia00001') } catch (_) { shared = false }
+      if (shared) throw new Error('two drinks share a photo');
+    }, app => {})`);
+    const run = (...args: string[]) => execFileSync(resolve('../pocketbase/pocketbase'), ['migrate', ...args, '--dir', join(dir, 'data'),
+      '--migrationsDir', migrations, '--hooksDir', hooks], { encoding: 'utf8', timeout: 15000, input: 'y\n', stdio: 'pipe', env: { ...process.env, CONDUCTOR_EMAIL: 'conductor@test.invalid' } });
+    expect(run('up')).toContain('1759300000_zcheck_up');
+    const down = run('down', '2');
+    expect(down).toContain('Reverted 1759300000_zcheck_up');
+    expect(down).toContain('Reverted 1759300000_photo_tab');
+    // Unapplied and older than photo_tab, so the next `up` runs it first, on the rolled-back schema.
+    await writeFile(join(migrations, '1759299999_check_down.js'), `migrate(app => {
+      if (app.findCollectionByNameOrId('media').fields.getByName('drink_kind')) throw new Error('drink_kind kept');
+      const drinks = app.findCollectionByNameOrId('drink_entries');
+      if (drinks.fields.getByName('media')) throw new Error('drink_entries.media kept');
+      if (drinks.indexes.some((i) => i.includes('idx_drinks_media'))) throw new Error('index kept');
+      if (!app.findRecordById('drink_entries', 'proofmedia00001')) throw new Error('drink lost');
+    }, app => {})`);
+    const again = run('up');
+    expect(again).toContain('1759299999_check_down');
+    expect(again).toContain('1759300000_photo_tab');
   } finally { await rm(dir, { recursive: true, force: true }); }
 });

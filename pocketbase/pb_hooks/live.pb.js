@@ -4,8 +4,30 @@
 // Freight: the client sends the stop its board is showing. Trust it only when that stop belongs
 // to the current route; a photo is never lost over a tagging disagreement. Every photo is filed
 // under the current route, so the chat shows the ones taken before or after the crawl too.
+// A photo carrying `drink_kind` is a Tab proof, and stricter: it must be a photo (judged by its
+// bytes, not its name or the client's `kind`) taken at a stop of the current route.
 onRecordCreateRequest((e) => {
   const r = e.record
+  const proof = !!r.getString('drink_kind')
+  if (proof) {
+    // JPEG, PNG, GIF, WebP and HEIC/HEIF, by their leading bytes.
+    const isPhoto = (b) => {
+      const at = (i, s) => [...s].every((c, k) => b[i + k] === c.charCodeAt(0))
+      if (b[0] === 0xff && b[1] === 0xd8 && b[2] === 0xff) return true
+      if (b[0] === 0x89 && at(1, 'PNG\r\n\x1a\n')) return true
+      if (at(0, 'GIF87a') || at(0, 'GIF89a')) return true
+      if (at(0, 'RIFF') && at(8, 'WEBP')) return true
+      return at(4, 'ftyp') && ['heic', 'heix', 'heim', 'heis', 'hevc', 'hevx', 'mif1', 'msf1'].some((brand) => at(8, brand))
+    }
+    const file = r.getUnsavedFiles('file')[0]
+    let head = []
+    if (file) {
+      const reader = file.reader.open()
+      try { head = toBytes(reader, 16) } finally { reader.close() }
+    }
+    // No file at all is left to the required field, as for any photo.
+    if (r.getString('kind') !== 'image' || (file && !isPhoto(head))) throw new BadRequestError('proof_needs_image')
+  }
   const isCrew = !!e.auth && !e.auth.isSuperuser()
   if (isCrew) r.set('user', e.auth.id)
   const current = require(`${__hooks}/current.js`).currentItineraryId($app) || ''
@@ -21,6 +43,8 @@ onRecordCreateRequest((e) => {
   }
   if (ok) {
     if (r.getString('tagged_by') !== 'manual') r.set('tagged_by', 'clock')
+  } else if (proof) {
+    throw new BadRequestError('proof_needs_stop')
   } else {
     r.set('stop', '')
     r.set('tagged_by', 'none')
@@ -28,6 +52,60 @@ onRecordCreateRequest((e) => {
   r.set('at', require(`${__hooks}/clock.js`).eventNow(e.app))
   e.next()
 }, 'media')
+
+// A proof's drink is written with it or not at all: one transaction around the photo's save chain
+// and the drink's (see action_order.pb.js, which numbers the drink inside the same transaction).
+// The drink takes the photo's id, so a resent photo is refused as a duplicate and never counts twice.
+onRecordCreate((e) => {
+  const kind = e.record.getString('drink_kind')
+  if (!kind) return e.next()
+  const original = e.app
+  try {
+    original.runInTransaction((tx) => {
+      e.app = tx
+      e.next()
+      const m = e.record
+      const drink = new Record(tx.findCollectionByNameOrId('drink_entries'))
+      drink.set('id', m.id)
+      drink.set('user', m.getString('user'))
+      drink.set('stop', m.getString('stop'))
+      drink.set('kind', kind)
+      // A hook save skips the drinks' request stamping below, so the photo's time is copied over.
+      drink.set('at', m.getString('at'))
+      drink.set('media', m.id)
+      tx.save(drink)
+    })
+  } finally { e.app = original }
+}, 'media')
+
+// The pairing is fixed once made: no update may turn a photo into a proof, or change what a proof
+// is, whose it is, or where it was taken. Request-only, so a stop's delete can still clear `stop`.
+onRecordUpdateRequest((e) => {
+  const before = e.record.original()
+  const was = before.getString('drink_kind')
+  if (was || e.record.getString('drink_kind')) {
+    const changed = ['drink_kind', 'kind', 'file', 'user', 'stop', 'itinerary'].some((f) => e.record.getString(f) !== before.getString(f))
+    if (!was || changed || e.record.getUnsavedFiles('file').length) throw new BadRequestError('proof_locked')
+  }
+  e.next()
+}, 'media')
+
+// Deletes go through the drink: Undo, a stop or user cascade, or the Conductor deleting the photo
+// (which cascades here through drink_entries.media). The photo goes with its drink in the same
+// transaction; one already gone is fine, and a photo that cannot be deleted keeps the drink too.
+onRecordDelete((e) => {
+  const original = e.app
+  try {
+    original.runInTransaction((tx) => {
+      e.app = tx
+      e.next()
+      const photo = e.record.getString('media')
+      if (!photo) return
+      const found = tx.findRecordsByFilter('media', 'id = {:id}', '', 1, 0, { id: photo })
+      if (found.length) tx.delete(found[0])
+    })
+  } finally { e.app = original }
+}, 'drink_entries')
 
 // Bulletins are the Conductor's: the author is whoever is signed in, whatever the body claims.
 onRecordCreateRequest((e) => {
