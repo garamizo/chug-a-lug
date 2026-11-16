@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
-  advance, isPaused, nextSlide, pauseReel, prevSlide, progressOf, replayReel, resumeReel, skipSlide, startReel
+  advance, isPaused, isRunning, nextSlide, pauseReel, prevSlide, progressOf, replayReel, resumeReel, skipSlide, startReel
 } from '../../src/lib/live/reelPlayer';
 
 // Title 3 s, a photo 4.5 s, a message 4 s, the finale 6 s: the clock is a plain number of milliseconds.
@@ -97,5 +97,17 @@ describe('reel player', () => {
     r = replayReel(r, 10_000);
     expect(r).toMatchObject({ index: 0, done: false });
     expect(advance(r, 13_000).index).toBe(1);
+  });
+
+  it('runs (and so needs the frame clock) only while it plays: not paused, not on the finale', () => {
+    let r = startReel([1000, 1000], 0);
+    expect(isRunning(r)).toBe(true);
+    r = pauseReel(r, 500);
+    expect(isRunning(r)).toBe(false);
+    r = resumeReel(r, 600);
+    expect(isRunning(r)).toBe(true);
+    r = advance(advance(r, 1100), 2200);
+    expect(r.done).toBe(true);
+    expect(isRunning(r)).toBe(false);
   });
 });

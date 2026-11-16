@@ -1,13 +1,15 @@
 <script lang="ts">
   // The one composer: text, a tray of crawl emoji, gallery and camera pickers, and a round button
   // that is the camera until there is something to send. Pinned to the bottom of the page.
-  import { tick } from 'svelte';
+  import { onDestroy, tick } from 'svelte';
   import { copy } from '$lib/labels';
   import { CHAT_EMOJI, composerMode, draftAfterFailedSend, insertAt } from '$lib/chatBox';
   import IconButton from './IconButton.svelte';
 
-  let { onsend, onfiles, busy = false, mediaOff, status, maxlength = 280, placeholder, inputTestid, sendTestid, fileTestid, cameraTestid }: {
+  let { onsend, onfiles, onunsaved, busy = false, mediaOff, status, maxlength = 280, placeholder, inputTestid, sendTestid, fileTestid, cameraTestid }: {
     onsend: (text: string) => Promise<void>; onfiles?: (files: File[]) => Promise<void>; busy?: boolean;
+    /** Told whenever the box starts or stops holding something not yet sent: a draft, an open picker, a message in flight. */
+    onunsaved?: (unsaved: boolean) => void;
     /** Why photos are off right now; attach and camera are hidden while set. */
     mediaOff?: string;
     /** A short note under the box while something is under way (e.g. an upload). */
@@ -19,6 +21,10 @@
   let input: HTMLInputElement | undefined = $state(), gallery: HTMLInputElement | undefined = $state(), camera: HTMLInputElement | undefined = $state();
   const media = $derived(!!onfiles && !mediaOff);
   const mode = $derived(composerMode(text, media));
+  // A picker is open from its tap until it answers (a change or a cancel); a send is in flight until it settles.
+  let picking = $state(false), inFlight = $state(0);
+  $effect(() => { onunsaved?.(!!text.trim() || picking || inFlight > 0); });
+  onDestroy(() => onunsaved?.(false));
 
   async function send() {
     const body = text.trim();
@@ -27,9 +33,11 @@
     // Never clear it on completion — that would eat whatever was typed meanwhile. `onsend` throws
     // on failure, and the text comes back only into an empty box.
     text = '';
-    try { await onsend(body); } catch { text = draftAfterFailedSend(text, body); }
+    inFlight++;
+    try { await onsend(body); } catch { text = draftAfterFailedSend(text, body); } finally { inFlight--; }
   }
   async function pick(list: FileList | null) {
+    picking = false;
     const files = Array.from(list ?? []);
     if (files.length && onfiles) await onfiles(files);
   }
@@ -55,15 +63,15 @@
       <label class="sr" for={inputTestid}>{placeholder}</label>
       <input id={inputTestid} bind:this={input} bind:value={text} {maxlength} {placeholder} autocomplete="off" data-testid={inputTestid} />
       {#if media}
-        <IconButton icon="attach" size={34} label={copy.attachMedia} disabled={busy} onclick={() => gallery?.click()} testid="attach-media" />
+        <IconButton icon="attach" size={34} label={copy.attachMedia} disabled={busy} onclick={() => { picking = true; gallery?.click(); }} testid="attach-media" />
         <input class="file" bind:this={gallery} type="file" accept="image/*,video/*" multiple disabled={busy}
-          onchange={(e) => { void pick(e.currentTarget.files); e.currentTarget.value = ''; }} data-testid={fileTestid} />
+          onchange={(e) => { void pick(e.currentTarget.files); e.currentTarget.value = ''; }} oncancel={() => (picking = false)} data-testid={fileTestid} />
         <input class="file" bind:this={camera} type="file" accept="image/*" capture="environment" disabled={busy}
-          onchange={(e) => { void pick(e.currentTarget.files); e.currentTarget.value = ''; }} data-testid={cameraTestid} />
+          onchange={(e) => { void pick(e.currentTarget.files); e.currentTarget.value = ''; }} oncancel={() => (picking = false)} data-testid={cameraTestid} />
       {/if}
     </div>
     {#if mode === 'camera'}
-      <IconButton icon="camera" tone="primary" size={48} label={copy.takePhoto} disabled={busy} onclick={() => camera?.click()} testid="camera-button" />
+      <IconButton icon="camera" tone="primary" size={48} label={copy.takePhoto} disabled={busy} onclick={() => { picking = true; camera?.click(); }} testid="camera-button" />
     {:else}
       <IconButton type="submit" icon="send" tone="primary" size={48} label={copy.sendMessage} disabled={!text.trim()} testid={sendTestid} />
     {/if}

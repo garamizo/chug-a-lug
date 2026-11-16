@@ -10,10 +10,10 @@
   import { copy, drinkIcons, labels } from '$lib/labels';
   import { fmtDate, fmtTime } from '$lib/time';
   import { liveDay } from '$lib/live/day.svelte';
-  import { buildReel, REEL_DURATIONS, stopWindows, type Slide } from '$lib/live/reel';
-  import { closingKey, closingSession, closingStore, liveIsBehind } from '$lib/live/closing';
+  import { REEL_DURATIONS, slideText, type Slide } from '$lib/live/reel';
+  import { closingKey, closingSession, closingStore, leaveUnplayed, liveIsBehind } from '$lib/live/closing';
   import {
-    advance, isPaused, nextSlide, pauseReel, prevSlide, progressOf, replayReel, resumeReel, skipSlide, startReel, type ReelState
+    advance, isPaused, isRunning, nextSlide, pauseReel, prevSlide, progressOf, replayReel, resumeReel, skipSlide, startReel, type ReelState
   } from '$lib/live/reelPlayer';
   import { SPIKE_LABELS } from '$lib/live/spikes';
   import { DRINK_KINDS } from '$lib/live/tab';
@@ -42,14 +42,9 @@
     const closedAt = liveDay.closedAt, scope = liveDay.closingScope, route = liveDay.itinerary;
     if (!closedAt || !scope || !route) return;
     untrack(() => {
-      const feed = liveDay.feed;
-      const windows = stopWindows(liveDay.stops, liveDay.legs, liveDay.startAt, liveDay.now.getTime() - liveDay.realNow.getTime(), closedAt);
-      const slides = buildReel({
-        itineraryTitle: route.title, eventDate: route.event_date, stops: liveDay.stops, windows,
-        drinks: feed.drinks, media: feed.media, messages: feed.messages, reactions: feed.reactions,
-        spikes: liveDay.spikeEvents, date: liveDay.today, closedAt
-      });
-      const media = new Map(feed.media.map((m) => [m.id, m]));
+      const slides = liveDay.closingReel();
+      if (!slides) return;
+      const media = new Map(liveDay.feed.media.map((m) => [m.id, m]));
       const images = slides.map((s) => {
         if (s.kind === 'stop') return s.photo;
         const m = s.kind === 'photo' ? media.get(s.mediaId) : undefined;
@@ -112,7 +107,8 @@
     opener = document.activeElement;
     if (dialog && !dialog.open) dialog.showModal();
     let frame = requestAnimationFrame(function tick(now) {
-      t = now;
+      // The bars move only while it plays: paused or on the finale, nothing redraws.
+      if (play && isRunning(play)) t = now;
       if (play) { const next = advance(play, now); if (next !== play) play = next; }
       frame = requestAnimationFrame(tick);
     });
@@ -137,9 +133,13 @@
     clearTimeout(backTimer);
     clearTimeout(press?.timer);
     // Left before it played (✕, or Back while it was still loading): not shown, but not to be opened
-    // again by itself this session either.
-    const scope = liveDay.closingScope;
-    if (!reel && liveDay.closedAt !== null && scope) closingSession.left.add(closingKey(scope));
+    // again by itself this session either. Left before the route or clock was even known (a cold entry),
+    // the leave waits for the first night that resolves.
+    if (!reel) {
+      const scope = liveDay.closingScope;
+      leaveUnplayed(closingSession, liveDay.routeKnown && liveDay.clockKnown
+        ? { key: scope ? closingKey(scope) : null, closed: liveDay.closedAt !== null } : null);
+    }
     if (opener instanceof HTMLElement && opener.isConnected) opener.focus();
   });
 
@@ -172,6 +172,10 @@
     clearTimeout(p.timer);
     if (p.held && play) play = resumeReel(play, performance.now());
   }
+
+  // The buttons do what the taps and the hold do, for anyone who cannot see the thirds or hold a press.
+  const step = (to: typeof nextSlide) => { if (play) play = to(play, performance.now()); };
+  const togglePause = () => { if (play) play = isPaused(play) ? resumeReel(play, performance.now()) : pauseReel(play, performance.now()); };
 
   const drinkName = (k: string) => (copy as Record<string, string>)[`drink_${k}`] ?? k;
 </script>
@@ -245,6 +249,14 @@
         </div>
       {/key}
     </div>
+    <div class="controls">
+      <button type="button" aria-label={copy.closingPrevious} title={copy.closingPrevious} data-testid="reel-prev" onclick={() => step(prevSlide)}>‹</button>
+      <button type="button" aria-label={paused ? copy.closingResume : copy.closingPause} title={paused ? copy.closingResume : copy.closingPause}
+        data-testid="reel-pause" disabled={play.done} onclick={togglePause}>{paused ? '▶' : '❚❚'}</button>
+      <button type="button" aria-label={copy.closingNext} title={copy.closingNext} data-testid="reel-next" disabled={play.done} onclick={() => step(nextSlide)}>›</button>
+    </div>
+    <!-- What the slide says, for a screen reader: read as each slide comes up. -->
+    <p class="sr" aria-live="polite" data-testid="reel-announce">{slideText(slide)}</p>
     {#if slide.kind === 'finale'}
       <div class="end">
         <button type="button" class="secondary" data-testid="reel-replay" onclick={() => { if (play) play = replayReel(play, performance.now()); }}>{copy.closingReplay}</button>
@@ -275,6 +287,11 @@
   .reel::backdrop { background: #000; }
   .close { position: absolute; top: max(16px, env(safe-area-inset-top)); right: 12px; z-index: 3; width: 48px; height: 48px;
     margin: 0; padding: 0; border-radius: 50%; background: rgba(0, 0, 0, .6); color: #fff; border: 1px solid #555; }
+  .controls { position: absolute; top: max(16px, env(safe-area-inset-top)); left: 12px; z-index: 3; display: flex; gap: 8px; }
+  .controls button { width: 44px; height: 44px; margin: 0; padding: 0; border-radius: 50%; background: rgba(0, 0, 0, .6); color: #fff;
+    border: 1px solid #555; font-size: 1.1rem; line-height: 1; }
+  .controls button:disabled { opacity: .4; }
+  .sr { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
   .progress { position: absolute; top: max(6px, env(safe-area-inset-top)); left: 12px; right: 12px; z-index: 2; display: flex; gap: 4px; }
   .bar { flex: 1; height: 3px; border-radius: 2px; background: rgba(255, 255, 255, .3); overflow: hidden; }
   .fill { display: block; height: 100%; background: #fff; }

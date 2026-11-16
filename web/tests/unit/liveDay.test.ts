@@ -3,11 +3,14 @@ import type { Itinerary } from '$lib/types';
 
 const mocks = vi.hoisted(() => ({
   getList: vi.fn(), getFullList: vi.fn(), getOne: vi.fn(), filter: vi.fn((raw: string, _params: unknown) => raw),
+  /** The collection each getFullList call read, in call order. */
+  fullLists: [] as string[],
   resolve: vi.fn(), fetchDay: vi.fn(), fetchNext: vi.fn(), fetchAlerts: vi.fn(),
   callbacks: new Map<string, () => void>(), unsubs: [] as ReturnType<typeof vi.fn>[]
 }));
 vi.mock('$lib/pb', () => ({
-  pb: { collection: () => ({ getList: mocks.getList, getFullList: mocks.getFullList, getOne: mocks.getOne }), filter: mocks.filter, authStore: { record: { id: 'me' } } },
+  pb: { collection: (name: string) => ({ getList: mocks.getList, getOne: mocks.getOne,
+    getFullList: (...args: unknown[]) => { mocks.fullLists.push(name); return mocks.getFullList(...args); } }), filter: mocks.filter, authStore: { record: { id: 'me' } } },
   subscribe: (name: string, _filter: string, callback: () => void) => {
     mocks.callbacks.set(name, callback);
     const unsub = vi.fn(); mocks.unsubs.push(unsub); return unsub;
@@ -19,7 +22,7 @@ const { LiveDay } = await import('$lib/live/day.svelte');
 const { clientClock } = await import('$lib/sim/clock.svelte');
 
 beforeEach(() => {
-  vi.useFakeTimers(); vi.clearAllMocks(); mocks.callbacks.clear(); mocks.unsubs.length = 0;
+  vi.useFakeTimers(); vi.clearAllMocks(); mocks.callbacks.clear(); mocks.unsubs.length = 0; mocks.fullLists.length = 0;
   mocks.getList.mockResolvedValue({ items: [] });
 });
 afterEach(() => { vi.useRealTimers(); vi.restoreAllMocks(); });
@@ -249,6 +252,8 @@ describe('one day at a time', () => {
     }
     // Cheers too, by the server's event time: in a rehearsal `created` is wall time, on another day.
     expect(filters.map(([text]) => text)).not.toContainEqual(expect.stringContaining('created >='));
+    const reactions = mocks.getFullList.mock.calls[mocks.fullLists.indexOf('reactions')]?.[0] as { filter?: string } | undefined;
+    expect(reactions?.filter).toBe('itinerary = {:id} && at >= {:start} && at < {:end}');
   });
   it('limits Bulletins to the day, and acks to those Bulletins', async () => {
     mocks.getFullList.mockResolvedValueOnce([{ id: 'b1' }]).mockResolvedValueOnce([]);

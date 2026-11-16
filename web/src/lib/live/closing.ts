@@ -2,6 +2,8 @@
 // Chicago day and the simulation run; whether this phone has played it is a per-device marker like
 // the alert read markers in `seen.ts`, guarded the same way because a private window, cleared site
 // data or a blocked store all make localStorage throw.
+import type { Slide } from './reel';
+
 const SHOWN = 'chugalug.closingShown';
 
 export type ClosingScope = { itinerary: string; date: string; runId: string | null };
@@ -9,12 +11,19 @@ export type ClosingScope = { itinerary: string; date: string; runId: string | nu
 export const closingKey = (s: ClosingScope): string => `${s.itinerary}:${s.date}:${s.runId ?? ''}`;
 
 /**
- * Open the reel on its own only when it is ready, this phone has not played it, the user has not
- * already entered and left it this session, nothing else is open over Live and practice is not quiet.
+ * Open the reel on its own only when it is ready, the night has something in it, this phone has not
+ * played it, the user has not already entered and left it this session, nothing on Live is open or
+ * holding unsent work (`busy`) and practice is not quiet.
  */
-export function shouldAutoOpen(o: { ready: boolean; shown: boolean; leftThisSession: boolean; overlayOpen: boolean; quiet: boolean }): boolean {
-  return o.ready && !o.shown && !o.leftThisSession && !o.overlayOpen && !o.quiet;
+export function shouldAutoOpen(o: {
+  ready: boolean; eventful: boolean; shown: boolean; leftThisSession: boolean; busy: boolean; quiet: boolean;
+}): boolean {
+  return o.ready && o.eventful && !o.shown && !o.leftThisSession && !o.busy && !o.quiet;
 }
+
+/** The night left something to show: a photo, a message, a Golden Spike or a drink, not only the title, stops and finale. */
+export const eventfulReel = (slides: readonly Slide[]): boolean =>
+  slides.some((s) => s.kind === 'photo' || s.kind === 'message' || s.kind === 'spikes' || s.kind === 'drinks');
 
 /** Keys written this session: shared by every store, so an unwritable localStorage still opens it once. */
 const memory = new Set<string>();
@@ -47,8 +56,36 @@ export function closingStore(): { has(key: string): boolean; add(key: string): v
   };
 }
 
-/** In memory only: reels entered and left before they played, which must not open again this session. */
-export const closingSession: { left: Set<string> } = { left: new Set() };
+/**
+ * In memory only: reels entered and left before they played, which must not open again this session.
+ * `beforeKnown` is a leave from before the route or the clock was known (a cold entry closed while it
+ * loaded): the first night that resolves takes it.
+ */
+export type ClosingSession = { left: Set<string>; beforeKnown: boolean };
+export const closingSession: ClosingSession = { left: new Set(), beforeKnown: false };
+
+/**
+ * The reel closed before it played. `night` is what was known then: null while the route or the clock
+ * was still loading; otherwise its key (null with no route) and whether Closing Time had come. A reel
+ * left before Closing Time says nothing about the reel that comes later.
+ */
+export function leaveUnplayed(s: ClosingSession, night: { key: string | null; closed: boolean } | null): void {
+  if (night === null) { s.beforeKnown = true; return; }
+  if (night.key && night.closed) s.left.add(night.key);
+}
+
+/**
+ * Whether this night's reel was left unplayed this session. A leave from before anything was known is
+ * settled by the first night asked about: it counts for that night if Closing Time had come, and is
+ * dropped otherwise.
+ */
+export function leftThisSession(s: ClosingSession, key: string, closed: boolean): boolean {
+  if (s.beforeKnown) {
+    s.beforeKnown = false;
+    if (closed) s.left.add(key);
+  }
+  return s.left.has(key);
+}
 
 /**
  * Whether the history entry before the reel is Live, so closing it may go back: the reel was opened from

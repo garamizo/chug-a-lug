@@ -13,7 +13,7 @@
   import { liveDay } from '$lib/live/day.svelte';
   import { compressForUpload, uploadBatch } from '$lib/live/upload';
   import { openStop, sheetStopId } from '$lib/nav';
-  import { closingKey, closingSession, closingStore, shouldAutoOpen } from '$lib/live/closing';
+  import { closingKey, closingSession, closingStore, eventfulReel, leftThisSession, shouldAutoOpen } from '$lib/live/closing';
   import { stripStops } from '$lib/live/strip';
   import { clockFailure, sameScope, sendProof, type ProofScope, type ProofSend, type ProofTap } from '$lib/live/proof';
   import { drinkCount } from '$lib/live/crew';
@@ -27,7 +27,7 @@
   import TabRow from '$lib/components/TabRow.svelte';
   import TabSheet from '$lib/components/TabSheet.svelte';
   import { ui } from '$lib/ui.svelte';
-  import { onDestroy, tick } from 'svelte';
+  import { onDestroy, onMount, tick } from 'svelte';
   import FreightStrip from '$lib/components/FreightStrip.svelte';
   import Leaderboard from '$lib/components/Leaderboard.svelte';
 
@@ -76,10 +76,13 @@
   // the picker is modal, so at most one tap is waiting for its photo.
   let camera = $state<HTMLInputElement>();
   let tapped: ProofTap | null = null;
+  /** The Tab's camera is open: from the tap until it answers with a photo or a cancel. */
+  let picking = $state(false);
   function tap(kind: DrinkKind) {
     const stop = tabStop, at = scope;
     if (!stop || !at || !camera) return;
     tapped = { kind, stop: stop.id, scope: at };
+    picking = true;
     navigator.vibrate?.(30);
     camera.value = '';
     camera.click();   // from the click itself, so phones open the camera
@@ -88,6 +91,7 @@
   function picked() {
     const photo = camera?.files?.[0], t = tapped;
     tapped = null;
+    picking = false;
     if (camera) camera.value = '';
     if (photo && t) {
       // The new photo is on its way: the last drink's Undo must not stay live while it compresses.
@@ -187,20 +191,40 @@
   }
 
   // Closing Time: once the train home has arrived, a card plays the night's reel, and the first time this
-  // phone is on Live with the whole night's feed in, the reel opens by itself. Not over anything open on
-  // Live, not again once it has played here, and not again this session once someone left it unplayed.
+  // phone is on Live with the whole night's feed in, the reel opens by itself if the night has anything in
+  // it. Not again once it has played here, not again this session once someone left it unplayed, and
+  // never while Live is `busy`: leaving Live unmounts it, so nothing may be open over it or still unsent
+  // in it, and a Golden Spike card on screen (Caboose arrives at Closing Time itself) plays out first.
   const closings = closingStore();
   let playButton = $state<HTMLButtonElement>();
   let autoOpening = false;
-  const overlayOpen = $derived(!!sheetStopId() || !!page.state.lightbox || ui.tabOpen || liveDay.composing || ui.menuOpen);
-  $effect(() => {
+  /** The chat box holds a draft, an open picker or a message in flight. */
+  let chatUnsaved = $state(false);
+  /** A text field has the focus: someone is typing, whatever the box holds. */
+  let typing = $state(false);
+  const NOT_TEXT = new Set(['button', 'checkbox', 'color', 'file', 'hidden', 'image', 'radio', 'range', 'reset', 'submit']);
+  const isTextField = (el: EventTarget | Element | null) => el instanceof HTMLTextAreaElement
+    || (el instanceof HTMLInputElement && !NOT_TEXT.has(el.type)) || (el instanceof HTMLElement && el.isContentEditable);
+  const trackFocus = (e: FocusEvent) => { typing = isTextField(e.type === 'focusin' ? e.target : e.relatedTarget); };
+  onMount(() => { typing = isTextField(document.activeElement); });
+  const busy = $derived(!!sheetStopId() || !!page.state.lightbox || ui.tabOpen || liveDay.composing || ui.menuOpen || ui.celebrating
+    || typing || chatUnsaved || picking || uploading || sending.length > 0 || retries.length > 0);
+  function autoOpen(): boolean {
     const scope = liveDay.closingScope;
-    if (!scope || autoOpening) return;
+    if (!scope) return false;
     const key = closingKey(scope);
     // Live is never quiet: practice interrupts only the screen that is practising, and this is that screen.
-    if (!shouldAutoOpen({ ready: liveDay.reelReady, shown: closings.has(key), leftThisSession: closingSession.left.has(key), overlayOpen, quiet: false })) return;
+    const now = { ready: liveDay.reelReady, shown: closings.has(key), busy, quiet: false,
+      leftThisSession: leftThisSession(closingSession, key, liveDay.closedAt !== null) };
+    // The reel is worked out only once everything else says go.
+    return shouldAutoOpen({ ...now, eventful: true }) && shouldAutoOpen({ ...now, eventful: eventfulReel(liveDay.closingReel() ?? []) });
+  }
+  $effect(() => {
+    // Asked before the guard, so every input is tracked and any of them changing asks again.
+    if (!autoOpen() || autoOpening) return;
     autoOpening = true;
-    void goto('/live/closing').finally(() => { autoOpening = false; });
+    // Once this update has settled (a celebration card starting in it, say), ask once more before leaving.
+    void tick().then(() => (autoOpen() ? goto('/live/closing') : undefined)).finally(() => { autoOpening = false; });
   });
   // Back from the reel: Play takes the focus the reel had.
   afterNavigate((nav) => {
@@ -234,6 +258,7 @@
 </script>
 
 <svelte:head><title>{copy.live}</title></svelte:head>
+<svelte:document onfocusin={trackFocus} onfocusout={trackFocus} />
 
 {#if liveDay.fromMirror && liveDay.mirrorSavedAt}
   <p class="stale" data-testid="mirror-notice">{copy.showingMirror} {mirrorSavedWhen(liveDay.mirrorSavedAt, liveDay.wallNow)}.</p>
@@ -289,7 +314,7 @@
     </div>
   {/if}
 {/snippet}
-<input bind:this={camera} type="file" accept="image/*" capture="environment" hidden onchange={picked} oncancel={() => (tapped = null)} data-testid="tab-camera" />
+<input bind:this={camera} type="file" accept="image/*" capture="environment" hidden onchange={picked} oncancel={() => { tapped = null; picking = false; }} data-testid="tab-camera" />
 {#if ui.tabOpen && liveDay.hasRoute}
   <TabSheet onclose={() => (ui.tabOpen = false)}>
     <!-- Counts read saved rows only. Undo my last one stays hidden while a photo is sending, so it is
@@ -307,7 +332,7 @@
 <Leaderboard {leaders} />
 
 {#if liveDay.itinerary && $auth.user}<CrewChat itineraryId={liveDay.itinerary.id} userId={$auth.user.id}
-  onfiles={(files) => upload(files)} {uploading} {uploadError} />{/if}
+  onfiles={(files) => upload(files)} onunsaved={(u) => (chatUnsaved = u)} {uploading} {uploadError} />{/if}
 
 {#if liveDay.itinerary}
   <StopSheet stops={liveDay.stops} media={liveDay.feed.media} eventDate={liveDay.itinerary.event_date}

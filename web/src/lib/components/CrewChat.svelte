@@ -16,8 +16,10 @@
   import { HoldMenu } from '$lib/live/holdMenu.svelte';
   import ChatBox from './ChatBox.svelte';
 
-  let { itineraryId, userId, onfiles, uploading = false, uploadError = '' }: {
+  let { itineraryId, userId, onfiles, onunsaved, uploading = false, uploadError = '' }: {
     itineraryId: string; userId: string;
+    /** Whether the chat box holds something not yet sent (see ChatBox). */
+    onunsaved?: (unsaved: boolean) => void;
     /** Photos from the chat box; Live files them under the open Tab stop, if there is one. */
     onfiles?: (files: File[]) => Promise<void>; uploading?: boolean;
     /** Why the last photo batch did not all send; shown beside the box that sent it. */
@@ -128,7 +130,7 @@
   </div>
   {#if error}<p role="status">{error}</p>{/if}
   {#if uploadError}<p role="alert" class="upload-error">{uploadError}</p>{/if}
-  <ChatBox onsend={send} {onfiles} busy={uploading} status={uploading ? copy.uploading : undefined} maxlength={280} placeholder={copy.messagePlaceholder}
+  <ChatBox onsend={send} {onfiles} {onunsaved} busy={uploading} status={uploading ? copy.uploading : undefined} maxlength={280} placeholder={copy.messagePlaceholder}
     inputTestid="chat-input" sendTestid="chat-send" fileTestid="freight-input" cameraTestid="freight-camera" />
 </section>
 

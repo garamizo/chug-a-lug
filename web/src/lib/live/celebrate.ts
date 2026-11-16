@@ -19,8 +19,10 @@ const oldestFirst = (a: SpikeEvent, b: SpikeEvent) =>
 
 export class CelebrationQueue {
   private current: SpikeEvent | null = null;
+  /** The scope `current` is shown under: its mark is written when it finishes. */
+  private currentScope: CelebrationScope | null = null;
   private scope: string | null = null;
-  /** The store's marks, read once per scope (not on every clock tick) and kept up to date by `shown`. */
+  /** The store's marks, read once per scope (not on every clock tick) and kept up to date by `done`. */
   private marked: Set<string> | null = null;
   /** The head last checked against a fresh read of the store. */
   private checked: string | null = null;
@@ -30,7 +32,7 @@ export class CelebrationQueue {
   next(events: SpikeEvent[], scope: CelebrationScope | null, quiet: boolean): SpikeEvent | null {
     if (!scope || quiet) { this.reset(); return null; }
     if (this.scope !== scopeId(scope)) { this.reset(); this.scope = scopeId(scope); }
-    // Already started (and marked): it plays out, even if the feed is reloading or it was undone.
+    // Already started: it plays out, even if the feed is reloading or it was undone.
     if (this.current) return this.current;
     const since = this.deps.now().getTime() - CELEBRATION_WINDOW_MS;
     const fresh = this.marked === null;
@@ -45,19 +47,29 @@ export class CelebrationQueue {
     return head;
   }
 
-  /** The overlay started showing this event: mark it. */
+  /**
+   * The overlay started showing this event. It is not marked yet: a card cut short (quiet, a
+   * presentation over it, a scope change, a reload) comes back while it is still fresh.
+   */
   shown(event: SpikeEvent, scope: CelebrationScope): void {
-    const key = celebrationKey(scope, event);
-    this.deps.store.add(key);
     if (this.scope !== scopeId(scope)) { this.marked = null; this.scope = scopeId(scope); }
-    this.marked?.add(key);
     this.current = event;
+    this.currentScope = scope;
   }
 
-  /** The overlay finished or was dismissed: the next one may go. */
-  done(): void { this.current = null; }
+  /** The overlay played its full time or was dismissed: mark it, and the next one may go. */
+  done(): void {
+    if (this.current && this.currentScope) {
+      const key = celebrationKey(this.currentScope, this.current);
+      this.deps.store.add(key);
+      if (this.scope === scopeId(this.currentScope)) this.marked?.add(key);
+    }
+    this.current = null;
+    this.currentScope = null;
+  }
 
-  reset(): void { this.current = null; this.scope = null; this.marked = null; this.checked = null; }
+  /** Hides what is showing without marking it. */
+  reset(): void { this.current = null; this.currentScope = null; this.scope = null; this.marked = null; this.checked = null; }
 }
 
 /** `{key: marked at}` in localStorage, pruned on write; always mirrored in memory for the session. */

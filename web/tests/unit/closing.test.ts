@@ -1,5 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { closingKey, closingSession, closingStore, liveIsBehind, shouldAutoOpen } from '../../src/lib/live/closing';
+import {
+  closingKey, closingSession, closingStore, eventfulReel, leaveUnplayed, leftThisSession, liveIsBehind, shouldAutoOpen, type ClosingSession
+} from '../../src/lib/live/closing';
+import type { Slide } from '../../src/lib/live/reel';
 
 /** A localStorage stand-in; `fail` makes every call throw, as a private window can. */
 function stubStorage(fail = false) {
@@ -22,25 +25,44 @@ describe('closingKey', () => {
 });
 
 describe('shouldAutoOpen', () => {
-  const go = { ready: true, shown: false, leftThisSession: false, overlayOpen: false, quiet: false };
-  it('opens once the reel is ready, unwatched and nothing is in the way', () => {
+  const go = { ready: true, eventful: true, shown: false, leftThisSession: false, busy: false, quiet: false };
+  it('opens once the reel is ready, has something in it, is unwatched and nothing is in the way', () => {
     expect(shouldAutoOpen(go)).toBe(true);
   });
   it.each([
     ['not ready yet', { ready: false }],
+    ['the night has no drinks, photos or messages', { eventful: false }],
     ['already shown on this phone', { shown: true }],
     ['entered and left unplayed this session', { leftThisSession: true }],
-    ['a sheet, the Lightbox, the Tab or the composer is open', { overlayOpen: true }],
+    ['something on Live is open or holds unsent work', { busy: true }],
     ['practice quiet applies', { quiet: true }]
   ])('waits when %s', (_name, change) => {
     expect(shouldAutoOpen({ ...go, ...change })).toBe(false);
   });
   it('is false for every other combination too', () => {
-    const flags = ['ready', 'shown', 'leftThisSession', 'overlayOpen', 'quiet'] as const;
-    for (let mask = 0; mask < 32; mask++) {
+    const flags = ['ready', 'eventful', 'shown', 'leftThisSession', 'busy', 'quiet'] as const;
+    for (let mask = 0; mask < 64; mask++) {
       const o = Object.fromEntries(flags.map((f, i) => [f, !!(mask & (1 << i))])) as typeof go;
-      expect(shouldAutoOpen(o)).toBe(o.ready && !o.shown && !o.leftThisSession && !o.overlayOpen && !o.quiet);
+      expect(shouldAutoOpen(o)).toBe(o.ready && o.eventful && !o.shown && !o.leftThisSession && !o.busy && !o.quiet);
     }
+  });
+});
+
+describe('eventfulReel: is there a night to show?', () => {
+  const title: Slide = { kind: 'title', title: 'Night', date: '2026-12-26' };
+  const stop: Slide = { kind: 'stop', stopId: 's1', name: 'Bar', station: 'CUS', at: '', photo: null };
+  const finale: Slide = { kind: 'finale', holders: [], caboose: [], total: 0 };
+  it('not when the reel is only its title, stops and finale', () => {
+    expect(eventfulReel([title, stop, stop, finale])).toBe(false);
+    expect(eventfulReel([])).toBe(false);
+  });
+  it.each<[string, Slide]>([
+    ['a photo', { kind: 'photo', mediaId: 'm1', cheers: 0, author: 'Ana', caption: 'Ana' }],
+    ['a message', { kind: 'message', messageId: 'c1', body: 'hi', author: 'Ana', cheers: 1 }],
+    ['a Golden Spike', { kind: 'spikes', events: [] }],
+    ['drinks', { kind: 'drinks', stopId: 's1', counts: { beer: 1 } as never }]
+  ])('when it has %s', (_name, slide) => {
+    expect(eventfulReel([title, stop, slide, finale])).toBe(true);
   });
 });
 
@@ -99,6 +121,36 @@ describe('closingSession', () => {
     closingSession.left.add('r1:2026-12-26:');
     expect(closingSession.left.has('r1:2026-12-26:')).toBe(true);
     closingSession.left.clear();
+  });
+});
+
+describe('leaving the reel before it played', () => {
+  const fresh = (): ClosingSession => ({ left: new Set(), beforeKnown: false });
+  it('with the night known and Closing Time come: that night stays closed this session', () => {
+    const s = fresh();
+    leaveUnplayed(s, { key: 'r1:d:', closed: true });
+    expect(leftThisSession(s, 'r1:d:', true)).toBe(true);
+    expect(leftThisSession(s, 'r2:d:', true)).toBe(false);
+  });
+  it('before Closing Time, or with no route: nothing is held against a later night', () => {
+    const s = fresh();
+    leaveUnplayed(s, { key: 'r1:d:', closed: false });
+    leaveUnplayed(s, { key: null, closed: false });
+    expect(leftThisSession(s, 'r1:d:', true)).toBe(false);
+  });
+  it('while the route or clock was still loading: the first night to resolve takes the leave, if it had closed', () => {
+    const s = fresh();
+    leaveUnplayed(s, null);
+    expect(leftThisSession(s, 'r1:d:', true)).toBe(true);
+    // Settled once: it does not carry over to another night.
+    expect(leftThisSession(s, 'r1:d:', true)).toBe(true);
+    expect(leftThisSession(s, 'r2:d:', true)).toBe(false);
+  });
+  it('while loading, then the night resolves before Closing Time: the leave is dropped', () => {
+    const s = fresh();
+    leaveUnplayed(s, null);
+    expect(leftThisSession(s, 'r1:d:', false)).toBe(false);
+    expect(leftThisSession(s, 'r1:d:', true)).toBe(false);
   });
 });
 

@@ -100,6 +100,15 @@ dev (the PocketBase hook calls the SvelteKit server with that secret and URL aft
   image and the PocketBase restart together (`just up` plus `docker compose restart pocketbase`): old web
   against the new server makes every Tab tap fail, and new web against the old server saves photos
   without counting drinks. Each drink now adds a compressed photo (about 0.3-1 MB), so backups grow.
+- Closing Time's reel reads Cheers by the event clock: the migration `1759400000_reaction_time.js` adds
+  `reactions.at`, and the web filters the Live feed on it. **Order matters**: the new web against a PocketBase
+  without the migration gets a 400 on that filter, and because the feed reads drinks, Freight, chat and Cheers
+  together, the whole Live feed fails (No signal), not just Cheers. To deploy, restart PocketBase first
+  (`docker compose restart pocketbase`) and confirm the migration applied (the dashboard shows an `at` field
+  on `reactions`, and the `_migrations` table has a `1759400000_reaction_time.js` row), then `just up`.
+  To roll back, roll the web back first and only then migrate down (`down` drops `at`). Old web against the new
+  server is safe: `created` is still there. Existing Cheers are backfilled from `created`, which was the event
+  time outside a rehearsal.
 - Save calls `POST /api/plan/commit`. It reconciles the persisted stop ids before validating rideability
   from the anchor onward; impossible legs behind the crew do not block Save. A 409 "The Route changed"
   means reload and make the change again. Reconciliation checks stop membership, not a version of

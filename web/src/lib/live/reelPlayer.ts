@@ -30,6 +30,9 @@ export function startReel(durations: readonly number[], now: number): ReelState 
 
 export const isPaused = (s: ReelState): boolean => s.since === null && !s.done;
 
+/** Playing: neither paused nor ended, so the progress bar moves and needs the frame clock. */
+export const isRunning = (s: ReelState): boolean => s.since !== null;
+
 const elapsedOf = (s: ReelState, now: number): number => s.elapsed + (s.since === null ? 0 : Math.max(0, now - s.since));
 
 /** How much of the current slide has played, 0 to 1. */

@@ -39,17 +39,19 @@ describe('CelebrationQueue', () => {
     expect(q.next([ev('a', 1, 'other'), ev('b', 1)], SCOPE, false)?.id).toBe('b');
   });
 
-  it('shows oldest first, one at a time, and marks each when it starts', () => {
+  it('shows oldest first, one at a time, and marks each once it has played', () => {
     const { q, store } = setup(3);
     const events = [ev('late', 2), ev('early', 1)];
     const head = q.next(events, SCOPE, false)!;
     expect(head.id).toBe('early');
     expect(store.keys.size).toBe(0);
     q.shown(head, SCOPE);
-    expect([...store.keys]).toEqual([celebrationKey(SCOPE, head)]);
+    // Not while it is still on screen: only a card that played out or was dismissed counts as seen.
+    expect(store.keys.size).toBe(0);
     // While it shows, the queue keeps answering with it.
     expect(q.next(events, SCOPE, false)).toBe(head);
     q.done();
+    expect([...store.keys]).toEqual([celebrationKey(SCOPE, head)]);
     expect(q.next(events, SCOPE, false)?.id).toBe('late');
   });
 
@@ -111,8 +113,28 @@ describe('CelebrationQueue', () => {
     const a = q.next([ev('a', 1), ev('b', 1)], SCOPE, false)!;
     q.shown(a, SCOPE);
     expect(q.next([ev('a', 1), ev('b', 1)], SCOPE, true)).toBeNull();
-    // The hidden one was already marked; the next is still waiting once quiet ends.
+    // The hidden one had not played out: it is first again once quiet ends, and the next still waits behind it.
+    expect(play(q, [ev('a', 1), ev('b', 1)])?.id).toBe('a');
     expect(q.next([ev('a', 1), ev('b', 1)], SCOPE, false)?.id).toBe('b');
+  });
+
+  it('a card cut short by a presentation comes back afterwards, and is marked only once it has played', () => {
+    const { q, store, tick } = setup(1);
+    const caboose = ev('caboose', 1, 'me', 'caboose');
+    const head = q.next([caboose], SCOPE, false)!;
+    q.shown(head, SCOPE);
+    // The reel opens over it: quiet for as long as it plays.
+    expect(q.next([caboose], SCOPE, true)).toBeNull();
+    expect(store.keys.size).toBe(0);
+    tick(4);
+    expect(q.next([caboose], SCOPE, true)).toBeNull();
+    // Closed again, still inside the window: the card is back, from the start.
+    const again = q.next([caboose], SCOPE, false);
+    expect(again?.id).toBe('caboose');
+    q.shown(again!, SCOPE);
+    q.done();
+    expect([...store.keys]).toEqual([celebrationKey(SCOPE, caboose)]);
+    expect(q.next([caboose], SCOPE, false)).toBeNull();
   });
 
   it('a null scope (clock unknown, signed out) hides the current item', () => {
@@ -159,12 +181,19 @@ describe('CelebrationQueue', () => {
     expect(read).toHaveBeenCalledTimes(2);
   });
 
-  it('reset forgets what is showing', () => {
-    const { q } = setup(1);
+  it('reset forgets what is showing, without marking it', () => {
+    const { q, store } = setup(1);
     const a = q.next([ev('a', 1), ev('b', 1)], SCOPE, false)!;
     q.shown(a, SCOPE);
     q.reset();
-    expect(q.next([ev('a', 1), ev('b', 1)], SCOPE, false)?.id).toBe('b');
+    expect(store.keys.size).toBe(0);
+    expect(q.next([ev('a', 1), ev('b', 1)], SCOPE, false)?.id).toBe('a');
+  });
+
+  it('done with nothing showing marks nothing', () => {
+    const { q, store } = setup(1);
+    q.done();
+    expect(store.keys.size).toBe(0);
   });
 });
 

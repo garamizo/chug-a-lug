@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { toActivityClock } from '../../src/lib/live/current';
-import { buildReel, stopWindows, REEL_DURATIONS, type ReelInput } from '../../src/lib/live/reel';
+import { fmtTime } from '../../src/lib/time';
+import { buildReel, slideText, stopWindows, REEL_DURATIONS, type ReelInput } from '../../src/lib/live/reel';
 import type { SpikeEvent } from '../../src/lib/live/spikes';
 import type { ChatMessage, DrinkEntry, Leg, Media, Reaction, Stop } from '../../src/lib/types';
 
@@ -230,5 +231,19 @@ describe('buildReel', () => {
 
   it('has the durations', () => {
     expect(REEL_DURATIONS).toEqual({ title: 3000, stop: 3000, photo: 4500, message: 4000, spikes: 3500, drinks: 3000, finale: 6000 });
+  });
+});
+
+describe('slideText: what a screen reader hears for each slide', () => {
+  it('reads the words on the slide', () => {
+    expect(slideText({ kind: 'title', title: 'The Big Night', date: DATE })).toBe('Closing Time. The Big Night. Sat, Dec 26');
+    expect(slideText({ kind: 'stop', stopId: 'A', name: 'Bar A', station: 'Station A', at: T(18), photo: null }))
+      .toBe(`${fmtTime(T(18))}. Bar A. Station A`);
+    expect(slideText({ kind: 'photo', mediaId: 'p', cheers: 2, author: 'ANA', caption: 'ANA' })).toBe('ANA. 2 Cheers');
+    expect(slideText({ kind: 'message', messageId: 'm', body: 'Last round', author: 'ANA', cheers: 0 })).toBe('“Last round”. ANA');
+    expect(slideText({ kind: 'spikes', events: [spike('pathfinder', 19, 0)] })).toBe('Golden Spikes. Pathfinder · ANA');
+    expect(slideText({ kind: 'drinks', stopId: 'A', counts: { beer: 2, cocktail: 0, shot: 1, water: 0, food: 0, wine: 0 } })).toBe('1 Shot. 2 Beer');
+    expect(slideText({ kind: 'finale', holders: [], caboose: [spike('caboose', 23, 0)], total: 3 }))
+      .toBe('That’s the night. 3 drinks, all told. Caboose · ANA');
   });
 });

@@ -102,11 +102,15 @@ Goal: nobody misses a train, nobody is lost, and the plan can change without cha
   (most messages, from 5) and Railfan (most photos, from 3). They post to Crew chat, the winner sees a card once, and the
   Crew Board shows a laurel and count by each name.
 - **Closing Time** starts when the train home arrives. Live then shows a card that plays the night's highlight
-  reel. The reel opens by itself once on each phone, as soon as the whole night's feed has loaded, and never over
-  an open sheet, photo, Tab or Bulletin. It plays full screen like a story: the route's title, then each stop with
-  its most-Cheered photos (up to two), its most-Cheered message, the Golden Spikes won there and its drinks, then a
-  finale with the crew's total, the spikes held at the end and the Caboose. Tap right or left to skip, hold to
-  pause; ✕, Done or Back return to Live. Cheers are stamped by the server's clock, so a rehearsal counts them too.
+  reel. The reel opens by itself once on each phone, as soon as the whole night's feed has loaded and only if the
+  night had any drinks, photos or messages. It never opens over an open sheet, photo, Tab or Bulletin, over a Golden
+  Spike card (it waits for the Caboose card to play out), or over unsent work: a chat draft or a focused text field,
+  an open camera or photo picker, an upload, or Tab photos still sending or waiting for Retry. It plays full screen
+  like a story: the route's title, then each stop with its most-Cheered photos (up to two), its most-Cheered message,
+  the Golden Spikes won there and its drinks, then a finale with the crew's total, the spikes held at the end and the
+  Caboose. Tap right or left to skip, hold to pause, or use the Previous, Pause and Next buttons; a screen reader
+  hears each slide's words. ✕, Done or Back return to Live. Cheers are stamped by the server's clock, so a rehearsal
+  counts them too. A Golden Spike card cut short (by the reel, or by practice's quiet) comes back while it is fresh.
 - **The Tab** is a one-tap row of shot / cocktail / beer / non-alcoholic / food buttons in a sheet
   opened from the tab bar (from any screen it goes to Live first; X, a tap outside or Escape closes
   it, and it stays open between taps), with personal counters per drink and a running total for the day. A tap opens

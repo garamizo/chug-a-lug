@@ -159,10 +159,27 @@ test.describe.serial('Closing Time, the night end to end', () => {
     await page.keyboard.press(' ');
     await expect(reel).not.toHaveClass(/\bpaused\b/);
 
+    // The same by its labelled buttons, for a screen reader on a touch screen; the slide's words are announced.
+    const pauseByButton = async () => {
+      await reel.getByRole('button', { name: copy.closingPause, exact: true }).click();
+      await expect(reel).toHaveClass(/\bpaused\b/);
+      await expect(reel.getByRole('button', { name: copy.closingResume, exact: true })).toBeVisible();
+      return current(page);
+    };
+    at = SEQUENCE.indexOf(await pauseByButton());
+    await expect(reel.getByTestId('reel-announce')).not.toHaveText('');
+    await reel.getByRole('button', { name: copy.closingNext, exact: true }).click();
+    expect(await pauseByButton()).toBe(SEQUENCE[++at]);
+    await reel.getByRole('button', { name: copy.closingPrevious, exact: true }).click();
+    expect(await pauseByButton()).toBe(SEQUENCE[--at]);
+    await reel.getByRole('button', { name: copy.closingResume, exact: true }).click();
+    await expect(reel).not.toHaveClass(/\bpaused\b/);
+
     // The Cheered photo and message, then the finale.
     await expect(reel.getByTestId('reel-slide-photo')).toContainText(`1 ${copy.closingCheers}`, { timeout: 15_000 });
     await expect(reel.getByTestId('reel-slide-message')).toContainText(MESSAGE, { timeout: 15_000 });
     await expect(reel.getByTestId('reel-slide-message')).toContainText(`1 ${copy.closingCheers}`);
+    await expect(reel.getByTestId('reel-announce')).toContainText(MESSAGE);
     for (let i = 0; i < SEQUENCE.length && !(await reel.getByTestId('reel-slide-finale').isVisible()); i++) await page.keyboard.press('ArrowRight');
     await expect(reel.getByTestId('reel-slide-finale')).toContainText(copy.closingFinale);
     await expect(reel.getByTestId('reel-done')).toBeVisible();
@@ -236,6 +253,31 @@ test.describe.serial('Closing Time, the night end to end', () => {
     expect(await shownKeys(page)).toContain(closingKey());
   });
 
+  test('it waits while something on Live is being typed, then opens', async ({ page }) => {
+    test.setTimeout(60_000);
+    await login(page, TWO, CREW);
+    const release = await holdFeed(page);
+    await page.goto('/live');
+    const input = page.getByTestId('chat-input');
+    await input.fill('Half a thought');
+    await release();
+    await expect(page.getByTestId('crew-chat')).toContainText(MESSAGE);
+    await page.waitForTimeout(2000);
+    await expect(page).toHaveURL(/\/live$/);
+    await expect(input).toHaveValue('Half a thought');
+    // A draft holds it without the focus, and the focus holds it without a draft.
+    await input.blur();
+    await page.waitForTimeout(1500);
+    await expect(page).toHaveURL(/\/live$/);
+    await input.focus();
+    await input.fill('');
+    await page.waitForTimeout(1500);
+    await expect(page).toHaveURL(/\/live$/);
+    await input.blur();
+    await expect(page).toHaveURL(/\/live\/closing$/);
+    await expect(page.getByTestId('reel-slide-title')).toBeVisible();
+  });
+
   test('with the feed failing, Try again recovers, and reduced motion still plays', async ({ page }) => {
     test.setTimeout(60_000);
     await page.emulateMedia({ reducedMotion: 'reduce' });
@@ -251,6 +293,41 @@ test.describe.serial('Closing Time, the night end to end', () => {
     await expect(reel.getByTestId('reel-slide-title')).toBeVisible();
     // It plays on by itself.
     await expect(reel.getByTestId('reel-slide-stop')).toBeVisible({ timeout: 6000 });
+  });
+
+  test('on Live at Closing Time, the Caboose card plays out before the reel opens', async ({ page }) => {
+    test.setTimeout(60_000);
+    await login(page, ONE, CREW);
+    await page.goto('/live');
+    const card = page.getByTestId('spike-celebration');
+    await expect(card).toContainText(copy.spikeCaboose);
+    // Well into its time, the card is still there and the reel has waited.
+    await page.waitForTimeout(1500);
+    await expect(card).toContainText(copy.spikeCaboose);
+    await expect(page).toHaveURL(/\/live$/);
+    await expect(page).toHaveURL(/\/live\/closing$/, { timeout: 10_000 });
+    await expect(card).toHaveCount(0);
+    // It played out: closing the reel does not bring it back.
+    await page.getByTestId('reel-close').click();
+    await expect(page).toHaveURL(/\/live$/);
+    await page.waitForTimeout(1500);
+    await expect(card).toHaveCount(0);
+  });
+
+  test('a Golden Spike card cut short by Play comes back once the reel is closed', async ({ page }) => {
+    test.setTimeout(60_000);
+    await login(page, ONE, CREW);
+    await page.goto('/live');
+    const card = page.getByTestId('spike-celebration');
+    await expect(card).toContainText(copy.spikeCaboose);
+    // Play from the keyboard: the card sits over Live's top, where the Closing Time card is.
+    await page.getByTestId('closing-play').focus();
+    await page.keyboard.press('Enter');
+    await expect(page).toHaveURL(/\/live\/closing$/);
+    await expect(card).toHaveCount(0);
+    await page.getByTestId('reel-close').click();
+    await expect(page).toHaveURL(/\/live$/);
+    await expect(card).toContainText(copy.spikeCaboose);
   });
 
   test('a fresh Golden Spike waits until the reel is closed', async ({ page }) => {

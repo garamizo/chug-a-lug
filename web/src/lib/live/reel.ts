@@ -1,11 +1,11 @@
 // Closing Time's highlight reel, worked out from the night like Golden Spikes: nothing is stored, so every phone
 // replays the same rows into the same slides.
-import { copy, proofCaption } from '$lib/labels';
+import { copy, labels, proofCaption } from '$lib/labels';
 import { stopPhoto } from '$lib/photo';
-import { todayInTz } from '$lib/time';
+import { fmtDate, fmtTime, todayInTz } from '$lib/time';
 import { reactionSummary } from './chat';
 import { stopTimings, toActivityClock } from './current';
-import { ALCOHOL, HELD, type SpikeEvent, type SpikeKind } from './spikes';
+import { ALCOHOL, HELD, SPIKE_LABELS, type SpikeEvent, type SpikeKind } from './spikes';
 import { DRINK_KINDS } from './tab';
 import type { ChatMessage, DrinkEntry, DrinkKind, Leg, Media, Reaction, Stop } from '$lib/types';
 
@@ -110,4 +110,24 @@ export function buildReel(input: ReelInput): Slide[] {
   const total = drinks.filter((d) => ALCOHOL.has(d.kind)).length;
   slides.push({ kind: 'finale', holders, caboose, total });
   return slides;
+}
+
+const drinkName = (k: DrinkKind) => (copy as Record<string, string>)[`drink_${k}`] ?? k;
+const spikeLine = (e: SpikeEvent) => `${SPIKE_LABELS[e.kind].name} · ${e.name}`;
+const withCheers = (n: number) => (n ? [`${n} ${copy.closingCheers}`] : []);
+
+/** The words on a slide, in reading order: what the reel's live region says as each slide comes up. */
+export function slideText(s: Slide): string {
+  const parts: string[] = (() => {
+    switch (s.kind) {
+      case 'title': return [labels.wrapUpPhase, s.title, fmtDate(s.date)];
+      case 'stop': return [...(s.at ? [fmtTime(s.at)] : []), s.name, s.station];
+      case 'photo': return [s.caption, ...withCheers(s.cheers)];
+      case 'message': return [`“${s.body}”`, s.author, ...withCheers(s.cheers)];
+      case 'spikes': return [copy.spikeLaurel, ...s.events.map(spikeLine)];
+      case 'drinks': return DRINK_KINDS.filter((k) => s.counts[k] > 0).map((k) => `${s.counts[k]} ${drinkName(k)}`);
+      case 'finale': return [copy.closingFinale, `${s.total} ${copy.closingCrewTotal}`, ...[...s.holders, ...s.caboose].map(spikeLine)];
+    }
+  })();
+  return parts.filter(Boolean).join('. ');
 }

@@ -8,6 +8,7 @@ import { clearMirror, mirrorPayload, readMirror, saveMirror, scopeMirror } from 
 import { anchorOnEventDay } from '$lib/anchor';
 import { closingKey, type ClosingScope } from './closing';
 import { closingLeg, crawlEnd, currentStop, toActivityClock, type Current } from './current';
+import { buildReel, stopWindows, type Slide } from './reel';
 import { boardingJourney, pickTrip, plannedTrain, rideHome, type Boarding, type RideHome } from './board';
 import { fetchAlerts, fetchDay, fetchNext, fetchStatus } from './feed';
 import { isEventDay as onEventDate, planNow } from './planClock';
@@ -125,6 +126,20 @@ export class LiveDay {
     const scope = this.closingScope;
     return this.closedAt !== null && this.closingAsk !== null && !!scope && this.closingFor === closingKey(scope)
       && this.feedOk >= this.closingAsk;
+  }
+  /**
+   * Closing Time's reel from the feed as it stands: null before Closing Time or without a route. The
+   * reel takes it once, when it is ready; Live reads it to know whether the night has anything to show.
+   */
+  closingReel(): Slide[] | null {
+    const closedAt = this.closedAt, route = this.itinerary;
+    if (!closedAt || !route) return null;
+    const windows = stopWindows(this.stops, this.legs, this.startAt, this.now.getTime() - this.realNow.getTime(), closedAt);
+    return buildReel({
+      itineraryTitle: route.title, eventDate: route.event_date, stops: this.stops, windows,
+      drinks: this.feed.drinks, media: this.feed.media, messages: this.feed.messages, reactions: this.feed.reactions,
+      spikes: this.spikeEvents, date: this.today, closedAt
+    });
   }
   private resetClosing() { this.closingAsk = null; this.closingFor = null; }
   /**

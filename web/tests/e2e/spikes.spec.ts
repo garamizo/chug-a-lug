@@ -59,6 +59,8 @@ test('a Golden Spike posts to everyone, and only the winner sees it celebrated, 
     await expect(overlay).toBeVisible();
     await winner.getByTestId('tab-close').click({ timeout: 500 });
     await expect(winner.getByTestId('tab-sheet')).toBeHidden();
+    // A card counts as seen once it has played out (or been dismissed); one cut short comes back.
+    await expect(overlay).toHaveCount(0);
 
     await winner.reload();
     await expect(line(winner)).toBeVisible();

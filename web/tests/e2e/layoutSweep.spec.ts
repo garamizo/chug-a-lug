@@ -102,7 +102,11 @@ test('crew pages on the event day', async ({ page, browser }) => {
       { name: 'live, Tab open', open: async (p) => { await p.unroute('**/collections/media/records'); await openTab(p); }, ready: (p) => p.getByTestId('drink-beer') },
       // The first shot of the day is this crew member's Pathfinder: their phone celebrates it over the Tab.
       { name: 'live, Golden Spike celebration', open: async (p) => { await openTab(p); await tapDrink(p, 'shot'); }, ready: (p) => p.getByTestId('spike-celebration') },
-      { name: 'live, stop sheet', open: (p) => p.goto(`/live?stop=${ids.secondStopId}`), ready: (p) => p.getByTestId('sheet-name') },
+      // Escape dismisses the card, so it counts as seen: one cut short by the next page load would come back over it.
+      { name: 'live, stop sheet', open: async (p) => {
+          await p.keyboard.press('Escape'); await expect(p.getByTestId('spike-celebration')).toHaveCount(0);
+          await p.goto(`/live?stop=${ids.secondStopId}`);
+        }, ready: (p) => p.getByTestId('sheet-name') },
       // Lightbox stacks over StopSheet: two native modals, only the top one is checked.
       { name: 'live, photo over the stop sheet', open: (p) => openSheetPhoto(p), ready: (p) => p.getByTestId('lightbox') },
       // Mid-crawl the train home has not arrived: the reel's page says when it starts.

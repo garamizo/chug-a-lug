@@ -120,7 +120,7 @@
   <!-- The Tab opens from the tab bar, so a practice day's Live needs it too; practice stays off the other screens. -->
   {#if !presenting && (liveDay.isEventDay || (liveDay.practice && onLive))}<TabBar />{/if}
   <Lightbox />
-  <!-- Paused, not dropped, under the reel: its queue waits as it does for practice's quiet. -->
+  <!-- Paused, not dropped, under the reel: its queue waits as it does for practice's quiet, and a card cut short comes back. -->
   <SpikeCelebration scope={celebrationScope} quiet={quiet || presenting} />
   {#if liveDay.composing && !presenting}
     <BulletinSheet text="" onsend={(body) => void postBulletin(body)} onskip={() => (liveDay.composing = false)} ondismiss={() => (liveDay.composing = false)} />

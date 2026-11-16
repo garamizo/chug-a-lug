@@ -98,5 +98,9 @@ describe('labels', () => {
     expect(copy.closingCrewTotal).toBe('drinks, all told');
     expect(copy.closingCheers).toBe('Cheers');
     expect(copy.closingRetry).toBe('Try again');
+    expect(copy.closingPrevious).toBe('Previous');
+    expect(copy.closingNext).toBe('Next');
+    expect(copy.closingPause).toBe('Pause');
+    expect(copy.closingResume).toBe('Resume');
   });
 });

@@ -9,6 +9,7 @@
   import { liveDay } from '$lib/live/day.svelte';
   import { SPIKE_LABELS, type SpikeEvent } from '$lib/live/spikes';
   import { CelebrationQueue, celebrationStore, type CelebrationScope } from '$lib/live/celebrate';
+  import { ui } from '$lib/ui.svelte';
   import SpikeArt from './SpikeArt.svelte';
 
   let { scope, quiet }: { scope: CelebrationScope | null; quiet: boolean } = $props();
@@ -22,11 +23,14 @@
   let turn = $state(0);
   let timer: ReturnType<typeof setTimeout> | undefined;
 
+  // Hidden without `dismiss` (quiet, a presentation, a scope change): not marked, so it comes back.
   function hide() {
     clearTimeout(timer);
     timer = undefined;
     showing = null;
+    ui.celebrating = false;
   }
+  /** Played its full time, or the user dismissed it: the queue marks it as seen. */
   function dismiss() {
     if (!showing) return;
     queue.done();
@@ -45,6 +49,7 @@
       if (!head || !at) return;
       queue.shown(head, at);
       showing = last = head;
+      ui.celebrating = true;
       timer = setTimeout(dismiss, SHOW_MS);
     });
   });
@@ -62,7 +67,7 @@
     return () => window.removeEventListener('keydown', onkey, { capture: true });
   });
 
-  onDestroy(() => { clearTimeout(timer); queue.reset(); });
+  onDestroy(() => { clearTimeout(timer); queue.reset(); ui.celebrating = false; });
 </script>
 
 <!-- The live region is always there, so a screen reader hears the card when it fills in. -->
