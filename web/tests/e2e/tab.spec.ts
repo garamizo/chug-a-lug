@@ -365,6 +365,10 @@ test('the Tab offers five counters, each a camera; the tab bar opens it from any
   await expect(page.getByTestId('freight-camera')).toHaveAttribute('capture', 'environment');
   await tapDrink(page, 'beer');
   await expect(page.getByTestId('tab-toast')).toBeVisible();
+  // The day's first beer is this phone's Pathfinder: Escape closes its card before it closes the Tab.
+  await expect(page.getByTestId('spike-celebration')).toBeVisible();
+  await page.keyboard.press('Escape');
+  await expect(page.getByTestId('spike-celebration')).toHaveCount(0);
   await page.keyboard.press('Escape');
   await expect(page.getByTestId('tab-sheet')).toHaveCount(0);
   // The toast outlives the sheet, and the bar carries the day's count.

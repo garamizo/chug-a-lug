@@ -131,6 +131,18 @@ describe('CelebrationQueue', () => {
     expect(next?.id).toBe('a');
   });
 
+  it('reads the store once per scope, not on every pass, and still sees its own marks', () => {
+    const { q, store } = setup(1);
+    const read = vi.spyOn(store, 'read');
+    for (let i = 0; i < 5; i++) q.next([ev('a', 1)], SCOPE, false);
+    expect(read).toHaveBeenCalledTimes(1);
+    play(q, [ev('a', 1)]);
+    expect(q.next([ev('a', 1)], SCOPE, false)).toBeNull();
+    expect(read).toHaveBeenCalledTimes(1);
+    q.next([ev('a', 1)], { ...SCOPE, date: '2026-12-27' }, false);
+    expect(read).toHaveBeenCalledTimes(2);
+  });
+
   it('reset forgets what is showing', () => {
     const { q } = setup(1);
     const a = q.next([ev('a', 1), ev('b', 1)], SCOPE, false)!;

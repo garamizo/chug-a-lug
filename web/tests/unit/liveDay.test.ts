@@ -615,6 +615,14 @@ describe('the run home', () => {
       expect(day.here?.source).toBe('after');
       expect(day.closedAt).toBe(trainSeg.arr);
     });
+    it('is on the server\'s clock, the one activity rows are stamped with', () => {
+      const day = homeDay();
+      day.serverOffset = 90_000;
+      at(day, '2026-12-26T23:40:00Z');
+      expect(day.here?.source).toBe('after');
+      expect(Date.parse(day.closedAt!)).toBe(Date.parse(trainSeg.arr) + 90_000);
+      expect(Date.parse(day.closedAt!)).toBeLessThanOrEqual(day.serverNow.getTime());
+    });
     it('is null on a legacy route with no closing leg', () => {
       const day = homeDay();
       day.legs = [between] as never;

@@ -77,14 +77,15 @@ export class LiveDay {
    * Activity is stamped with real time while the timetable runs on plan time, so on a practice day
    * the plan-date arrival is shifted by the plan clock's own offset: "the crawl is over" and
    * "activity stops counting" flip at the same instant, with no wall-clock inverse to get wrong
-   * across a DST gap or fold. On the event day `now === realNow`, so this is the arrival itself.
+   * across a DST gap or fold. Rows carry the server's stamp, so the offset is taken to `serverNow`: on the
+   * event day, with the phone's clock in step with the server's, this is the arrival itself.
    */
   get closedAt(): string | null {
     if (this.here?.source !== 'after') return null;
     const closing = closingLeg(this.stops, this.legs);
     if (!closing || closing.kind === 'impossible') return null;
     const end = crawlEnd(this.stops, this.legs, this.startAt).at;
-    return end ? new Date(end.getTime() - (this.now.getTime() - this.realNow.getTime())).toISOString() : null;
+    return end ? new Date(end.getTime() - (this.now.getTime() - this.serverNow.getTime())).toISOString() : null;
   }
   /** What Golden Spikes are worked out from: chat, the Crew Board and the celebration all read the same night. */
   get spikeInput(): SpikeInput {

@@ -20,6 +20,8 @@ const oldestFirst = (a: SpikeEvent, b: SpikeEvent) =>
 export class CelebrationQueue {
   private current: SpikeEvent | null = null;
   private scope: string | null = null;
+  /** The store's marks, read once per scope (not on every clock tick) and kept up to date by `shown`. */
+  private marked: Set<string> | null = null;
   constructor(private deps: { now: () => Date; store: Store }) {}
 
   /** Recompute from the current timeline; returns the event to show now, or null. */
@@ -29,7 +31,7 @@ export class CelebrationQueue {
     // Already started (and marked): it plays out, even if the feed is reloading or it was undone.
     if (this.current) return this.current;
     const since = this.deps.now().getTime() - CELEBRATION_WINDOW_MS;
-    const done = this.deps.store.read();
+    const done = (this.marked ??= this.deps.store.read());
     return events
       .filter((e) => e.user === scope.user && Date.parse(e.at) >= since && !done.has(celebrationKey(scope, e)))
       .sort(oldestFirst)[0] ?? null;
@@ -37,15 +39,17 @@ export class CelebrationQueue {
 
   /** The overlay started showing this event: mark it. */
   shown(event: SpikeEvent, scope: CelebrationScope): void {
-    this.deps.store.add(celebrationKey(scope, event));
+    const key = celebrationKey(scope, event);
+    this.deps.store.add(key);
+    if (this.scope !== scopeId(scope)) { this.marked = null; this.scope = scopeId(scope); }
+    this.marked?.add(key);
     this.current = event;
-    this.scope = scopeId(scope);
   }
 
   /** The overlay finished or was dismissed: the next one may go. */
   done(): void { this.current = null; }
 
-  reset(): void { this.current = null; this.scope = null; }
+  reset(): void { this.current = null; this.scope = null; this.marked = null; }
 }
 
 /** `{key: marked at}` in localStorage, pruned on write; always mirrored in memory for the session. */
