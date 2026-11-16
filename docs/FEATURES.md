@@ -94,9 +94,13 @@ Goal: nobody misses a train, nobody is lost, and the plan can change without cha
   menu stays in the header. Opening the app lands on Live, but the logo still reaches Home. On a
   practice day Live shows the tab bar too, under the Practice strip. Stop sheets and the photo viewer close with the back
   gesture and never leave the screen underneath.
-- **Crew chat** merges Tab activity, Bulletins, Freight, computed milestones (firsts, crew totals, a
-  new leader, the first photo at each stop) and messages anyone can post (280 characters, own delete).
+- **Crew chat** merges Tab activity, Bulletins, Freight, computed milestones (crew totals, the first photo at
+  each stop), Golden Spikes and messages anyone can post (280 characters, own delete).
   Everyone can Cheers any entry once. Only Conductor Bulletins are pinned.
+- **Golden Spikes** are worked out from the night's Tab, messages and photos, never stored: Pathfinder (first of each
+  Tab kind), Big Boy (most drinks, from 3), Caboose (fewest, at Closing Time), Triple Header, Full Consist, Whistle Stop
+  (most messages, from 5) and Railfan (most photos, from 3). They post to Crew chat, the winner sees a card once, and the
+  Crew Board shows a laurel and count by each name.
 - **The Tab** is a one-tap row of shot / cocktail / beer / non-alcoholic / food buttons in a sheet
   opened from the tab bar (from any screen it goes to Live first; X, a tap outside or Escape closes
   it, and it stays open between taps), with personal counters per drink and a running total for the day. A tap opens

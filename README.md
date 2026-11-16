@@ -154,7 +154,7 @@ users see. Bars and restaurants keep their plain names.
 | Event log | **Train Sheet** | Rail, the dispatcher's log | |
 | Drink log | **Tab** | Bar | Opens as a sheet over Live from the tab bar's 🍻 Tab button; a drink counts once its photo lands, and the photo is Freight |
 | Scoreboard | **Hall of Fame** | Sports | |
-| Awards | **Golden Spikes** | Rail | |
+| Awards | **Golden Spikes** | Rail | Worked out from the night, never stored: Pathfinder, Big Boy, Caboose, Triple Header, Full Consist, Whistle Stop, Railfan; shown in Crew chat, as a laurel and count on the Crew Board, and as a card to the winner |
 | Media uploads | **Freight** | Rail | |
 | Album | **Roundhouse** | Rail | |
 | Simulation mode | **Shakedown Run** | Rail | |

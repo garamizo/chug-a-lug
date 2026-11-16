@@ -75,7 +75,7 @@ Board already ranks drinks for the day.
 - Album (Roundhouse) per stop, swipeable lightbox, download originals one by one or as a zip.
   Includes admin retagging of Freight (Decision 5).
 - Scoreboard (Hall of Fame): drinks per person, per stop, per drink type; stop likes.
-- Awards (Golden Spikes): a handful of computed ones plus admin-assigned ones.
+- Awards (Golden Spikes): the seven computed ones are done (chat, Crew Board laurels, winner's card); admin-assigned ones remain.
 
 **Nice to have**
 - Event log replay: a timeline of the day with photos placed on it.
