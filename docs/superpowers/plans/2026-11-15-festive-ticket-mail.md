@@ -3,7 +3,8 @@
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** The join link's boarding-code email looks like the app's gold ticket and carries the code in
-its subject; the app declares itself dark so phone browsers stop recolouring the header logo.
+its subject; the app declares itself dark, which is expected (not yet proven) to stop phone
+browsers recolouring the header logo.
 
 **Architecture:** A pure CommonJS hook module builds the mail object (`subject`, `text`, `html`);
 `join.js` uses it for both sends. The web app gains a `color-scheme: dark` declaration.
@@ -33,7 +34,8 @@ its subject; the app declares itself dark so phone browsers stop recolouring the
   resend mail.
 - A ticket wider than a 320px phone → Task 1 asserts `max-width:360px` with `width:100%` on the card.
 - Mail failure handling must not change (first-send failure deletes the sign-up; resend failure keeps
-  the cooldown) → covered by the existing `join.test.ts` cases; Task 2 must leave them green.
+  the cooldown). The existing `a failed resend can be retried` test backdates before retrying, so it
+  would miss a lost cooldown → Task 2 adds an immediate-retry 429 assertion to it.
 
 ---
 
@@ -79,17 +81,18 @@ its subject; the app declares itself dark so phone browsers stop recolouring the
 - Test: `web/tests/hooks/join.test.ts`
 
 **Interfaces:**
-- Consumes: `require(\`${__hooks}/ticketMail.js\`).codeMail` from Task 1. Require it inside the handler
-  functions, the way `join.js` already requires `crew.js` (JSVM handlers do not see module-scope
-  bindings from other files reliably; follow the file's existing pattern).
+- Consumes: `require(\`${__hooks}/ticketMail.js\`).codeMail` from Task 1, required the way `join.js`
+  already requires `crew.js` (repo convention).
 
 - [ ] **Step 1: Write the failing test** in `join.test.ts`, `it('the code mail is a ticket with the code in the subject, on send and resend')`:
   sign up; take the last mail to the address (`mails(email)`); its `subject` is
   `` `${code} is your Chug-a-Lug boarding code` `` where `code` comes from `/data-code[^>]*>(\d{6})</` on its `html`;
   its `text` equals the exact plain wording with that code. Then backdate `code_sent_at` past the
-  resend cooldown (as the existing `resend cooldown and count` test does), `resend`, and assert the
-  same three things on the newest mail with its own code, which differs from the first; and
-  `verify` with the resent code returns 200.
+  resend cooldown (`await backdate(s, 'code_sent_at', 61)`), `resend`, assert the mailbox now holds
+  two mails, and assert the same three things on the newest one with its own code (it may equal the
+  first: codes are random); `verify` with the resent code returns 200.
+  Also, in the existing `a failed resend can be retried` test: right after mail is restored and before
+  it backdates, an immediate `resend` answers 429 (the failed send still started the cooldown).
 
 - [ ] **Step 2: Run** `bash scripts/test-hooks.sh` — expect the new test to FAIL (subject mismatch) and all others to pass.
 
@@ -108,9 +111,10 @@ its subject; the app declares itself dark so phone browsers stop recolouring the
 - Modify: `web/src/routes/+layout.svelte` (`:global(:root)` gains `color-scheme: dark;`)
 - Test: `web/tests/unit/colorScheme.test.ts`
 
-- [ ] **Step 1: Write the failing test**: read `web/src/app.html` with `fs` and assert it matches
-  `/<meta name="color-scheme" content="dark"/`; read `web/src/routes/+layout.svelte` and assert it
-  contains `color-scheme: dark`.
+- [ ] **Step 1: Write the failing test**: read `new URL('../../src/app.html', import.meta.url)` with
+  `fs` and assert it matches `/<meta name="color-scheme" content="dark"/`; read
+  `new URL('../../src/routes/+layout.svelte', import.meta.url)` and assert it contains
+  `color-scheme: dark`.
 
 - [ ] **Step 2: Run** `npx vitest run tests/unit/colorScheme.test.ts` — expect FAIL.
 
@@ -126,5 +130,7 @@ its subject; the app declares itself dark so phone browsers stop recolouring the
 
 - [ ] Write the Task 1 HTML for code `012345` to the session scratchpad and render it at 360px and 320px
   wide with Playwright (from `web/`); check the notches, tear line and code are visible and nothing
-  overflows. Hand the Conductor the remaining manual checks: one real mail in Gmail on Android after
-  deploy, and the logo on the phone (installed app and a browser tab), per the spec's acceptance.
+  overflows. Hand the Conductor the remaining manual checks, which stay open until they report back:
+  one real mail in Gmail on Android, Gmail web and Apple Mail on iOS (whichever they have) after
+  deploy, and the logo on the phone (installed app and a browser tab, noting browser and version),
+  per the spec's acceptance.
