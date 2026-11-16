@@ -14,7 +14,8 @@ const OPEN_CAP = 10           // open (unexpired, unverified) sign-ups at once
 const sqlTime = (ms) => new Date(ms).toISOString().replace('T', ' ')
 const ms = (record, field) => record.getDateTime(field).unix() * 1000
 const newCode = () => $security.randomStringWithAlphabet(6, '0123456789')
-const codeMail = (email, code) => ({ to: [email], subject: 'Your Chug-a-Lug boarding code', text: `Your Chug-a-Lug boarding code: ${code}\n\nIt works for 15 minutes.` })
+// The mail itself, plain and ticket HTML: ticketMail.js.
+const codeMail = (email, code) => require(`${__hooks}/ticketMail.js`).codeMail(email, code)
 
 // Both code-mail budgets: every code mail, first send and resend alike, spends one of each, so
 // replacing a sign-up never resets an address, and a leaked link sends at most 40 an hour.

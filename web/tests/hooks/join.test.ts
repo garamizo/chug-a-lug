@@ -341,9 +341,34 @@ describe('join link sign-up (spec §4.2)', () => {
     expect(await message(failed)).toBe("Couldn't send the email. Try later.");
     await mailMode('ok');
     await clearMails();
+    // The failed send still started the cooldown: an immediate retry waits like any resend.
+    expect((await resend(ip, s)).status).toBe(429);
     await backdate(s, 'code_sent_at', 61);
     expect((await resend(ip, s)).status).toBe(200);
     expect((await verify(ip, s, await codeFor(s.email))).status).toBe(200);
+  });
+
+  // Spec 2026-11-15-festive-ticket-mail-design.md. The sink synthesises `text` from HTML when a mail
+  // has no plain part, so exact equality with the plain wording proves the plain part was sent.
+  it('the code mail is a ticket with the code in the subject, on send and resend', async () => {
+    const ip = randomIp();
+    const s = await signUp(ip);
+    const ticket = (m: { subject: string; text: string; html: string }) => {
+      const code = /data-code[^>]*>(\d{6})</.exec(m.html)?.[1];
+      expect(code).toMatch(/^\d{6}$/);
+      expect(m.subject).toBe(`${code} is your Chug-a-Lug boarding code`);
+      expect(m.text).toBe(`Your Chug-a-Lug boarding code: ${code}\n\nIt works for 15 minutes.`);
+      return code!;
+    };
+    await codeFor(s.email);
+    const first = await mails(s.email);
+    expect(first.length).toBe(1);
+    ticket(first[0]);
+    await backdate(s, 'code_sent_at', 61);
+    expect((await resend(ip, s)).status).toBe(200);
+    const both = await waitFor(async () => { const all = await mails(s.email); return all.length === 2 ? all : undefined; });
+    const resent = ticket(both[1]);
+    expect((await verify(ip, s, resent)).status).toBe(200);
   });
 
   it('resend refused with under 15 minutes left', async () => {
