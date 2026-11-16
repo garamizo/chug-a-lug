@@ -120,7 +120,8 @@ get none by default). A pending sign-up holds no seat and no name.
   pass), so retries after a typo cost nothing and ten relatives on one Wi-Fi fit;
 - `join-mail:<sha256(email)>` 3 per address, spent by **every** code mail, first send and resend
   alike, so replacing a sign-up cannot reset an address's budget;
-- `join-mail` 40 in total, spent by every code mail: the ceiling on what a leaked link can send;
+- `join-mail-link:<link id>` 40 per link, spent by every code mail: the ceiling on what a leaked
+  link can send (only one link is active at a time, so this is also the server-wide ceiling);
 - at most 10 open (unexpired, no `user`) sign-ups at once.
 
 **Routes** in a new `pb_hooks/join.js` + `join.pb.js` (replacing `boarding.js` / `boarding.pb.js`).
@@ -295,6 +296,6 @@ the next start only if `config.pb.js` is also reverted.
 5. The link's state is checked with `just invite-status`, not shown in the Manifest.
 6. `approved_by`, `access_log.request` and all boarding request history are dropped (production holds only the Conductor).
 7. Sign-up limits: 20 sign-ups per IP per hour (only valid forms count), 3 code mails per address and
-   40 in total per hour, 10 pending at once; a pending sign-up lives 60 minutes, a code 15.
+   40 per link per hour, 10 pending at once; a pending sign-up lives 60 minutes, a code 15.
 8. `just invite` talks to the running PocketBase through a host-only, secret-guarded route rather than
    a second PocketBase process.
