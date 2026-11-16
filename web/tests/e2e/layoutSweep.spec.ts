@@ -1,5 +1,5 @@
 import { expect, test, type Locator, type Page } from '@playwright/test';
-import { clearRoutes, inviteLink, login, openTab, seedLockedCrawl } from './helpers';
+import { clearRoutes, inviteLink, login, openTab, seedLockedCrawl, tapDrink } from './helpers';
 import { expectSaneLayout, type LayoutRule } from './layoutRules';
 import { copy } from '../../src/lib/labels';
 
@@ -94,7 +94,12 @@ test('crew pages on the event day', async ({ page, browser }) => {
     await login(crew, 'E2E Sweep Crew', CREW);
     await sweep(crew, [
       { name: 'live', open: (p) => p.goto('/live'), ready: (p) => p.getByTestId('departure-board') },
-      { name: 'live, Tab open', open: (p) => openTab(p), ready: (p) => p.getByTestId('drink-beer') },
+      { name: 'live, Tab sending a proof', open: async (p) => {
+          // The upload never answers; the next state unroutes it so later Freight uploads are not held.
+          await p.route('**/collections/media/records', async (r) => { if (r.request().method() === 'POST') await new Promise(() => {}); else await r.continue(); });
+          await openTab(p); await tapDrink(p, 'beer');
+        }, ready: (p) => p.getByTestId('tab-sending-beer') },
+      { name: 'live, Tab open', open: async (p) => { await p.unroute('**/collections/media/records'); await openTab(p); }, ready: (p) => p.getByTestId('drink-beer') },
       { name: 'live, stop sheet', open: (p) => p.goto(`/live?stop=${ids.secondStopId}`), ready: (p) => p.getByTestId('sheet-name') },
       // Lightbox stacks over StopSheet: two native modals, only the top one is checked.
       { name: 'live, photo over the stop sheet', open: (p) => openSheetPhoto(p), ready: (p) => p.getByTestId('lightbox') },
