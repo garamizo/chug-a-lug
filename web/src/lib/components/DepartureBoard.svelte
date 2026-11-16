@@ -23,7 +23,8 @@
   const departIso = $derived(trip ? (stale ? trip.schedDepart : trip.liveDepart ?? trip.schedDepart) : null);
   const arriveIso = $derived(trip ? (stale ? trip.schedArrive : trip.liveArrive ?? trip.schedArrive) : null);
   const board = $derived(departIso ? boardState({ departAt: new Date(departIso), walkMin, now }) : null);
-  const tone = $derived(board ? boardTone(board.state) : 'calm');
+  // Riding home is not a countdown: whatever train the board last knew about must not colour it.
+  const tone = $derived(!ridingHome && board ? boardTone(board.state) : 'calm');
 </script>
 
 <div class="wrap">
@@ -36,7 +37,10 @@
   <div class="card {tone}" data-testid="departure-board">
     {#if ridingHome}
       <h2 class="station">{copy.ridingHome}</h2>
-      <p class="lead"><span class="big">{copy.arrives} {fmtTime(ridingHome.arriveAt)}</span><span class="sub">{ridingHome.toName}</span></p>
+      <div class="lead">
+        <div class="big">{copy.arrives} {fmtTime(ridingHome.arriveAt)}</div>
+        <div class="sub">{ridingHome.toName}</div>
+      </div>
     {:else if trip && board && departIso && arriveIso}
       <div class="head">
         <span class="agency">{copy.metraBnsf}</span>

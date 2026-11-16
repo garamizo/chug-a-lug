@@ -312,7 +312,7 @@ export class LiveDay {
     const to = home?.to ?? boarding?.to ?? here?.onwardStop?.station_id ?? homeStation;
     if (!from || !to || from === to || !this.itinerary) { this.trips = []; return; }
     // Riding the train home: the board shows the arrival, not a countdown, so there is nothing to ask.
-    if (home?.riding) return;
+    if (home?.riding) { this.trips = []; return; }
     try {
       // Ask from just before the planned train, so the three trips returned include it.
       const planned = this.plannedTrip;

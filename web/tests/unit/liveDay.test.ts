@@ -569,8 +569,12 @@ describe('the run home', () => {
     const day = homeDay();
     day.realNow = new Date('2026-12-26T23:10:00Z'); day.syncPlan();
     expect(day.rideHome).toMatchObject({ riding: true, arriveAt: trainSeg.arr });
+    day.trips = [trip('BN11', '2026-12-26T23:30:00.000Z')];
     await day.loadTrains();
     expect(mocks.fetchNext).not.toHaveBeenCalled();
+    // Nothing stale is left for the board to colour or count down to while the crew rides.
+    expect(day.trips).toEqual([]);
+    expect(day.trip).toBeNull();
   });
 
   it('rideHome on a practice day works off the projected clock', () => {
