@@ -9,9 +9,9 @@ The user's words: "Closing time happens after we return to the station, so it ca
 the station stop, then photos, chats, spikes, drinks, In a cool montage." "It should be a video with the most liked
 photos and messages, not exhaustively all."
 
-So when the train home arrives, the crew gets a short, auto-playing montage of the night: for each stop, in route
-order — the stop, its most-Cheered photos, its most-Cheered messages, the Golden Spikes won there, and what was drunk
-there — ending on the night's final spikes. Highlights only.
+So when the train home arrives, the crew gets an auto-playing montage of the night: for each stop, in route order —
+the stop, its most-Cheered photos, its most-Cheered message, the Golden Spikes won there, and what was drunk there —
+ending on the night's final spikes. Highlights only, a few minutes at most.
 
 **Goals**
 - Opens at Closing Time (the train home arriving: `liveDay.closedAt`, from golden-spikes), for everyone on the crew,
@@ -53,11 +53,14 @@ there — ending on the night's final spikes. Highlights only.
 
 ### Stop windows — which stop a message or a spike belongs to
 
+`current.ts` exports its existing private `timings` as `stopTimings(stops, legs, startAt)` (no behaviour change).
 `stopWindows(stops, legs, startAt, shiftMs, closedAt): { stopId: string; from: string; to: string }[]` in
-`web/src/lib/live/reel.ts`: for each stop in route order, `from` = its arrival (from `timings` in `current.ts`, so
-anchors and the opening leg behave as on Live), `to` = the next stop's arrival, and for the last stop `to` =
-`closedAt`. Plan times are moved to the activity clock by `shiftMs = now - realNow` (0 on the event day), the same
-shift `closedAt` uses. Activity before the first arrival belongs to the first stop.
+`web/src/lib/live/reel.ts`: for each stop in route order, `from` = its arrival from `stopTimings`, `to` = the next
+stop's arrival, and for the last stop `to` = `closedAt`. These are the **stored** (planned) legs: a Conductor
+correction re-plans the remaining legs on the server (`recomputeLegs`), so after the night the stored legs already
+reflect it; a stale incoming leg can put a message under the neighbouring stop — accepted. Plan times are moved to the
+activity clock by `shiftMs = now - realNow` (0 on the event day; anchors are off on practice days), the same shift
+`closedAt` uses. Activity before the first arrival belongs to the first stop.
 
 ### The reel — `buildReel(input): Slide[]`
 
@@ -67,7 +70,7 @@ export type Slide =
   | { kind: 'stop'; stopId: string; name: string; station: string; at: string; photo: string | null }
   | { kind: 'photo'; mediaId: string; cheers: number; author: string; caption: string } // caption: proofCaption
   | { kind: 'message'; messageId: string; body: string; author: string; cheers: number }
-  | { kind: 'spike'; event: SpikeEvent }
+  | { kind: 'spikes'; events: SpikeEvent[] }                                         // won-once spikes at the stop
   | { kind: 'drinks'; stopId: string; counts: Record<DrinkKind, number> }            // crew totals at the stop
   | { kind: 'finale'; holders: SpikeEvent[]; caboose: SpikeEvent[]; total: number };
 export type ReelInput = {
@@ -78,73 +81,104 @@ export type ReelInput = {
 };
 ```
 
-Order: `title`, then for each stop in route order: `stop`, its `photo` slides, its `message` slides, its `spike`
-slides, its `drinks` slide — then `finale`. Selection (highlights only):
-- **Photos at a stop**: images (`kind = image`) tagged with that stop, ranked by Cheers (media reactions) descending,
-  then earliest `at`, then id; the top **3** with at least one Cheers. If none has a Cheers, the single earliest
-  photo, so a stop with photos is never blank. Videos are skipped (the player shows images only).
-- **Messages at a stop**: messages whose `at` is in the stop's window, ranked the same way; the top **2** with at
+Order: `title`, then for each stop in route order: `stop`, its `photo` slides, its `message` slide, its `spikes`
+slide, its `drinks` slide — then `finale`. Selection (highlights only, bounded):
+- **Photos at a stop**: images (`kind = image`) tagged with that stop, ranked by Cheers descending, then earliest
+  `at`, then id; the top **2** with at least one Cheers. If none has a Cheers, the single earliest photo, so a stop
+  with photos is never blank. Videos are skipped.
+- **Message at a stop**: messages whose `at` is in the stop's window, ranked the same way; the top **1** with at
   least one Cheers; none if none was Cheered.
-- **Spikes at a stop**: spike events whose `at` is in the window, except Caboose (it lands on the finale).
-- **Drinks**: the crew's count per Tab kind for drinks at that stop; the slide is skipped if the stop had none.
-- A stop with no photos, messages, spikes or drinks still gets its `stop` slide.
+- **Spikes at a stop**: one `spikes` slide listing the won-once spikes (Pathfinder, Triple Header, Full Consist)
+  whose `at` is in the window; skipped when there are none. Held-spike hand-overs are not replayed per stop — the
+  finale shows who holds them at the end.
+- **Drinks**: the crew's count per Tab kind for drinks at that stop; skipped if the stop had none.
+- A stop with nothing else still gets its `stop` slide.
 - **Finale**: the current holder of each held spike (Big Boy, Whistle Stop, Railfan), every Caboose winner, and the
   crew's alcoholic-drink total.
-- Only rows of `date` and with `at < closedAt` are used (as spikes do).
+- **Cut-off**: source rows (drinks, media, messages) of `date` with `at < closedAt`. Spike events come from
+  `liveDay.spikeEvents`, which golden-spikes already cuts at Closing Time and which places Caboose **at** `closedAt` —
+  they are taken as they are, never re-filtered by `< closedAt`.
+- **Cheers** are counted as of when the reel is built: all of the day's reactions in `liveDay.feed.reactions`
+  (the feed loads every reaction created on the server's day for the route, independent of chat pagination). A Cheers
+  given after Closing Time still counts — "most liked" includes the morning after.
+
+Durations (below) put a 6-stop night at about 2 minutes and a 10-stop night at about 3½.
 
 ### The player — `/live/closing`
 
-- A route `web/src/routes/(app)/live/closing/+page.svelte` rendering `ClosingReel.svelte` full-screen (dark, above
-  the tab bar). If `liveDay.closedAt` is null it shows a short "Closing Time starts when the train home arrives" line
-  and a link back to Live.
-- Timing: `title` 3 s, `stop` 3.5 s, `photo` 5 s, `message` 4.5 s, `spike` 3.5 s, `drinks` 3.5 s, `finale` 6 s.
+- A route `web/src/routes/(app)/live/closing/+page.svelte` rendering `ClosingReel.svelte`: a full-screen layer
+  (`role="dialog"`, `aria-modal="true"`, focus moved into it, focus returned on close).
+- **Presentation state.** The app layout treats `/live/closing` as a presentation: it hides the compact board
+  banner, the pinned Bulletin, the tab bar and the Bulletin composer there, and suppresses the Golden Spike
+  celebration (its queue pauses, as for `quiet`) so nothing captures keys or taps over the reel. The spike art is
+  extracted from `SpikeCelebration.svelte` into `SpikeArt.svelte` and reused; the celebration controller is not
+  mounted in the reel.
+- **Timing**: `title` 3 s, `stop` 3 s, `photo` 4.5 s, `message` 4 s, `spikes` 3.5 s, `drinks` 3 s, `finale` 6 s.
   Story-style progress bars at the top (`reel-progress`).
-- Motion: photos slowly zoom and pan (Ken Burns), slides cross-fade; spike slides reuse the golden-spike art from
-  `SpikeCelebration`. `prefers-reduced-motion`: cross-fade only.
-- Gestures: tap the right third → next, left third → previous, press and hold → pause, ✕ (`reel-close`) → back to
-  Live; keyboard ←/→/Space/Escape. The reel ends on the finale with **Watch again** (`reel-replay`) and **Done**.
-- Images load ahead: the player preloads the next two slides' images (`thumb: '1200x0'`).
-- Test ids: `closing-reel`, `reel-slide-{kind}`.
+- **Motion**: photos slowly zoom and pan, slides cross-fade. `prefers-reduced-motion`: cross-fade only.
+- **Gestures**: tap the right third → next, left third → previous, press and hold → pause, ✕ (`reel-close`);
+  keyboard ←/→/Space/Escape. The reel ends on the finale with **Watch again** (`reel-replay`) and **Done**
+  (`reel-done`). A slide whose image fails to load is skipped.
+- **Loading.** The reel is built only from a feed that loaded successfully **after** Closing Time for the current
+  route, day and simulation run: `liveDay` records the scope key of its last successful `loadFeed` and the time it
+  finished (`liveDay.feedLoadedAt`, `liveDay.feedScope`). Until that holds, the player shows a loading line; if the
+  latest load failed it shows "No signal" with **Try again** (re-runs `loadFeed`). The slide list is snapshotted once
+  built, so a live update doesn't reshuffle a playing reel.
+- **Not yet.** If `liveDay.closedAt` is null the page shows `copy.closingNotYet` and a link back to Live.
+- **History.** Entering pushes `/live/closing` (Play and the automatic open both use `goto`). ✕ and Done go back if
+  the previous entry is Live in this app session (`guardedBack`-style, so a double tap pops once), otherwise
+  `goto('/live', { replaceState: true })` (direct entry or a reload). Browser Back from the reel returns to Live.
+  Returning to Live never re-opens the reel automatically.
+- Test ids: `closing-reel`, `reel-slide-{kind}`, `reel-loading`, `reel-retry`.
 
 ### Opening at Closing Time
 
-- On Live, once `liveDay.closedAt` is set, a card at the top: "🎬 Closing Time — the night in a minute"
-  (`closing-card`) with **Play** → `/live/closing`.
-- The first time a phone is on Live after Closing Time, it opens the reel by itself — once per device, keyed
+- On Live, once `liveDay.closedAt` is set, a card at the top: `copy.closingCard` (`closing-card`) with **Play**
+  (`closing-play`) → `/live/closing`.
+- The first time a phone is on Live after Closing Time **and** the reel's data is ready (the feed loaded after
+  Closing Time for this scope), it opens the reel by itself — once per device, keyed
   `{itineraryId}:{date}:{runId ?? ''}` in `localStorage` (`chugalug.closingShown`, guarded like `seen.ts`, with an
-  in-memory fallback). Not while practice `quiet` is on for that screen.
+  in-memory fallback). The key is written when the reel actually starts playing, not when it is scheduled. Deferred
+  while a sheet, the Lightbox, the Tab or the Bulletin composer is open, and while practice `quiet` applies.
 
 ### Labels (web/src/lib/labels.ts)
 
-- `closingCard: 'Closing Time — the night in a minute'`, `closingPlay: 'Play'`, `closingNotYet: 'Closing Time starts
-  when the train home arrives.'`, `closingReplay: 'Watch again'`, `closingDone: 'Done'`, `closingFinale: 'That's the
-  night'`, `closingCrewTotal: 'drinks, all told'`, `closingCheers: 'Cheers'` (badge count on photo/message slides).
-- Existing: `wrapUpPhase: 'Closing Time'`, spike names, drink labels and icons, `proofCaption`.
+- `closingCard: 'Closing Time — the night's highlights'`, `closingPlay: 'Play'`, `closingNotYet: 'Closing Time
+  starts when the train home arrives.'`, `closingLoading: 'Putting the night together…'`, `closingReplay: 'Watch
+  again'`, `closingDone: 'Done'`, `closingFinale: 'That's the night'`, `closingCrewTotal: 'drinks, all told'`,
+  `closingCheers: 'Cheers'` (badge count on photo/message slides).
+- Existing: `wrapUpPhase: 'Closing Time'`, `noSignal`, spike names, drink labels and icons, `proofCaption`.
 
-README glossary: the **Closing Time** row ("Wrap-up phase") gains "the reel that plays when the train home arrives".
-FEATURES.md gains a Closing Time bullet; ROADMAP's M5 notes it.
+README glossary: the **Closing Time** row ("Wrap-up phase") gains "the highlight reel that plays when the train home
+arrives". FEATURES.md gains a Closing Time bullet; ROADMAP's M5 notes it.
 
 ## Edge cases
 
 - No photos or messages at all: the reel is stops, spikes, drinks and the finale.
 - A route with no run home or an impossible one: no Closing Time (closedAt null), no card, `/live/closing` explains.
-- A late photo after Closing Time: not in the reel (cut at `closedAt`).
-- Undo/deletes before opening: the reel is built when it opens; a slide whose image fails to load is skipped.
+- A late photo after Closing Time: not in the reel (cut at `closedAt`); a late Cheers does count.
+- The first feed read after Closing Time fails: no automatic open until a later read succeeds; Play shows Try again.
 - Practice day: windows and the cut use the same shift as `closedAt`.
-- Very long nights: at most 3 + 2 + spikes + 2 slides per stop; ~10 stops ≈ 3–4 minutes worst case.
+- Opening the reel over a sheet or Lightbox: the automatic open waits; Play is on Live itself.
 
 ## Tests
 
-- Unit `web/tests/unit/reel.test.ts`: slide order per stop; top-3 photos by Cheers with ties; the uncheered fallback
-  photo; videos skipped; messages placed by window and top-2 Cheered only; spikes by window with Caboose on the
-  finale; drinks slide counts and skip; rows after `closedAt` and other days ignored; finale holders; deterministic for
-  shuffled input. `stopWindows`: anchors/opening behave as `timings`, last window ends at `closedAt`, practice shift.
-- Unit for the auto-open marker (once per key, memory fallback).
-- e2e `web/tests/e2e/closing.spec.ts`: a seeded crawl run to its home arrival (sim/clock helpers as in existing
-  specs) shows the card, auto-opens the reel once, advances on tap, shows a Cheered photo and the finale, closes with
-  ✕; before Closing Time `/live/closing` shows the not-yet line. One `layoutSweep` line for the reel.
+- Unit `web/tests/unit/reel.test.ts`: slide order per stop; top-2 photos by Cheers with ties; the uncheered fallback
+  photo; videos skipped; the top-1 Cheered message by window; won-once spikes grouped per stop, held hand-overs not
+  replayed; Caboose (at `closedAt`) on the finale; drinks slide counts and skip; source rows at/after `closedAt` and
+  other days ignored; late Cheers counted; deterministic for shuffled input. `stopWindows`: matches `stopTimings`,
+  last window ends at `closedAt`, practice shift. `current.test.ts`: `stopTimings` is the old `timings`.
+- Unit for the auto-open decision (`shouldAutoOpen(...)`: closedAt set, feed loaded after it for this scope, not
+  shown, no overlay, not quiet) and the marker (written on play; memory fallback).
+- e2e `web/tests/e2e/closing.spec.ts` (ordinary e2e harness): `seedLockedCrawl` gains a `withRunHome` option that
+  seeds stops whose recomputed plan includes a resolved closing leg on the fixture GTFS (Aurora is in it), waits for
+  the recompute, and returns the closing leg's `arrive_at`; the spec seeds drinks, a photo with Cheers and a message
+  (superuser, `at` before that arrival on the event date), sets the browser clock past the arrival with
+  `page.clock`, opens Live, and checks: the card shows; the reel opens once by itself; tap advances; a Cheered photo
+  and the finale appear; ✕ returns to Live and Live does not reopen it; Back from the reel returns to Live; direct
+  entry to `/live/closing` before Closing Time shows the not-yet line. One `layoutSweep` line for the reel.
 
 ## Left to the builder
 
-The slide visuals (typography, Ken Burns parameters, drink slide layout), how the e2e reaches Closing Time (seed legs
-and clock), the preload mechanism.
+The slide visuals (typography, motion parameters, drinks slide layout), the preload mechanism, and the exact
+`withRunHome` seed (which stops and times give a resolved closing leg on the fixture timetable).
