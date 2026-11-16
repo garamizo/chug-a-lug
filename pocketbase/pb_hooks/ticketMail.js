@@ -22,10 +22,10 @@ function ticketHtml(code) {
 <tr><td colspan="3" style="padding:16px 18px 0;font-size:11px;letter-spacing:.12em;font-weight:800;color:${SOFT_INK};">BOARDING CODE · ADMIT ONE</td></tr>
 <tr><td colspan="3" data-code style="padding:2px 18px 12px;font-size:40px;line-height:1.15;font-weight:900;letter-spacing:.18em;color:${INK};">${code}</td></tr>
 <tr>${notch('0 10px 10px 0')}<td style="padding:0 6px;"><div style="border-top:2px dashed #8a6a1c;height:0;font-size:0;line-height:0;">&nbsp;</div></td>${notch('10px 0 0 10px')}</tr>
-<tr><td colspan="3" style="padding:10px 18px 16px;">
+<tr><td colspan="3" style="padding:10px 14px 16px 18px;">
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"><tr>
-<td style="font-family:${FONT};font-size:13px;font-weight:800;color:${INK};">VALID 15 MIN</td>
-<td align="right" style="font-family:${FONT};font-size:13px;font-weight:800;color:${INK};text-align:right;">CHUG-A-LUG CHOO-CHOO</td>
+<td style="font-family:${FONT};font-size:12px;font-weight:800;color:${INK};white-space:nowrap;">VALID 15 MIN</td>
+<td align="right" style="font-family:${FONT};font-size:12px;font-weight:800;color:${INK};text-align:right;white-space:nowrap;padding-left:12px;">CHUG-A-LUG CHOO-CHOO</td>
 </tr></table>
 </td></tr>
 </table>
