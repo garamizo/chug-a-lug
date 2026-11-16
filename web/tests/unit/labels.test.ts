@@ -22,6 +22,15 @@ describe('labels', () => {
     expect(label('scoreboard')).toBe('Hall of Fame');
     expect(label('walk')).toBe('Walk');
   });
+  it('names the Golden Spikes', () => {
+    expect(copy).toMatchObject({
+      spikeAuthor: 'Golden Spike', spikePathfinder: 'Pathfinder', spikeBigBoy: 'Big Boy', spikeCaboose: 'Caboose',
+      spikeTriple: 'Triple Header', spikeFullConsist: 'Full Consist', spikeWhistleStop: 'Whistle Stop', spikeRailfan: 'Railfan',
+      spikePathfinderWhy: 'First to log it today', spikeBigBoyWhy: 'Most drinks', spikeCabooseWhy: 'Fewest drinks',
+      spikeTripleWhy: 'Three drinks at one station', spikeFullConsistWhy: 'One of each', spikeWhistleStopWhy: 'Most messages',
+      spikeRailfanWhy: 'Most photos', spikeFirst: 'first', spikeTakesFrom: 'takes it from', spikeLaurel: 'Golden Spikes'
+    });
+  });
   it('names the run home', () => {
     expect(copy.runHome).toBe('Run home to');
     expect(copy.runHomeMidnight).toBe('The last train home must arrive before midnight.');

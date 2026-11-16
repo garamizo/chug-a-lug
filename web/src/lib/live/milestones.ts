@@ -16,7 +16,7 @@ const note = (id: string, t: Trigger, body: string): ChatEntry => ({
   author: copy.milestoneAuthor, userId: '', stop: '', kind: 'milestone', body, target: null
 });
 
-const drinkOrder = (a: DrinkEntry, b: DrinkEntry) => Date.parse(a.at) - Date.parse(b.at)
+export const drinkOrder = (a: DrinkEntry, b: DrinkEntry) => Date.parse(a.at) - Date.parse(b.at)
   || (a.action_order ?? 0) - (b.action_order ?? 0) || (a.created ?? '').localeCompare(b.created ?? '') || a.id.localeCompare(b.id);
 
 export function milestones(drinks: DrinkEntry[], media: Media[], stops: Pick<Stop, 'id' | 'name'>[], date: string): ChatEntry[] {
