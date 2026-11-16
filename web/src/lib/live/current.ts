@@ -57,6 +57,10 @@ export function closingFresh(stops: Stop[], legs: Leg[], anchor: { stopId: strin
   return Math.abs(new Date(closing.ready_at).getTime() - expected) <= 60_000;
 }
 
+/** A plan-clock instant on the activity clock. `shiftMs` is `now - realNow` (0 on the event day), and activity
+ *  is stamped with real time, so plan times are moved back by it. Closing Time and the reel's stop windows share it. */
+export const toActivityClock = (planMs: number, shiftMs: number): string => new Date(planMs - shiftMs).toISOString();
+
 export type Timing = {
   stop: Stop; arriveAt: number; departAt: number | null; departIso: string | null;
   next: Stop | null; onward: Stop | null;

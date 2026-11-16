@@ -4,8 +4,8 @@ import { copy, proofCaption } from '$lib/labels';
 import { stopPhoto } from '$lib/photo';
 import { todayInTz } from '$lib/time';
 import { reactionSummary } from './chat';
-import { stopTimings } from './current';
-import type { SpikeEvent, SpikeKind } from './spikes';
+import { stopTimings, toActivityClock } from './current';
+import { ALCOHOL, HELD, type SpikeEvent, type SpikeKind } from './spikes';
 import { DRINK_KINDS } from './tab';
 import type { ChatMessage, DrinkEntry, DrinkKind, Leg, Media, Reaction, Stop } from '$lib/types';
 
@@ -33,14 +33,12 @@ export const REEL_DURATIONS: Record<Slide['kind'], number> = {
 
 const PHOTOS_PER_STOP = 2;
 const WON_ONCE = new Set<SpikeKind>(['pathfinder', 'triple', 'fullconsist']);
-const HELD: SpikeKind[] = ['bigboy', 'whistlestop', 'railfan'];
-const ALCOHOL = new Set<string>(['shot', 'cocktail', 'beer']);
 
 /** Each stop's slice of the night, in route order: from its planned arrival to the next stop's, the last to
- *  `closedAt`. `shiftMs` moves plan times onto the activity clock (0 on the event day). */
+ *  `closedAt`. `shiftMs` (now - realNow, 0 on the event day) moves plan times onto the activity clock, as for Closing Time. */
 export function stopWindows(stops: Stop[], legs: Leg[], startAt: Date, shiftMs: number, closedAt: string): StopWindow[] {
   const timings = stopTimings(stops, legs, startAt);
-  const iso = (ms: number) => new Date(ms + shiftMs).toISOString();
+  const iso = (planMs: number) => toActivityClock(planMs, shiftMs);
   return timings.map((t, i) => ({
     stopId: t.stop.id,
     from: iso(t.arriveAt),
@@ -49,7 +47,7 @@ export function stopWindows(stops: Stop[], legs: Leg[], startAt: Date, shiftMs: 
 }
 
 const ms = (iso: string) => Date.parse(iso);
-const mediaAt = (m: Media) => m.at ?? m.taken_at;
+const mediaAt = (m: Media) => m.at || m.created;
 const nameOf = (r: { expand?: { user?: { name?: string } } }) => r.expand?.user?.name || copy.chatCrew;
 
 /** Most Cheered first, then earliest, then id: one total order, so input order never matters. */
@@ -96,17 +94,17 @@ export function buildReel(input: ReelInput): Slide[] {
 
     const won = input.spikes
       .filter((e) => WON_ONCE.has(e.kind) && inWindow(stop.id, e.at))
-      .sort((a, b) => ms(a.at) - ms(b.at) || a.order - b.order || a.id.localeCompare(b.id));
+      .sort((a, b) => ms(a.at) - ms(b.at) || a.created.localeCompare(b.created) || a.order - b.order || a.id.localeCompare(b.id));
     if (won.length) slides.push({ kind: 'spikes', events: won });
 
     const counts = Object.fromEntries(DRINK_KINDS.map((k) => [k, 0])) as Record<DrinkKind, number>;
     let any = false;
-    for (const d of drinks) if (d.stop === stop.id && d.kind in counts) { counts[d.kind] += 1; any = true; }
+    for (const d of drinks) if (d.stop === stop.id && DRINK_KINDS.includes(d.kind)) { counts[d.kind] += 1; any = true; }
     if (any) slides.push({ kind: 'drinks', stopId: stop.id, counts });
   }
 
   // Caboose is stamped at closedAt: take spike events as given, never re-cut them.
-  const chrono = [...input.spikes].sort((a, b) => ms(a.at) - ms(b.at) || a.order - b.order || a.id.localeCompare(b.id));
+  const chrono = [...input.spikes].sort((a, b) => ms(a.at) - ms(b.at) || a.created.localeCompare(b.created) || a.order - b.order || a.id.localeCompare(b.id));
   const holders = HELD.flatMap((k) => chrono.filter((e) => e.kind === k).slice(-1));
   const caboose = chrono.filter((e) => e.kind === 'caboose');
   const total = drinks.filter((d) => ALCOHOL.has(d.kind)).length;

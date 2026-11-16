@@ -6,7 +6,7 @@ import { pb, subscribe } from '$lib/pb';
 import { dayBounds, localToUtc, parseHm, todayInTz } from '$lib/time';
 import { clearMirror, mirrorPayload, readMirror, saveMirror, scopeMirror } from '$lib/offline';
 import { anchorOnEventDay } from '$lib/anchor';
-import { closingLeg, crawlEnd, currentStop, type Current } from './current';
+import { closingLeg, crawlEnd, currentStop, toActivityClock, type Current } from './current';
 import { boardingJourney, pickTrip, plannedTrain, rideHome, type Boarding, type RideHome } from './board';
 import { fetchAlerts, fetchDay, fetchNext, fetchStatus } from './feed';
 import { isEventDay as onEventDate, planNow } from './planClock';
@@ -90,7 +90,7 @@ export class LiveDay {
     const closing = closingLeg(this.stops, this.legs);
     if (!closing || closing.kind === 'impossible') return null;
     const end = crawlEnd(this.stops, this.legs, this.startAt).at;
-    return end ? new Date(end.getTime() - (this.now.getTime() - this.realNow.getTime())).toISOString() : null;
+    return end ? toActivityClock(end.getTime(), this.now.getTime() - this.realNow.getTime()) : null;
   });
   /**
    * Tonight's Golden Spikes, worked out once for chat and the celebration (the Crew Board replays its own

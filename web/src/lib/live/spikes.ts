@@ -23,7 +23,7 @@ export const BIG_BOY_DRINKS = 3;
 export const TRIPLE_HEADER_DRINKS = 3;
 export const WHISTLE_STOP_MESSAGES = 5;
 export const RAILFAN_PHOTOS = 3;
-const ALCOHOL = new Set(['shot', 'cocktail', 'beer']);
+export const ALCOHOL = new Set(['shot', 'cocktail', 'beer']);
 
 export const SPIKE_LABELS: Record<SpikeKind, { name: string; why: string }> = {
   pathfinder: { name: copy.spikePathfinder, why: copy.spikePathfinderWhy },
@@ -119,7 +119,7 @@ export function spikes(input: SpikeInput): SpikeEvent[] {
   return out.sort((a, b) => Date.parse(a.at) - Date.parse(b.at) || a.created.localeCompare(b.created) || a.order - b.order || a.id.localeCompare(b.id));
 }
 
-const HELD: SpikeKind[] = ['bigboy', 'whistlestop', 'railfan'];
+export const HELD: SpikeKind[] = ['bigboy', 'whistlestop', 'railfan'];
 
 /** Spikes each person holds now: won-once spikes, plus held spikes whose latest hand-over is to them. */
 export function spikeTally(events: SpikeEvent[]): Map<string, SpikeKind[]> {

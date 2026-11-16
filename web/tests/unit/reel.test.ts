@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { toActivityClock } from '../../src/lib/live/current';
 import { buildReel, stopWindows, REEL_DURATIONS, type ReelInput } from '../../src/lib/live/reel';
 import type { SpikeEvent } from '../../src/lib/live/spikes';
 import type { ChatMessage, DrinkEntry, Leg, Media, Reaction, Stop } from '../../src/lib/types';
@@ -42,11 +43,17 @@ describe('stopWindows', () => {
     ]);
   });
   it('stopWindows applies the practice shift', () => {
-    const shift = 24 * 3600_000;
-    const w = stopWindows(stops, legs, startAt, shift, CLOSED);
-    expect(w[0].from).toBe('2026-12-27T18:00:00.000Z');
-    expect(w[1].from).toBe('2026-12-27T19:20:00.000Z');
+    // Practice day: plan time is the event date at today's time of day; activity is stamped with real time.
+    const now = new Date('2026-12-26T19:00:00.000Z');
+    const realNow = new Date('2027-01-02T19:00:00.000Z');
+    const shiftMs = now.getTime() - realNow.getTime(); // -7 days
+    const w = stopWindows(stops, legs, startAt, shiftMs, CLOSED);
+    expect(w[0].from).toBe('2027-01-02T18:00:00.000Z');
+    expect(w[1].from).toBe('2027-01-02T19:20:00.000Z');
     expect(w[2].to).toBe(CLOSED);
+    // The same shift places Closing Time itself, so the two agree.
+    expect(toActivityClock(Date.parse(T(23)), shiftMs)).toBe('2027-01-02T23:00:00.000Z');
+    expect(toActivityClock(Date.parse(T(23)), 0)).toBe(T(23));
   });
 });
 
@@ -163,6 +170,62 @@ describe('buildReel', () => {
       reactions: [...input.reactions].reverse(), spikes: [...input.spikes].reverse(), drinks: [...input.drinks].reverse()
     });
     expect(buildReel(rev)).toEqual(buildReel(input));
+  });
+
+  it('pads with an uncheered photo only when none was Cheered', () => {
+    const media = [photo('A', 18, 20, {}, 'a'), photo('A', 18, 30, {}, 'b'), photo('A', 18, 40, {}, 'c')];
+    const photos = buildReel(base({ media, reactions: cheer('media', 'c') })).filter((s) => s.kind === 'photo');
+    expect(photos.map((s) => s.kind === 'photo' && s.mediaId)).toEqual(['c']);
+  });
+
+  it('counts Cheers by target kind as well as id', () => {
+    const media = [photo('A', 18, 20, {}, 'same'), photo('A', 18, 30, {}, 'other')];
+    const reactions = [...cheer('message', 'same', 5), ...cheer('media', 'other', 1)];
+    const photos = buildReel(base({ media, reactions })).filter((s) => s.kind === 'photo');
+    expect(photos.map((s) => s.kind === 'photo' && [s.mediaId, s.cheers])).toEqual([['other', 1]]);
+    const messages = [msg(18, 30, {}, 'same')];
+    expect(kinds(buildReel(base({ messages, reactions: cheer('media', 'same', 4) })))).not.toContain('message');
+  });
+
+  it('activity before the first arrival belongs to the first stop', () => {
+    const early = msg(17, 0, {}, 'early');
+    const reel = buildReel(base({ messages: [early], reactions: cheer('message', 'early'), spikes: [spike('pathfinder', 17, 30)] }));
+    expect(kinds(reel).slice(0, 5)).toEqual(['title', 'stop', 'message', 'spikes', 'stop']);
+  });
+
+  it('other-day media and messages are left out', () => {
+    const otherP = photo('A', 18, 20, { at: '2026-12-25T18:20:00.000Z' }, 'op');
+    const otherM = msg(18, 30, { at: '2026-12-25T18:30:00.000Z' }, 'om');
+    const reel = buildReel(base({ media: [otherP], messages: [otherM], reactions: [...cheer('media', 'op'), ...cheer('message', 'om')] }));
+    expect(kinds(reel)).toEqual(['title', 'stop', 'stop', 'stop', 'finale']);
+  });
+
+  it('media without an at falls back to created, not taken_at', () => {
+    const p = photo('A', 18, 20, { at: '', created: T(18, 20), taken_at: '2026-12-25T18:20:00.000Z' }, 'nf');
+    expect(kinds(buildReel(base({ media: [p] })))).toContain('photo');
+  });
+
+  it('ties break by id, whatever the input order', () => {
+    const media = [photo('A', 18, 20, {}, 'b'), photo('A', 18, 20, {}, 'a')];
+    for (const m of [media, [...media].reverse()]) {
+      const photos = buildReel(base({ media: m })).filter((s) => s.kind === 'photo');
+      expect(photos.map((s) => s.kind === 'photo' && s.mediaId)).toEqual(['a']);
+    }
+    const messages = [msg(18, 30, {}, 'mb'), msg(18, 30, {}, 'ma')];
+    const reactions = [...cheer('message', 'mb'), ...cheer('message', 'ma')];
+    for (const m of [messages, [...messages].reverse()]) {
+      const slide = buildReel(base({ messages: m, reactions })).find((s) => s.kind === 'message');
+      expect(slide && slide.kind === 'message' && slide.messageId).toBe('ma');
+    }
+  });
+
+  it('finale holders break ties like spikes: at, created, order, id', () => {
+    const x = { ...spike('bigboy', 19, 0, 'x'), created: '2', order: 1 };
+    const y = { ...spike('bigboy', 19, 0, 'y'), created: '1', order: 2 };
+    for (const list of [[x, y], [y, x]]) {
+      const fin = buildReel(base({ spikes: list })).at(-1);
+      expect(fin?.kind === 'finale' && fin.holders.map((e) => e.id)).toEqual(['x']);
+    }
   });
 
   it('has the durations', () => {
