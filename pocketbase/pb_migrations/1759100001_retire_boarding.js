@@ -16,7 +16,8 @@ migrate((app) => {
   users.oauth2.enabled = false
   users.oauth2.providers = []
   users.fields.removeByName('approved_by')
-  users.updateRule = String(users.updateRule || '').split(' && ').filter((c) => c !== '@request.body.approved_by:isset = false').join(' && ')
+  // A null rule (superusers only) stays null: rewriting it as '' would let anyone edit any user.
+  if (users.updateRule) users.updateRule = users.updateRule.split(' && ').filter((c) => c !== '@request.body.approved_by:isset = false').join(' && ')
   app.save(users)
   app.db().newQuery('DELETE FROM _externalAuths WHERE collectionRef = {:c}').bind({ c: users.id }).execute()
 

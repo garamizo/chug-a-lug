@@ -164,6 +164,31 @@ describe('join link sign-up (spec §4.2)', () => {
     expect((await signUp(ip, { email: open[3].email })).status).toBe(200);
   }, 30_000);
 
+  it('a new link is not blocked by the open sign-ups of the one it replaced', async () => {
+    const ip = randomIp();
+    for (let i = 0; i < 10; i++) expect((await signUp(ip)).status, `sign-up ${i}`).toBe(200);
+    expect((await signUp(ip)).status).toBe(429);
+    link = await invite(5); // revokes the leaked link; its ten sign-ups can never finish
+    expect((await signUp(randomIp())).status).toBe(200);
+  }, 30_000);
+
+  it('a mail-budget refusal costs no join budget', async () => {
+    const ip = randomIp(), spent = `spent${uid()}@test.invalid`;
+    // The address's three code mails, sent from elsewhere.
+    for (let i = 0; i < 3; i++) expect((await signUp(randomIp(), { email: spent })).status, `mail ${i}`).toBe(200);
+    // 19 of this IP's 20 sign-ups an hour (cleared halfway, so the open cap never answers).
+    await truncate('signups');
+    for (let i = 0; i < 19; i++) {
+      if (i === 10) await truncate('signups');
+      expect((await signUp(ip)).status, `sign-up ${i}`).toBe(200);
+    }
+    const refused = await signUp(ip, { email: spent });
+    expect(refused.status).toBe(429);
+    expect(refused.json.message).toBe(BUSY);
+    link = await invite(5);
+    expect((await signUp(ip)).status).toBe(200); // the twentieth: the refusal spent nothing
+  }, 60_000);
+
   it('verify signs in and takes a seat', async () => {
     const ip = randomIp();
     const s = await signUp(ip);

@@ -299,6 +299,28 @@ it('join link adds its collections and rolls back', async () => {
   } finally { await rm(dir, { recursive: true, force: true }); }
 });
 
+it('retire boarding leaves a superuser-only users update rule closed', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'chugalug-retire-null-'));
+  try {
+    const migrations = join(dir, 'migrations'), hooks = join(dir, 'hooks');
+    await mkdir(migrations); await mkdir(hooks);
+    for (const name of await readdir('../pocketbase/pb_migrations')) await copyFile(`../pocketbase/pb_migrations/${name}`, join(migrations, name));
+    await writeFile(join(migrations, '1759100000_znull_rule.js'), `migrate(app => {
+      const users = app.findCollectionByNameOrId('users');
+      users.updateRule = null;
+      app.save(users);
+    }, app => {})`);
+    // '' would let anyone edit any user; null keeps updates superuser-only.
+    await writeFile(join(migrations, '1759100001_zcheck_null_rule.js'), `migrate(app => {
+      const rule = app.findCollectionByNameOrId('users').updateRule;
+      if (rule !== null && rule !== undefined) throw new Error('updateRule opened: ' + JSON.stringify(rule));
+    }, app => {})`);
+    const out = execFileSync(resolve('../pocketbase/pocketbase'), ['migrate', 'up', '--dir', join(dir, 'data'), '--migrationsDir', migrations, '--hooksDir', hooks],
+      { encoding: 'utf8', timeout: 15000, stdio: 'pipe', env: { ...process.env, CONDUCTOR_EMAIL: 'conductor@test.invalid' } });
+    expect(out).toContain('1759100001_zcheck_null_rule');
+  } finally { await rm(dir, { recursive: true, force: true }); }
+});
+
 it('retire boarding drops the queue and survives a log row pointing at a request', async () => {
   const dir = await mkdtemp(join(tmpdir(), 'chugalug-retire-'));
   try {

@@ -17,17 +17,34 @@ const newCode = () => $security.randomStringWithAlphabet(6, '0123456789')
 const codeMail = (email, code) => ({ to: [email], subject: 'Your Chug-a-Lug boarding code', text: `Your Chug-a-Lug boarding code: ${code}\n\nIt works for 15 minutes.` })
 
 // Both code-mail budgets: every code mail, first send and resend alike, spends one of each, so
-// replacing a sign-up never resets an address, and a leaked link sends at most 40 an hour. Both are
-// checked before either is spent: a refusal sends no mail, so it must cost neither budget (a relative
-// refused by a spent link still has their own three mails for the next one).
-function mailBudget(tx, email, linkId) {
-  const crew = require(`${__hooks}/crew.js`)
-  const limits = require(`${__hooks}/limits.js`)
-  const budgets = [['join-mail:' + crew.hash(email), 3], ['join-mail-link:' + linkId, 40]]
-  if (!budgets.every(([key, max]) => limits.availableInTransaction(tx, key, max, 3600))) return false
-  // Cannot refuse now: the transaction is serialised and both counts were just checked.
-  for (const [key, max] of budgets) limits.consumeInTransaction(tx, key, max, 3600)
+// replacing a sign-up never resets an address, and a leaked link sends at most 40 an hour.
+const mailBudgets = (email, linkId) => [['join-mail:' + require(`${__hooks}/crew.js`).hash(email), 3], ['join-mail-link:' + linkId, 40]]
+const joinBudget = (ip) => ['join:' + ip, 20]
+const fits = (tx, budgets) => budgets.every(([key, max]) => require(`${__hooks}/limits.js`).availableInTransaction(tx, key, max, 3600))
+
+// All of them are checked before any is spent: a refusal sends no mail, so it costs no budget (a
+// relative refused by a spent link still has their own three mails for the next one, and their
+// IP its sign-ups).
+function spendAll(tx, budgets) {
+  if (!fits(tx, budgets)) return false
+  // Cannot refuse now: the transaction is serialised and every count was just checked.
+  for (const [key, max] of budgets) require(`${__hooks}/limits.js`).consumeInTransaction(tx, key, max, 3600)
   return true
+}
+
+// Open (unexpired, unverified) sign-ups on this link, not counting the one this email would replace.
+// Per link, so revoking a leaked link frees the cap for the next one at once.
+const openOn = (tx, linkId, email) => tx.findRecordsByFilter('signups', "user = '' && expires_at > {:now} && link = {:link} && email != {:email}", '', 0, 0, { now: sqlTime(Date.now()), link: linkId, email }).length
+
+// Why this form cannot sign up now, read on `tx`; '' when it can. The same checks run twice: on $app
+// before bcrypt (so a refused post costs no hash), then inside the transaction that writes.
+function refusal(tx, link, name, email, ip) {
+  if (!link) return 'dead'
+  try { tx.findFirstRecordByData('users', 'name_key', name.key); return 'name' } catch (_) {}
+  try { tx.findAuthRecordByEmail('users', email); return 'seated' } catch (_) {}
+  if (openOn(tx, link.id, email) >= OPEN_CAP) return 'busy'
+  if (!fits(tx, [joinBudget(ip), ...mailBudgets(email, link.id)])) return 'busy'
+  return ''
 }
 
 // The signup row named by the body, if its secret matches; read inside the caller's transaction.
@@ -68,22 +85,19 @@ exports.join = function (e) {
   if (!email) return e.json(400, { message: 'Enter a valid email address.' })
   const problem = crew.passwordProblem(body.password)
   if (problem) return e.json(400, { message: problem })
-  // A cheap look before bcrypt, so a dead or made-up link never costs a hash. The transaction checks again.
-  if (!links.findActive($app, body.token)) return e.json(410, { message: LINK })
-  const passwordHash = crew.hashPassword($app, body.password)
+  // Cheap reads before bcrypt, so a dead link, a taken name or seat, or a spent budget never costs
+  // a hash. The transaction checks them all again.
+  const early = refusal($app, links.findActive($app, body.token), name, email, info.ip)
+  const passwordHash = early ? '' : crew.hashPassword($app, body.password)
   const secret = $security.randomString(43)
   const code = newCode()
-  let outcome = '', record = null
-  $app.runInTransaction((tx) => {
+  let outcome = early, record = null
+  if (!early) $app.runInTransaction((tx) => {
     const link = links.findActive(tx, body.token)
-    if (!link) { outcome = 'dead'; return }
-    try { tx.findFirstRecordByData('users', 'name_key', name.key); outcome = 'name'; return } catch (_) {}
-    try { tx.findAuthRecordByEmail('users', email); outcome = 'seated'; return } catch (_) {}
+    outcome = refusal(tx, link, name, email, info.ip)
+    if (outcome) return
+    if (!spendAll(tx, [joinBudget(info.ip), ...mailBudgets(email, link.id)])) { outcome = 'busy'; return }
     const now = Date.now()
-    // The open sign-up this one replaces does not count against the cap.
-    const open = tx.findRecordsByFilter('signups', "user = '' && expires_at > {:now} && email != {:email}", '', 0, 0, { now: sqlTime(now), email }).length
-    if (open >= OPEN_CAP) { outcome = 'busy'; return }
-    if (!limits.consumeInTransaction(tx, 'join:' + info.ip, 20, 3600) || !mailBudget(tx, email, link.id)) { outcome = 'busy'; return }
     for (const old of tx.findRecordsByFilter('signups', "user = '' && email = {:email}", '', 0, 0, { email })) tx.delete(old)
     record = new Record(tx.findCollectionByNameOrId('signups'))
     record.set('email', email)
@@ -197,7 +211,7 @@ exports.resend = function (e) {
     if (now - ms(r, 'code_sent_at') < 60e3) { outcome = 'early'; return }
     if (r.getInt('resends') >= 3) { outcome = 'capped'; return }
     email = r.getString('email')
-    if (!mailBudget(tx, email, r.getString('link'))) { outcome = 'capped'; return }
+    if (!spendAll(tx, mailBudgets(email, r.getString('link')))) { outcome = 'capped'; return }
     r.set('code_hash', crew.hash(code))
     r.set('code_attempts', 0)
     r.set('code_sent_at', sqlTime(now))
