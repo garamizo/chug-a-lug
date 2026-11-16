@@ -96,9 +96,12 @@
   let loadSeq = 0;
   async function load(first?: Promise<Draft>) {
     const seq = ++loadSeq;
+    const routeId = data.id;
+    // A newer read (or a different route) has taken over: this one must not touch the screen.
+    const superseded = () => seq !== loadSeq || routeId !== data.id;
     try {
-      const loaded = await (first ?? loadDraft(data.id));
-      if (seq !== loadSeq) return;
+      const loaded = await (first ?? loadDraft(routeId));
+      if (superseded()) return;
       draft = loaded;
       // On The Route the staged plan is built once: from a plan parked before the add screen if
       // there is one, otherwise from the records. Later realtime reloads must not clobber an edit
@@ -110,12 +113,19 @@
           // The shared live day owns the "newest check-in belonging to an admin" rule; force a
           // fresh read so the staged plan starts from where the Conductor actually is, not from
           // whatever `liveDay` happened to have loaded first.
-          await liveDay.loadAnchor(data.id);
-          plan = stagePlan(draft.stops, liveDay.anchor?.stopId ?? null);
+          await liveDay.loadAnchor(routeId);
+          // Every mount runs two loads (the first read and the subscription's catch-up), so both can
+          // get here. Only the newest may stage, and never over a plan already staged: an edit made
+          // during the await would be lost.
+          if (superseded() || plan) return;
+          plan = stagePlan(loaded.stops, liveDay.anchor?.stopId ?? null);
           before = snapshot(plan);
         }
       }
-    } catch { error = copy.loadError; }
+    } catch {
+      // A late failure of an older read must not show an error over a newer read that landed.
+      if (!superseded()) error = copy.loadError;
+    }
   }
 
   const PARK_KEY = $derived(`chugalug.stagedPlan:${data.id}`);
@@ -203,7 +213,7 @@
     ? cohesionBlockers({
         eventDate: draft.itinerary.event_date, now: liveDay.realNow,
         stops: plan.stops.map((s) => ({ id: s.id, order: s.order, name: s.name })),
-        legs: previewLegs.map((l) => ({ fromStopId: l.from_stop, toStopId: l.to_stop, kind: l.kind })),
+        legs: previewLegs.map((l) => ({ fromStopId: l.from_stop, toStopId: l.to_stop, kind: l.kind, reason: l.reason })),
         anchorStopId: plan.anchorStopId,
         homeName: draft.itinerary.start_station_name || draft.itinerary.start_station
       })

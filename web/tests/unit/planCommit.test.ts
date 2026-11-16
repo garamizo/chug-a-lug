@@ -135,7 +135,7 @@ describe('POST /api/plan/commit', () => {
   it('refuses a run home that cannot be ridden, naming the home station', async () => {
     state.itinerary = { ...state.itinerary, start_station: 'AURORA', start_station_name: 'Aurora' };
     const res = await call({
-      ...rideable, anchorStopId: 's3',
+      ...rideable, anchorStopId: 's2',
       stops: [rideable.stops[0], { ...rideable.stops[1], dwell_min: 600 }]
     });
     expect(res.status).toBe(409);
@@ -143,6 +143,34 @@ describe('POST /api/plan/commit', () => {
     expect(body.blockers).toHaveLength(1);
     expect(body.blockers[0].message).toContain('Berwyn Beer Hall');
     expect(body.blockers[0].message).toContain(`${copy.blockTo} Aurora.`);
+    expect(state.writes).toEqual([]);
+  });
+
+  it('saves a position correction at the last stop even when no train home works', async () => {
+    // The recovery path for a missed train home: nothing left on the route can fix the run home, so
+    // it must not block the Save that replans it.
+    state.itinerary = { ...state.itinerary, start_station: 'AURORA', start_station_name: 'Aurora' };
+    const res = await call({
+      ...rideable, anchorStopId: 's3',
+      stops: [rideable.stops[0], { ...rideable.stops[1], dwell_min: 600 }]
+    });
+    expect(res.status).toBe(200);
+    expect(recomputeItinerary).toHaveBeenCalled();
+  });
+
+  it('says why when the only train home arrives after midnight', async () => {
+    // UW9 is the next train from OTC to Geneva after 23:43, and it arrives at 01:50.
+    state.itinerary = { ...state.itinerary, start_station: 'GENEVA', start_station_name: 'Geneva' };
+    const res = await call({
+      ...rideable, anchorStopId: 's2',
+      stops: [
+        { ...rideable.stops[0], station_id: 'OTC', station_name: 'Ogilvie' },
+        { ...rideable.stops[1], station_id: 'OTC', station_name: 'Ogilvie', dwell_min: 630 }
+      ]
+    });
+    expect(res.status).toBe(409);
+    const body = await res.json();
+    expect(body.blockers).toEqual([{ code: 'impossible_leg', message: `${copy.runHomeMidnight} ${copy.blockHint}` }]);
     expect(state.writes).toEqual([]);
   });
 

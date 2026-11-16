@@ -4,7 +4,7 @@
   import { copy } from '$lib/labels';
   import { fmtDate, fmtTime, fmtWeekday, localToUtc, parseHm } from '$lib/time';
   import { PLANNER_ROUTE, placeStops, plannerStations, sideOfSection, unfold, type Section, type SectionRow } from '$lib/lineMap';
-  import { finishAt } from '$lib/routeStats';
+  import { routeFinish } from '$lib/routeStats';
   import type { Itinerary, Leg, Line, Station, Stop, StopLike } from '$lib/types';
   import { stopPhoto } from '$lib/photo';
   import type { PlanActions } from '$lib/planActions';
@@ -102,7 +102,7 @@
     }
   });
 
-  const finish = $derived(closing && closing.kind !== 'impossible' ? new Date(closing.arrive_at) : finishAt(sorted.map((_, i) => leaveAt(i))));
+  const finish = $derived(routeFinish(closing, sorted.map((_, i) => leaveAt(i))));
   const homeName = $derived(itinerary.start_station_name || itinerary.start_station);
   // The same unserved-station message the other legs use, for the last stop's station or Board at's.
   const closingReason = $derived(closing?.kind === 'impossible'

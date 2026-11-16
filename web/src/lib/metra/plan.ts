@@ -148,7 +148,15 @@ export function recomputeLegs(
     if (opts.anchor && last.id === opts.anchor.stopId) arrival = opts.anchor.atMin;
     const readyMin = arrival + last.dwell_min;
     const atStation = readyMin + last.walk_min;
-    const plan = planLeg(s, last.station_id, opts.startStation, atStation, opts.date);
+    let plan = planLeg(s, last.station_id, opts.startStation, atStation, opts.date);
+    if (plan.kind !== 'impossible' && plan.arriveMin >= MINUTES_PER_DAY) {
+      // `planLeg` rides the first train out, but a later express can still beat midnight: look at
+      // every direct train leaving from here on and take the earliest arrival before it.
+      const beat = nextTrips(s, last.station_id, opts.startStation, atStation, opts.date, Infinity)
+        .filter((c) => c.arr < MINUTES_PER_DAY)
+        .sort((x, y) => x.arr - y.arr || x.dep - y.dep)[0];
+      if (beat) plan = { kind: 'train', segments: [{ kind: 'train', ...beat }], departMin: beat.dep, arriveMin: beat.arr };
+    }
     if (plan.kind !== 'impossible' && plan.arriveMin >= MINUTES_PER_DAY) {
       legs.push({ fromStopId: last.id, toStopId: '', kind: 'impossible', readyMin, departMin: atStation, arriveMin: atStation, segments: [], reason: 'after_midnight' });
     } else {

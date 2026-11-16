@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { cohesionBlockers } from '../../src/lib/live/cohesion';
+import { cohesionBlockers, impossibleFromAnchor } from '../../src/lib/live/cohesion';
 import { copy } from '../../src/lib/labels';
 
 const stops = [
@@ -67,7 +67,6 @@ describe('cohesionBlockers', () => {
     expect(blockers[0].message).toContain(`${copy.theStart} ${copy.blockTo} Alpha`);
   });
 
-
   describe('the run home', () => {
     const closing = { fromStopId: 'c', toStopId: '', kind: 'impossible' as const };
     const input = { eventDate: '2026-12-26', now: new Date('2026-12-26T18:00:00Z'), stops, legs: [...rideable, closing], anchorStopId: 'b' };
@@ -81,6 +80,31 @@ describe('cohesionBlockers', () => {
 
     it('falls back to the start wording without a home name', () => {
       expect(cohesionBlockers(input)[0].message).toContain(`${copy.blockTo} ${copy.theStart}.`);
+    });
+
+    it('does not block a Save made with the crew at the last stop', () => {
+      // The spec's recovery path: the crew missed the train home, so the Conductor corrects the
+      // position at the last stop. Nothing on the route can fix the run home from there, and the
+      // planner already shows its reason on the closing leg.
+      expect(cohesionBlockers({ ...input, anchorStopId: 'c', homeName: 'Aurora' })).toEqual([]);
+      expect(impossibleFromAnchor({ ...input, anchorStopId: 'c' })).toEqual([]);
+    });
+
+    it('still counts the run home from an earlier anchor', () => {
+      expect(impossibleFromAnchor({ ...input, anchorStopId: 'b' })).toEqual([closing]);
+      expect(impossibleFromAnchor({ ...input, anchorStopId: 'a' })).toEqual([closing]);
+    });
+
+    it('still blocks off the event day, whatever the position', () => {
+      expect(cohesionBlockers({ ...input, anchorStopId: 'c', now: new Date('2026-12-20T18:00:00Z') })).toHaveLength(1);
+    });
+
+    it('says a train home after midnight is the problem, not a missing train', () => {
+      const late = { ...closing, reason: 'after_midnight' };
+      expect(cohesionBlockers({ ...input, legs: [...rideable, late], homeName: 'Aurora' })).toEqual([{
+        code: 'impossible_leg',
+        message: `${copy.runHomeMidnight} ${copy.blockHint}`
+      }]);
     });
   });
 });

@@ -241,6 +241,42 @@ describe('recomputeLegs: the run home', () => {
     expect(at(419)).toMatchObject({ kind: 'walk', arriveMin: 1439 });
     expect(at(419).reason).toBeUndefined();
   });
+  it('takes a later express home that beats midnight when the first train home misses it', () => {
+    // A synthetic late night: the local leaves first but arrives after midnight; the express leaves
+    // ten minutes later and is home by 23:50. Only the closing leg looks past the first departure.
+    const svc = { days: [true, true, true, true, true, true, true], start: '20260101', end: '20271231' };
+    const late: typeof s = {
+      ...s, services: new Map([['LATE', svc]]), exceptions: new Map(),
+      trips: [
+        { id: 'LOCAL', routeId: 'BNSF', serviceId: 'LATE', directionId: 0, headsign: 'Aurora',
+          stops: [{ stopId: 'HOMEA', arr: 1380, dep: 1380, seq: 1 }, { stopId: 'HOMEB', arr: 1445, dep: 1445, seq: 2 }] },
+        { id: 'EXPRESS', routeId: 'BNSF', serviceId: 'LATE', directionId: 0, headsign: 'Aurora',
+          stops: [{ stopId: 'HOMEA', arr: 1390, dep: 1390, seq: 1 }, { stopId: 'HOMEB', arr: 1430, dep: 1430, seq: 2 }] }
+      ]
+    };
+    const legs = recomputeLegs(late, { date: D, startMin: 1370, startStation: 'HOMEB' },
+      [{ id: 'a', order: 1, station_id: 'HOMEA', dwell_min: 5, walk_min: 2 }]);
+    expect(legs[legs.length - 1]).toMatchObject({ fromStopId: 'a', toStopId: '', kind: 'train', departMin: 1390, arriveMin: 1430 });
+    expect(legs[legs.length - 1].reason).toBeUndefined();
+    expect((legs[legs.length - 1].segments[0] as { tripId: string }).tripId).toBe('EXPRESS');
+    // Other legs keep planLeg's first-departure rule.
+    expect(planLeg(late, 'HOMEA', 'HOMEB', 1375, D)).toMatchObject({ departMin: 1380, arriveMin: 1445 });
+  });
+  it('stays impossible after midnight when no later train beats it either', () => {
+    const svc = { days: [true, true, true, true, true, true, true], start: '20260101', end: '20271231' };
+    const late: typeof s = {
+      ...s, services: new Map([['LATE', svc]]), exceptions: new Map(),
+      trips: [
+        { id: 'LOCAL', routeId: 'BNSF', serviceId: 'LATE', directionId: 0, headsign: 'Aurora',
+          stops: [{ stopId: 'HOMEA', arr: 1380, dep: 1380, seq: 1 }, { stopId: 'HOMEB', arr: 1445, dep: 1445, seq: 2 }] },
+        { id: 'LATER', routeId: 'BNSF', serviceId: 'LATE', directionId: 0, headsign: 'Aurora',
+          stops: [{ stopId: 'HOMEA', arr: 1400, dep: 1400, seq: 1 }, { stopId: 'HOMEB', arr: 1450, dep: 1450, seq: 2 }] }
+      ]
+    };
+    const legs = recomputeLegs(late, { date: D, startMin: 1370, startStation: 'HOMEB' },
+      [{ id: 'a', order: 1, station_id: 'HOMEA', dwell_min: 5, walk_min: 2 }]);
+    expect(legs[legs.length - 1]).toMatchObject({ kind: 'impossible', reason: 'after_midnight' });
+  });
   it('replans the run home from an anchor at the last stop', () => {
     const legs = run({ anchor: { stopId: 's2', atMin: 900 } });
     expect(legs[2]).toMatchObject({ readyMin: 920, departMin: 1005, arriveMin: 1055 });

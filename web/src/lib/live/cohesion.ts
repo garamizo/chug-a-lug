@@ -4,7 +4,7 @@ import { copy } from '$lib/labels';
 import { todayInTz } from '$lib/time';
 
 export type CohesionStop = { id: string; order: number; name: string };
-export type CohesionLeg = { fromStopId: string; toStopId: string; kind: 'train' | 'walk' | 'impossible' };
+export type CohesionLeg = { fromStopId: string; toStopId: string; kind: 'train' | 'walk' | 'impossible'; reason?: string };
 export type Blocker = { code: 'no_position' | 'anchor_missing' | 'impossible_leg'; message: string };
 
 /**
@@ -15,6 +15,10 @@ export type Blocker = { code: 'no_position' | 'anchor_missing' | 'impossible_leg
  * a shared rule here, a save can land clean by this function's definition of "broken" and come
  * back reporting it landed broken by a looser one (every impossible leg, history included) —
  * which is exactly a leg the Conductor cannot fix, on a message that says to.
+ *
+ * The run home (`toStopId` '') does not count once the crew is at the last stop: nothing left on
+ * the route can change it, and the Conductor's position correction there is how a missed train home
+ * gets replanned. The planner still shows the closing leg's reason.
  */
 export function impossibleFromAnchor(input: { stops: CohesionStop[]; legs: CohesionLeg[]; anchorStopId: string | null }): CohesionLeg[] {
   if (!input.anchorStopId) return [];
@@ -22,7 +26,9 @@ export function impossibleFromAnchor(input: { stops: CohesionStop[]; legs: Cohes
   const index = new Map(ordered.map((s, i) => [s.id, i]));
   const anchorAt = index.get(input.anchorStopId);
   if (anchorAt === undefined) return [];
-  return input.legs.filter((leg) => leg.kind === 'impossible' && (index.get(leg.fromStopId) ?? -1) >= anchorAt);
+  const atLastStop = anchorAt === ordered.length - 1;
+  return input.legs.filter((leg) => leg.kind === 'impossible' && (index.get(leg.fromStopId) ?? -1) >= anchorAt
+    && !(atLastStop && leg.toStopId === '' && leg.fromStopId !== ''));
 }
 
 export function cohesionBlockers(input: {
@@ -46,6 +52,9 @@ export function cohesionBlockers(input: {
     : input.legs.filter((leg) => leg.kind === 'impossible');
   return impossible.map((leg) => ({
     code: 'impossible_leg' as const,
-    message: `${copy.blockNoTrain} ${name(leg.fromStopId)} ${copy.blockTo} ${toName(leg.toStopId)}. ${copy.blockHint}`
+    // Trains home do run after midnight; saying "no train" would contradict the planner's reason.
+    message: leg.reason === 'after_midnight'
+      ? `${copy.runHomeMidnight} ${copy.blockHint}`
+      : `${copy.blockNoTrain} ${name(leg.fromStopId)} ${copy.blockTo} ${toName(leg.toStopId)}. ${copy.blockHint}`
   }));
 }
