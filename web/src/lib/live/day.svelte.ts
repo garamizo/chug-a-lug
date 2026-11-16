@@ -11,7 +11,7 @@ import { boardingJourney, pickTrip, plannedTrain, rideHome, type Boarding, type 
 import { fetchAlerts, fetchDay, fetchNext, fetchStatus } from './feed';
 import { isEventDay as onEventDate, planNow } from './planClock';
 import { resolveCurrentRoute } from './route';
-import type { SpikeInput } from './spikes';
+import { spikes, type SpikeEvent } from './spikes';
 import type { Alert, Broadcast, BroadcastAck, ChatMessage, Checkin, DrinkEntry, FeedMode, Itinerary, Leg, Media, NextTrip, Reaction, Stop } from '$lib/types';
 
 export class LiveDay {
@@ -48,8 +48,11 @@ export class LiveDay {
   get serverNow(): Date {
     return this.serverOffset === null ? this.realNow : new Date(this.realNow.getTime() + this.serverOffset);
   }
-  /** The server's Chicago day, counted on this phone's clock so midnight is caught offline too. */
-  get today(): string { return todayInTz(this.serverNow); }
+  /**
+   * The server's Chicago day, counted on this phone's clock so midnight is caught offline too.
+   * Derived, so a clock tick that leaves the date alone wakes nothing that reads it.
+   */
+  today = $derived(todayInTz(this.serverNow));
 
   get startAt(): Date {
     return this.itinerary ? localToUtc(this.itinerary.event_date, parseHm(this.itinerary.start_time)) : new Date();
@@ -77,20 +80,25 @@ export class LiveDay {
    * Activity is stamped with real time while the timetable runs on plan time, so on a practice day
    * the plan-date arrival is shifted by the plan clock's own offset: "the crawl is over" and
    * "activity stops counting" flip at the same instant, with no wall-clock inverse to get wrong
-   * across a DST gap or fold. Rows carry the server's stamp, so the offset is taken to `serverNow`: on the
-   * event day, with the phone's clock in step with the server's, this is the arrival itself.
+   * across a DST gap or fold. On the event day the offset is 0 and this is the arrival itself, an
+   * absolute instant from the stored legs: the same on every phone, whatever each one measured as its
+   * server offset, so a row near Closing Time counts on all of them or on none.
+   * Derived, so a clock tick that leaves Closing Time alone wakes nothing that reads it.
    */
-  get closedAt(): string | null {
+  closedAt = $derived.by((): string | null => {
     if (this.here?.source !== 'after') return null;
     const closing = closingLeg(this.stops, this.legs);
     if (!closing || closing.kind === 'impossible') return null;
     const end = crawlEnd(this.stops, this.legs, this.startAt).at;
-    return end ? new Date(end.getTime() - (this.now.getTime() - this.serverNow.getTime())).toISOString() : null;
-  }
-  /** What Golden Spikes are worked out from: chat, the Crew Board and the celebration all read the same night. */
-  get spikeInput(): SpikeInput {
-    return { drinks: this.feed.drinks, media: this.feed.media, messages: this.feed.messages, stops: this.stops, date: this.today, closedAt: this.closedAt };
-  }
+    return end ? new Date(end.getTime() - (this.now.getTime() - this.realNow.getTime())).toISOString() : null;
+  });
+  /**
+   * Tonight's Golden Spikes, worked out once for chat and the celebration (the Crew Board replays its own
+   * rows on the same `today` and `closedAt`). Rebuilt only when the feed, stops, day or Closing Time change.
+   */
+  spikeEvents = $derived<SpikeEvent[]>(spikes({
+    drinks: this.feed.drinks, media: this.feed.media, messages: this.feed.messages, stops: this.stops, date: this.today, closedAt: this.closedAt
+  }));
   /** Before the crawl on a route that boards elsewhere: the ride to stop 1 (see `boardingJourney`). */
   get boarding(): Boarding | null {
     return this.hasRoute ? boardingJourney(this.itinerary, this.stops, this.legs, this.here) : null;

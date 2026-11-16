@@ -615,13 +615,38 @@ describe('the run home', () => {
       expect(day.here?.source).toBe('after');
       expect(day.closedAt).toBe(trainSeg.arr);
     });
-    it('is on the server\'s clock, the one activity rows are stamped with', () => {
+    it('is the same on every phone: the arrival instant, whatever each phone measured as its server offset', () => {
+      // Two phones on the same rows, each with its own round-trip error (and one with a mis-set clock).
+      const one = homeDay(), two = homeDay();
+      one.serverOffset = 90_000; two.serverOffset = -4_000;
+      at(one, '2026-12-26T23:41:00Z'); at(two, '2026-12-26T23:41:00Z');
+      expect(one.closedAt).toBe(trainSeg.arr);
+      expect(two.closedAt).toBe(one.closedAt);
+      // Re-measured on the next poll: Closing Time does not jitter.
+      one.serverOffset = 1_234;
+      expect(one.closedAt).toBe(trainSeg.arr);
+    });
+    // That a tick leaves the timeline's reference alone is Svelte's own `$derived` caching, which this suite
+    // cannot observe: vitest runs in Node and compiles `.svelte.ts` for the server, where effects never run
+    // and a derived is recomputed on every read. This checks the shared timeline's contents instead.
+    it('shares one spike timeline, on the day\'s date and Closing Time', () => {
       const day = homeDay();
-      day.serverOffset = 90_000;
-      at(day, '2026-12-26T23:40:00Z');
-      expect(day.here?.source).toBe('after');
-      expect(Date.parse(day.closedAt!)).toBe(Date.parse(trainSeg.arr) + 90_000);
-      expect(Date.parse(day.closedAt!)).toBeLessThanOrEqual(day.serverNow.getTime());
+      day.serverOffset = 0;
+      const beer = (id: string, minute: number) => ({ id, user: 'u1', kind: 'beer', stop: 'a', at: `2026-12-26T20:0${minute}:00Z`, created: '', action_order: minute });
+      day.feed = { drinks: [beer('d1', 1)] as never, media: [], messages: [], reactions: [] };
+      at(day, '2026-12-26T23:41:00Z');
+      const first = day.spikeEvents;
+      expect(first.map((e) => [e.kind, e.at])).toEqual([['pathfinder', '2026-12-26T20:01:00Z'], ['caboose', trainSeg.arr]]);
+      // A tick that changes neither today, Closing Time, the feed nor the stops changes nothing.
+      at(day, '2026-12-26T23:41:15Z');
+      day.serverOffset = 2_000;
+      expect(day.spikeEvents).toEqual(first);
+      // New activity does.
+      day.feed = { ...day.feed, drinks: [beer('d1', 1), beer('d2', 2)] as never };
+      expect(day.spikeEvents.map((e) => e.kind)).toEqual(['pathfinder', 'caboose']);
+      expect(day.spikeEvents[1].user).toBe('u1');
+      day.feed = { ...day.feed, drinks: [beer('d1', 1), { ...beer('d3', 3), user: 'u2', kind: 'water' }] as never };
+      expect(day.spikeEvents.filter((e) => e.kind === 'caboose').map((e) => e.user)).toEqual(['u2']);
     });
     it('is null on a legacy route with no closing leg', () => {
       const day = homeDay();

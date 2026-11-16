@@ -1,5 +1,5 @@
-import { describe, expect, it } from 'vitest';
-import { drinkCount, hasSeen } from '../../src/lib/live/crew';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { coalesce, drinkCount, hasSeen } from '../../src/lib/live/crew';
 import type { BroadcastAck, DrinkEntry } from '../../src/lib/types';
 
 const entry = (user: string, at: string, stop = 'first') =>
@@ -73,4 +73,22 @@ it('ranks alcohol first, then non-alcoholic, then food, ignoring wine and other 
   expect(compareScores(score, { ...score, beer: 1, water: 0 })).toBeGreaterThan(0);
   expect(compareScores(score, { ...score, water: 0, food: 9 })).toBeLessThan(0);
   expect(compareScores(score, { ...score, food: 0 })).toBeLessThan(0);
+});
+
+describe('Crew Board reloads', () => {
+  afterEach(() => { vi.useRealTimers(); });
+  it('coalesces a burst of realtime events into one trailing reload, and cancel drops a pending one', () => {
+    vi.useFakeTimers();
+    const load = vi.fn();
+    const reload = coalesce(load, 300);
+    for (let i = 0; i < 20; i++) { reload.call(); vi.advanceTimersByTime(100); }
+    expect(load).not.toHaveBeenCalled();
+    vi.advanceTimersByTime(200);
+    expect(load).toHaveBeenCalledOnce();
+    reload.call();
+    reload.cancel();
+    vi.advanceTimersByTime(1_000);
+    expect(load).toHaveBeenCalledOnce();
+    expect(vi.getTimerCount()).toBe(0);
+  });
 });

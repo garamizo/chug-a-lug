@@ -143,6 +143,22 @@ describe('CelebrationQueue', () => {
     expect(read).toHaveBeenCalledTimes(2);
   });
 
+  it('a second tab does not replay what the first one celebrated: the marks are read again before showing', () => {
+    const store = memoryStore();
+    const now = () => new Date(T0 + 60_000);
+    const first = new CelebrationQueue({ now, store }), second = new CelebrationQueue({ now, store });
+    // The second tab has already read the (empty) marks for this scope.
+    expect(second.next([], SCOPE, false)).toBeNull();
+    expect(play(first, [ev('a', 1)])?.id).toBe('a');
+    const read = vi.spyOn(store, 'read');
+    expect(second.next([ev('a', 1)], SCOPE, false)).toBeNull();
+    expect(read).toHaveBeenCalledTimes(1);
+    // A spike neither tab has shown still goes, on the same one read per new head.
+    expect(second.next([ev('a', 1), ev('b', 1)], SCOPE, false)?.id).toBe('b');
+    expect(second.next([ev('a', 1), ev('b', 1)], SCOPE, false)?.id).toBe('b');
+    expect(read).toHaveBeenCalledTimes(2);
+  });
+
   it('reset forgets what is showing', () => {
     const { q } = setup(1);
     const a = q.next([ev('a', 1), ev('b', 1)], SCOPE, false)!;

@@ -5,7 +5,7 @@
   import { copy, labels, drinkIcons } from '$lib/labels';
   import { pb, subscribe } from '$lib/pb';
   import { liveDay } from '$lib/live/day.svelte';
-  import { crewScore, compareScores, hasSeen as seenBulletin } from '$lib/live/crew';
+  import { coalesce, crewScore, compareScores, hasSeen as seenBulletin } from '$lib/live/crew';
   import { dayBounds } from '$lib/time';
   import { spikes, spikeTally, SPIKE_LABELS, type SpikeKind } from '$lib/live/spikes';
   import type { BroadcastAck, ChatMessage, DrinkEntry, Media, UserRecord } from '$lib/types';
@@ -25,7 +25,7 @@
   // "Pathfinder ×2": a Pathfinder is won once per Tab kind, so a person can hold several.
   const laurelNames = (kinds: SpikeKind[]) => [...new Set(kinds)].map((k) => {
     const n = kinds.filter((x) => x === k).length;
-    return n > 1 ? `${SPIKE_LABELS[k].name} ×${n}` : SPIKE_LABELS[k].name;
+    return n > 1 ? `${SPIKE_LABELS[k].name} ${copy.spikeTimes}${n}` : SPIKE_LABELS[k].name;
   }).join(', ');
   const categories = ['shot', 'cocktail', 'beer', 'water', 'food'] as const;
   const hasSeen = (userId: string) => seenBulletin(acks, userId, current?.id ?? null);
@@ -57,12 +57,15 @@
         error = '';
       } catch { if (active && request === version) error = copy.loadError; }
     };
-    const unsubs = ['users', 'drink_entries', 'broadcast_acks', 'media', 'chat_messages'].map((name) => subscribe(name, '', () => void load()));
+    // A chatty night sends a burst of events; each would reload all five lists, so they share one trailing load.
+    const reload = coalesce(() => void load(), 300);
+    const unsubs = ['users', 'drink_entries', 'broadcast_acks', 'media', 'chat_messages'].map((name) => subscribe(name, '', reload.call));
     // Recover changes missed while the realtime connection was down.
     const timer = setInterval(() => void load(), 30_000);
     void load();
     return () => {
       active = false;
+      reload.cancel();
       clearInterval(timer);
       unsubs.forEach((unsubscribe) => unsubscribe());
     };

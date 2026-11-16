@@ -85,9 +85,12 @@ export function fmtWeekday(date: string, style: 'long' | 'short' = 'long'): stri
   return new Intl.DateTimeFormat('en-US', { timeZone: 'UTC', weekday: style }).format(new Date(Date.UTC(y, m - 1, d)));
 }
 
+// Built once: a formatter costs far more to make than to use, and Golden Spikes date every activity row.
+const ymdInTz = new Intl.DateTimeFormat('en-CA', { timeZone: TZ, year: 'numeric', month: '2-digit', day: '2-digit' });
+
 /** Today's date in the crawl's timezone as YYYY-MM-DD, whatever timezone the phone is in. */
 export function todayInTz(now: Date = new Date()): string {
-  return new Intl.DateTimeFormat('en-CA', { timeZone: TZ, year: 'numeric', month: '2-digit', day: '2-digit' }).format(now);
+  return ymdInTz.format(now);
 }
 
 /** The calendar day after `date` (YYYY-MM-DD). */

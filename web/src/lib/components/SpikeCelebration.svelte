@@ -7,7 +7,7 @@
   import { fade } from 'svelte/transition';
   import { copy } from '$lib/labels';
   import { liveDay } from '$lib/live/day.svelte';
-  import { spikes, SPIKE_LABELS, type SpikeEvent } from '$lib/live/spikes';
+  import { SPIKE_LABELS, type SpikeEvent } from '$lib/live/spikes';
   import { CelebrationQueue, celebrationStore, type CelebrationScope } from '$lib/live/celebrate';
 
   let { scope, quiet }: { scope: CelebrationScope | null; quiet: boolean } = $props();
@@ -15,7 +15,6 @@
   const SHOW_MS = 2500;
   // Activity rows carry the server's stamp, so the 10-minute window is measured on the server's clock.
   const queue = new CelebrationQueue({ now: () => liveDay.serverNow, store: celebrationStore() });
-  const events = $derived(spikes(liveDay.spikeInput));
   let showing = $state.raw<SpikeEvent | null>(null);
   // What the card says: kept after it hides so the fade-out still has something to render.
   let last = $state.raw<SpikeEvent | null>(null);
@@ -37,7 +36,7 @@
   // Re-run on the timeline, the scope, quiet and the clock (the window); nothing else.
   $effect(() => {
     void turn;
-    const head = queue.next(events, scope, quiet);
+    const head = queue.next(liveDay.spikeEvents, scope, quiet);
     const at = scope;
     untrack(() => {
       if (head === showing) return;

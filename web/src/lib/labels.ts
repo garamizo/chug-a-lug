@@ -329,6 +329,7 @@ export const copy = {
   spikeFirst: 'first',
   spikeTakesFrom: 'takes it from',
   spikeLaurel: 'Golden Spikes',
+  spikeTimes: '×',
   takePhoto: 'Take a photo',
   emojiTray: 'Emoji',
   keyboard: 'Keyboard',

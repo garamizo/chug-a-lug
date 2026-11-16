@@ -24,3 +24,10 @@ export function crewScore(drinks: DrinkEntry[], userId: string, date: string): C
 export function compareScores(a: CrewScore, b: CrewScore): number {
   return (b.shot + b.cocktail + b.beer) - (a.shot + a.cocktail + a.beer) || b.water - a.water || b.food - a.food;
 }
+
+/** One trailing call after `ms` of quiet: a burst of realtime events becomes one reload. */
+export function coalesce(fn: () => void, ms: number): { call(): void; cancel(): void } {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const cancel = () => { clearTimeout(timer); timer = undefined; };
+  return { call() { cancel(); timer = setTimeout(() => { timer = undefined; fn(); }, ms); }, cancel };
+}

@@ -82,7 +82,9 @@ describe('spikes', () => {
   });
 
   it('caboose waits for closing time, counts takers-part only, and ties share it', () => {
-    const drinks = [drink('a', 'beer', 1), drink('a', 'beer', 2), drink('b', 'beer', 3), drink('c', 'water', 4), drink('d', 'food', 5), drink('b', 'beer', 6)];
+    // c and d log the most Tab entries but no alcohol: Caboose counts alcoholic drinks, not entries.
+    const drinks = [drink('a', 'beer', 1), drink('a', 'beer', 2), drink('b', 'beer', 3), drink('c', 'water', 4), drink('d', 'food', 5), drink('b', 'beer', 6),
+      drink('c', 'water', 7), drink('c', 'food', 8), drink('d', 'water', 9), drink('d', 'food', 10)];
     expect(of(spikes(input({ drinks })), 'caboose')).toEqual([]);
     const closedAt = at(0, 23);
     const ev = of(spikes(input({ drinks, closedAt })), 'caboose');

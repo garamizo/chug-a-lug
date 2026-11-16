@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { localToUtc, minutesOfDay, parseHm, fmtHm, fmtTime, fmtDate, fmtDateTime, todayInTz, dayBounds, nextDate } from '../../src/lib/time';
 
 describe('time', () => {
@@ -61,6 +61,15 @@ describe('todayInTz', () => {
   });
   it('rolls over at Chicago midnight', () => {
     expect(todayInTz(new Date('2026-12-27T06:30:00Z'))).toBe('2026-12-27');
+  });
+  it('reuses one formatter: it runs for every activity row on every pass', () => {
+    todayInTz(new Date('2026-12-27T05:30:00Z'));
+    const made = vi.spyOn(Intl, 'DateTimeFormat');
+    try {
+      expect(todayInTz(new Date('2026-12-27T05:30:00Z'))).toBe('2026-12-26');
+      expect(todayInTz(new Date('2026-07-04T04:59:00Z'))).toBe('2026-07-03');
+      expect(made).not.toHaveBeenCalled();
+    } finally { made.mockRestore(); }
   });
 });
 

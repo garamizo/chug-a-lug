@@ -22,6 +22,8 @@ export class CelebrationQueue {
   private scope: string | null = null;
   /** The store's marks, read once per scope (not on every clock tick) and kept up to date by `shown`. */
   private marked: Set<string> | null = null;
+  /** The head last checked against a fresh read of the store. */
+  private checked: string | null = null;
   constructor(private deps: { now: () => Date; store: Store }) {}
 
   /** Recompute from the current timeline; returns the event to show now, or null. */
@@ -31,10 +33,16 @@ export class CelebrationQueue {
     // Already started (and marked): it plays out, even if the feed is reloading or it was undone.
     if (this.current) return this.current;
     const since = this.deps.now().getTime() - CELEBRATION_WINDOW_MS;
-    const done = (this.marked ??= this.deps.store.read());
-    return events
-      .filter((e) => e.user === scope.user && Date.parse(e.at) >= since && !done.has(celebrationKey(scope, e)))
+    const fresh = this.marked === null;
+    this.marked ??= this.deps.store.read();
+    const pending = () => events
+      .filter((e) => e.user === scope.user && Date.parse(e.at) >= since && !this.marked!.has(celebrationKey(scope, e)))
       .sort(oldestFirst)[0] ?? null;
+    let head = pending();
+    // Another tab may have celebrated it since these marks were read: one more read for each new head.
+    if (head && !fresh && head.id !== this.checked) { this.marked = this.deps.store.read(); head = pending(); }
+    this.checked = head?.id ?? null;
+    return head;
   }
 
   /** The overlay started showing this event: mark it. */
@@ -49,7 +57,7 @@ export class CelebrationQueue {
   /** The overlay finished or was dismissed: the next one may go. */
   done(): void { this.current = null; }
 
-  reset(): void { this.current = null; this.scope = null; this.marked = null; }
+  reset(): void { this.current = null; this.scope = null; this.marked = null; this.checked = null; }
 }
 
 /** `{key: marked at}` in localStorage, pruned on write; always mirrored in memory for the session. */

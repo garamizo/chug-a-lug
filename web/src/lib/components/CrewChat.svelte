@@ -9,7 +9,6 @@
   import { fmtTime } from '$lib/time';
   import { chatEntries, reactionSummary, spikeEntries, type ChatEntry } from '$lib/live/chat';
   import { milestones } from '$lib/live/milestones';
-  import { spikes } from '$lib/live/spikes';
   import { liveDay } from '$lib/live/day.svelte';
   import { openLightbox } from '$lib/nav';
   import type { LightboxItem } from '$lib/types';
@@ -26,7 +25,7 @@
   } = $props();
   let sendError = $state(''), shown = $state(40);
   const marks = $derived(milestones(liveDay.feed.drinks, liveDay.feed.media, liveDay.stops, liveDay.today));
-  const golden = $derived(spikeEntries(spikes(liveDay.spikeInput)));
+  const golden = $derived(spikeEntries(liveDay.spikeEvents));
   const all = $derived(chatEntries(liveDay.feed.drinks, liveDay.bulletins, { messages: liveDay.feed.messages, media: liveDay.feed.media, milestones: [...marks, ...golden] }));
   const entries = $derived(all.slice(-shown));
   const cheers = $derived(reactionSummary(liveDay.feed.reactions, userId));

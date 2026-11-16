@@ -28,7 +28,7 @@ describe('labels', () => {
       spikeTriple: 'Triple Header', spikeFullConsist: 'Full Consist', spikeWhistleStop: 'Whistle Stop', spikeRailfan: 'Railfan',
       spikePathfinderWhy: 'First to log it today', spikeBigBoyWhy: 'Most drinks', spikeCabooseWhy: 'Fewest drinks',
       spikeTripleWhy: 'Three drinks at one station', spikeFullConsistWhy: 'One of each', spikeWhistleStopWhy: 'Most messages',
-      spikeRailfanWhy: 'Most photos', spikeFirst: 'first', spikeTakesFrom: 'takes it from', spikeLaurel: 'Golden Spikes'
+      spikeRailfanWhy: 'Most photos', spikeFirst: 'first', spikeTakesFrom: 'takes it from', spikeLaurel: 'Golden Spikes', spikeTimes: '×'
     });
   });
   it('names the run home', () => {
