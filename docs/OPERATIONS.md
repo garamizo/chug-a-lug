@@ -194,21 +194,39 @@ halfway through. Needs `INTERNAL_SECRET` and `APP_URL` in `.env`.
 ## Deploying the join link
 
 Migrations `1759100000_join_link.js` (adds the link and sign-up tables) and `1759100001_retire_boarding.js`
-(drops `boarding_requests` and the peer-approval fields) apply when PocketBase restarts. Existing users
-keep their password and their seat.
+(drops `boarding_requests` and the peer-approval fields) are destructive. `pb_hooks/` is bind-mounted
+and PocketBase watches it, so PocketBase restarts and applies both migrations **as soon as the new
+code lands in the production checkout**: back up first. Existing users keep their password and their seat.
 
-1. `just backup`.
-2. Check what the migration will drop, with the host's `sqlite3` on a copy of the backup, not on live
-   data: `select (select count(*) from users), (select count(*) from boarding_requests)`. Open boarding
-   requests are discarded, so let any waiting person in or tell them to use the new link first.
-3. Remove the keys `TURNSTILE_SECRET`, `PUBLIC_TURNSTILE_SITE_KEY`, `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`
+1. Before the code reaches the production checkout (before `git merge --ff-only` or `git pull` on
+   `main` there), `just backup`, then check what the migration will drop on a copy of that backup,
+   never on `~/.chug-a-lug/pb_data`:
+
+       rm -rf /tmp/chugalug-dryrun && mkdir -p /tmp/chugalug-dryrun/pb_data
+       unzip -q ~/.chug-a-lug/backups/snapshot-<ts>/pocketbase.zip -d /tmp/chugalug-dryrun/pb_data
+       sqlite3 /tmp/chugalug-dryrun/pb_data/data.db "select (select count(*) from users), (select count(*) from boarding_requests)"
+       rm -rf /tmp/chugalug-dryrun   # a copy of production data
+
+   Open boarding requests are discarded, so let any waiting person in or tell them to use the new
+   link first.
+2. Land the code (`git merge --ff-only` / `git pull`). PocketBase restarts by itself on the hooks
+   change; restart it anyway, `docker compose restart pocketbase`, and check
+   `docker compose logs pocketbase` for both migrations applied and no error.
+3. `just up`: the web image changes, so it has to be rebuilt.
+4. Remove the keys `TURNSTILE_SECRET`, `PUBLIC_TURNSTILE_SITE_KEY`, `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`
    and `PUBLIC_GOOGLE_ENABLED` from `.env`; nothing reads them now. `INTERNAL_SECRET` and `APP_URL` stay,
-   `just invite` needs them.
-4. `just up` (the web image changes, so rebuild), then `just invite <seats>`.
+   `just invite` needs them. Then `just invite <seats>`.
 5. The Cloudflare Turnstile widget and the Google OAuth client are no longer used and can be deleted in
    their dashboards.
 
-**Rollback:** restore the backup (Restore from backup below) and check out the code from before the join link.
+**Rollback**, in this order (PocketBase started on the restored data with the new code still checked
+out would apply the destructive migrations again):
+
+1. `docker compose down`.
+2. Check out the code from before the join link in the production checkout, and put the removed
+   `.env` keys back.
+3. Restore the backup from step 1 (step 2 of Restore from backup below).
+4. `docker compose up -d`, then `just up` to rebuild the web image from the old code.
 
 ## Deploying crew access
 
