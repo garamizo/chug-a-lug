@@ -127,8 +127,9 @@ timestamps need not be chronological.
   (or `override`) at the last stop — riding home is still part of the crawl.
   - **Anchor at the last stop** (Codex finding 1): today an anchored last stop becomes `after` only when
     `checkedIn <= arriveAt`, so a late correction stays `override` forever. New rule for the anchored last
-    stop: `after` iff the closing leg is resolved, its `ready_at` is at or after the check-in (i.e. it was
-    replanned from this correction, not stale legs predating it), and `now >= crawlEnd.at`. With stale legs
+    stop: `after` iff the closing leg is resolved, its `ready_at` equals check-in + the last stop's dwell within
+    60 s (`closingFresh`: it was replanned from this correction, not stale legs predating it; the same test gates
+    the board's riding state), and `now >= crawlEnd.at`. With stale legs
     (recompute not landed yet) it stays `override`. Tests: early and late terminal check-ins, before and after
     recompute, up to and past the home arrival.
 - **Completion uses the scheduled arrival** of the closing leg, not realtime predictions. If the crew misses the
