@@ -10,6 +10,8 @@
   import BulletinSheet from '$lib/components/BulletinSheet.svelte';
   import TabBar from '$lib/components/TabBar.svelte';
   import Lightbox from '$lib/components/Lightbox.svelte';
+  import SpikeCelebration from '$lib/components/SpikeCelebration.svelte';
+  import type { CelebrationScope } from '$lib/live/celebrate';
   import { newRecordId } from '$lib/live/staged';
   let { children } = $props();
   let error = $state('');
@@ -41,6 +43,10 @@
   const onLive = $derived(page.url.pathname === '/live');
   // Practice interrupts only the screen that is practising; planning and voting stay quiet.
   const quiet = $derived(liveDay.practice && !onLive);
+  // Whose celebration, on which route, server day and simulation run: the Tab's proof scope. None
+  // until the clock is known, so a run's first sync cannot replay another run's awards.
+  const celebrationScope = $derived<CelebrationScope | null>(userId && liveDay.clockKnown && liveDay.itinerary
+    ? { itinerary: liveDay.itinerary.id, date: liveDay.today, runId: clientClock.runId ?? null, user: userId } : null);
   // /live already shows the full ticket; the compact banner is for every *other* screen.
   const showBanner = $derived(!!here?.stop && !onLive && !quiet);
   // Re-ask for trains the instant the leg we are counting down changes — a Conductor's correction
@@ -112,6 +118,7 @@
   <!-- The Tab opens from the tab bar, so a practice day's Live needs it too; practice stays off the other screens. -->
   {#if liveDay.isEventDay || (liveDay.practice && onLive)}<TabBar />{/if}
   <Lightbox />
+  <SpikeCelebration scope={celebrationScope} {quiet} />
   {#if liveDay.composing}
     <BulletinSheet text="" onsend={(body) => void postBulletin(body)} onskip={() => (liveDay.composing = false)} ondismiss={() => (liveDay.composing = false)} />
   {/if}

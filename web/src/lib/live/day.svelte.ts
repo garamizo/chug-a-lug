@@ -11,6 +11,7 @@ import { boardingJourney, pickTrip, plannedTrain, rideHome, type Boarding, type 
 import { fetchAlerts, fetchDay, fetchNext, fetchStatus } from './feed';
 import { isEventDay as onEventDate, planNow } from './planClock';
 import { resolveCurrentRoute } from './route';
+import type { SpikeInput } from './spikes';
 import type { Alert, Broadcast, BroadcastAck, ChatMessage, Checkin, DrinkEntry, FeedMode, Itinerary, Leg, Media, NextTrip, Reaction, Stop } from '$lib/types';
 
 export class LiveDay {
@@ -43,10 +44,12 @@ export class LiveDay {
   /** Server clock minus this phone's clock, from the last `/api/day`. Null until the server answers. */
   serverOffset = $state<number | null>(null);
   get clockKnown() { return !clientClock.enabled || !!clientClock.sample; }
-  /** The server's Chicago day, counted on this phone's clock so midnight is caught offline too. */
-  get today(): string {
-    return todayInTz(this.serverOffset === null ? this.realNow : new Date(this.realNow.getTime() + this.serverOffset));
+  /** The server's clock, counted on this phone's: the clock every activity row is stamped with. */
+  get serverNow(): Date {
+    return this.serverOffset === null ? this.realNow : new Date(this.realNow.getTime() + this.serverOffset);
   }
+  /** The server's Chicago day, counted on this phone's clock so midnight is caught offline too. */
+  get today(): string { return todayInTz(this.serverNow); }
 
   get startAt(): Date {
     return this.itinerary ? localToUtc(this.itinerary.event_date, parseHm(this.itinerary.start_time)) : new Date();
@@ -82,6 +85,10 @@ export class LiveDay {
     if (!closing || closing.kind === 'impossible') return null;
     const end = crawlEnd(this.stops, this.legs, this.startAt).at;
     return end ? new Date(end.getTime() - (this.now.getTime() - this.realNow.getTime())).toISOString() : null;
+  }
+  /** What Golden Spikes are worked out from: chat, the Crew Board and the celebration all read the same night. */
+  get spikeInput(): SpikeInput {
+    return { drinks: this.feed.drinks, media: this.feed.media, messages: this.feed.messages, stops: this.stops, date: this.today, closedAt: this.closedAt };
   }
   /** Before the crawl on a route that boards elsewhere: the ride to stop 1 (see `boardingJourney`). */
   get boarding(): Boarding | null {
