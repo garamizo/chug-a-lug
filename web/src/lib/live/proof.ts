@@ -7,6 +7,8 @@ import { hookCode } from '$lib/routeTitle';
 /** Identity that invalidates a send. The destination stop is NOT part of it: moving on mid-upload is fine. */
 export type ProofScope = { user: string; itinerary: string; day: string; runId: string | null };
 export type ProofSend = { id: string; kind: DrinkKind; stop: string; scope: ProofScope; file: File; takenAt: string };
+/** What a Tab tap captures before the camera opens: the drink lands where and when it was tapped. */
+export type ProofTap = { kind: DrinkKind; stop: string; scope: ProofScope };
 export type ProofResult =
   | { status: 'saved'; drink: DrinkEntry | null; media: Media | null } // null = landed but not read back; caller reloads the feed
   | { status: 'stale' }                                                // scope no longer current; nothing to upsert
@@ -32,6 +34,12 @@ export function proofForm(send: ProofSend): FormData {
   form.set('drink_kind', send.kind);
   form.set('file', send.file);
   return form;
+}
+
+const ownWords = new Set<string>(Object.values(copy));
+/** Getting the clock before a send failed: our own message if it is one, never a browser's raw English. */
+export function clockFailure(err: unknown): string {
+  return err instanceof Error && ownWords.has(err.message) ? err.message : copy.noSignal;
 }
 
 function failureMessage(err: unknown): string {

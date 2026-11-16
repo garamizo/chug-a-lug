@@ -13,7 +13,7 @@
   import { compressForUpload, uploadBatch } from '$lib/live/upload';
   import { openStop } from '$lib/nav';
   import { stripStops } from '$lib/live/strip';
-  import { sameScope, sendProof, type ProofScope, type ProofSend } from '$lib/live/proof';
+  import { clockFailure, sameScope, sendProof, type ProofScope, type ProofSend, type ProofTap } from '$lib/live/proof';
   import { drinkCount } from '$lib/live/crew';
   import { topLine } from '$lib/live/leaderboard';
   import { newRecordId } from '$lib/live/staged';
@@ -44,8 +44,8 @@
   // the photos still on their way (from the moment one is picked), each under the id its drink gets.
   let sending = $state<{ key: number; kind: DrinkKind }[]>([]);
   let sendKey = 0;
-  // The last send that failed, kept (with its photo and id) for Retry while its scope is current.
-  let retry = $state<ProofSend | null>(null);
+  // Sends that failed, each kept (with its photo and id) for Retry while its scope is current.
+  let retries = $state<ProofSend[]>([]);
   let clinking = $state<DrinkKind | null>(null);
   // The toast's target stays until its delete succeeds, so a failed Undo can be retried.
   let toast = $state<{ id: string; kind: DrinkKind; failed: boolean } | null>(null);
@@ -55,7 +55,7 @@
   // of them makes an unfinished send stale: no Retry, and a late answer is left to the feed's reload.
   const scope = $derived<ProofScope | null>(me && liveDay.itinerary
     ? { user: me, itinerary: liveDay.itinerary.id, day: liveDay.today, runId: clientClock.runId ?? null } : null);
-  $effect(() => { if (retry && !sameScope(retry.scope, scope)) retry = null; });
+  $effect(() => { if (retries.some((r) => !sameScope(r.scope, scope))) retries = retries.filter((r) => sameScope(r.scope, scope)); });
   // Only saved rows count, by the server's day.
   const dayTotal = $derived(drinkCount(liveDay.feed.drinks, me, liveDay.today));
   const leaders = $derived($auth.user ? topLine(liveDay.feed.drinks, { id: $auth.user.id, name: $auth.user.name }, liveDay.today) : []);
@@ -65,21 +65,39 @@
     toastTimer = setTimeout(() => { if (toast?.id === id && !toast.failed) toast = null; }, 4000);
   };
 
-  // The camera answered: shrink the photo, then send it as the drink, at the stop it was taken.
-  async function logDrink(kind: DrinkKind, photo: File) {
+  // One camera for the Tab, on Live itself rather than in the sheet: a photo taken after the sheet
+  // closed still arrives. A tap captures where and for whom the drink is before the camera opens;
+  // the picker is modal, so at most one tap is waiting for its photo.
+  let camera = $state<HTMLInputElement>();
+  let tapped: ProofTap | null = null;
+  function tap(kind: DrinkKind) {
     const stop = tabStop, at = scope;
-    if (!stop || !at) return;
+    if (!stop || !at || !camera) return;
+    tapped = { kind, stop: stop.id, scope: at };
+    navigator.vibrate?.(30);
+    camera.value = '';
+    camera.click();   // from the click itself, so phones open the camera
+  }
+  // A cancelled picker fires no change (or a `cancel`): nothing was started, so nothing is undone.
+  function picked() {
+    const photo = camera?.files?.[0], t = tapped;
+    tapped = null;
+    if (camera) camera.value = '';
+    if (photo && t) void logDrink(t, photo);
+  }
+
+  // The camera answered: shrink the photo, then send it as the drink, at the stop it was tapped.
+  async function logDrink(t: ProofTap, photo: File) {
     error = '';
     const key = ++sendKey;
-    sending = [...sending, { key, kind }];
-    navigator.vibrate?.(30);
+    sending = [...sending, { key, kind: t.kind }];
     try {
       const prepared = await compressForUpload(photo);
       if (prepared.kind !== 'image') throw new Error(copy.proofNeedsImage);
-      await submit({ id: newRecordId(), kind, stop: stop.id, scope: at, file: prepared.file, takenAt: prepared.takenAt });
+      await submit({ id: newRecordId(), kind: t.kind, stop: t.stop, scope: t.scope, file: prepared.file, takenAt: prepared.takenAt });
     } catch (err) {
       // Only a photo the phone could not use lands here; there is nothing to retry.
-      if (sameScope(at, scope)) error = err instanceof Error ? err.message : copy.uploadFailed;
+      if (sameScope(t.scope, scope)) error = err instanceof Error ? err.message : copy.uploadFailed;
     } finally {
       sending = sending.filter((s) => s.key !== key);
     }
@@ -103,12 +121,12 @@
       });
     } catch (err) {
       // No clock to send by (offline, or the simulation is away): the photo is kept for Retry.
-      result = sameScope(send.scope, scope)
-        ? { status: 'failed', message: err instanceof Error && err.message ? err.message : copy.noSignal } : { status: 'stale' };
+      result = sameScope(send.scope, scope) ? { status: 'failed', message: clockFailure(err) } : { status: 'stale' };
     }
-    if (result.status === 'stale') { if (retry?.id === send.id) retry = null; return; }
-    if (result.status === 'failed') { error = result.message; retry = send; return; }
-    if (retry?.id === send.id) retry = null;
+    const others = retries.filter((r) => r.id !== send.id);
+    if (result.status === 'stale') { retries = others; return; }
+    if (result.status === 'failed') { error = result.message; retries = [...others, send]; return; }
+    retries = others;
     if (result.drink) liveDay.upsertDrink(result.drink);
     if (result.media) liveDay.upsertMedia(result.media);
     clinking = send.kind;
@@ -117,15 +135,17 @@
     void liveDay.loadFeed();
   }
 
-  // Retry sends the same photo under the same id, so a first attempt that did land is counted once.
-  async function retrySend() {
-    const send = retry;
-    retry = null;
-    if (!send || !sameScope(send.scope, scope)) return;
+  // Retry sends every failed photo again under its own id, so a first attempt that did land counts once.
+  async function retrySends() {
+    const due = retries.filter((r) => sameScope(r.scope, scope));
+    retries = [];
+    if (!due.length) return;
     error = '';
-    const key = ++sendKey;
-    sending = [...sending, { key, kind: send.kind }];
-    try { await submit(send); } finally { sending = sending.filter((s) => s.key !== key); }
+    await Promise.all(due.map(async (send) => {
+      const key = ++sendKey;
+      sending = [...sending, { key, kind: send.kind }];
+      try { await submit(send); } finally { sending = sending.filter((s) => s.key !== key); }
+    }));
   }
 
   // Mirrors CrewChat's reaction guard: a target already being undone ignores a repeat tap outright,
@@ -212,12 +232,12 @@
 {#if tabStop && liveDay.media.length}<FreightStrip media={liveDay.media} />{/if}
 {#if error && !ui.tabOpen}<p role="alert">{error}</p>{/if}
 {#snippet toastView()}
-  {#if toast || retry}
+  {#if toast || retries.length}
     <div class="toasts" class:floating={!ui.tabOpen}>
-      {#if retry}
+      {#if retries.length}
         <div class="toast" role="status" data-testid="tab-retry-toast">
-          <span>{drinkIcons[retry.kind]} {(copy as Record<string, string>)[`drink_${retry.kind}`]}</span>
-          <button type="button" onclick={() => void retrySend()} data-testid="tab-retry">{copy.tabRetry}</button>
+          <span>{#each retries as r, i (r.id)}{i ? ' · ' : ''}{drinkIcons[r.kind]} {(copy as Record<string, string>)[`drink_${r.kind}`]}{/each}</span>
+          <button type="button" onclick={() => void retrySends()} data-testid="tab-retry">{copy.tabRetry}</button>
         </div>
       {/if}
       {#if toast}
@@ -229,13 +249,14 @@
     </div>
   {/if}
 {/snippet}
+<input bind:this={camera} type="file" accept="image/*" capture="environment" hidden onchange={picked} oncancel={() => (tapped = null)} data-testid="tab-camera" />
 {#if ui.tabOpen && liveDay.hasRoute}
   <TabSheet onclose={() => (ui.tabOpen = false)}>
     <!-- Counts read saved rows only. Undo my last one stays hidden while a photo is sending, so it is
          never mistaken for undoing that tap: the drink it would remove is an older one. -->
     <TabRow entries={liveDay.feed.drinks} stopId={tabStop?.id ?? null} userId={me} total={dayTotal} {clinking}
       sending={sending.map((s) => s.kind)} showUndoLast={!toast && !sending.length}
-      onlog={(kind, photo) => void logDrink(kind, photo)} onundo={(entry) => void undoDrink(entry)} />
+      ontap={tap} onundo={(entry) => void undoDrink(entry)} />
     {#if error}<p role="alert">{error}</p>{/if}
     {@render toastView()}
   </TabSheet>

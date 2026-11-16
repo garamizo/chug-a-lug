@@ -70,9 +70,10 @@ describe('broadcast_acks', () => {
 });
 
 // A drink is written only by the media hook, as a photo's proof (see 'proof uploads' below).
-const proofUpload = async (token: string, user: string) => {
+const proofUpload = async (token: string, user: string, at?: string) => {
   const form = new FormData();
   form.set('user', user);
+  if (at) form.set('at', at);
   form.set('stop', stopId);
   form.set('kind', 'image');
   form.set('drink_kind', 'beer');
@@ -91,9 +92,14 @@ describe('drink_entries', () => {
     expect((await del(`/api/collections/drink_entries/records/${id}`, crew)).status).toBe(204);
   });
 
-  it('refuses a drink logged for someone else', async () => {
+  it('refuses a drink logged for someone else, writing neither photo nor drink', async () => {
+    const su = await superuserToken();
+    const total = async (c: string) => (await (await get(`/api/collections/${c}/records?perPage=1`, su)).json()).totalItems as number;
+    const [media, drinks] = [await total('media'), await total('drink_entries')];
     const res = await proofUpload(crew, conductorId);
     expect(res.status).toBe(400);
+    expect(await total('media')).toBe(media);
+    expect(await total('drink_entries')).toBe(drinks);
   });
 
   it('crew cannot create a drink directly', async () => {
@@ -105,7 +111,7 @@ describe('drink_entries', () => {
 
   it('stamps a drink with server time, whatever time the phone sent', async () => {
     const before = Date.now();
-    const res = await proofUpload(crew, crewId);
+    const res = await proofUpload(crew, crewId, '2020-01-01T00:00:00.000Z');
     expect(res.status).toBe(200);
     const drink = await (await get(`/api/collections/drink_entries/records/${(await res.json()).id}`, crew)).json();
     const at = Date.parse(drink.at);
@@ -390,6 +396,7 @@ describe('proof uploads', () => {
     expect(await exists('media', id)).toBe(false);
   });
 
+  // Covered by drink_entries.createRule = null now; the hook's proof_locked check stays as defence.
   it('a crew drink pointing at someone else’s photo is refused', async () => {
     const su = await superuserToken();
     const form = new FormData();

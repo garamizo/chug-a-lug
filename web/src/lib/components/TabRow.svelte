@@ -4,38 +4,22 @@
   import { copy, drinkIcons } from '$lib/labels';
   import { DRINK_KINDS, tally } from '$lib/live/tab';
   import type { DrinkEntry, DrinkKind } from '$lib/types';
-  let { entries, stopId, userId, total, clinking, sending, showUndoLast, onlog, onundo }: {
+  let { entries, stopId, userId, total, clinking, sending, showUndoLast, ontap, onundo }: {
     entries: DrinkEntry[]; stopId: string | null; userId: string; total: number;
     clinking: DrinkKind | null; showUndoLast: boolean;
     /** Kinds with a photo still on its way: shown as sending, not counted. */
     sending: DrinkKind[];
-    onlog: (kind: DrinkKind, photo: File) => void; onundo: (entry: DrinkEntry) => void;
+    /** Opens the camera for this kind; called from the click itself, so phones allow it. */
+    ontap: (kind: DrinkKind) => void; onundo: (entry: DrinkEntry) => void;
   } = $props();
   const counts = $derived(tally(entries, stopId ?? '', userId));
-  // One camera for all five buttons: the picker is modal, so only one kind is ever being chosen.
-  let camera = $state<HTMLInputElement>();
-  let choosing: DrinkKind | null = null;
-  // Opened from the tap's own click handler, so phones treat it as a user gesture.
-  function snap(kind: DrinkKind) {
-    if (!camera) return;
-    choosing = kind;
-    camera.value = '';
-    camera.click();
-  }
-  // A cancelled picker fires no change (or a `cancel`): nothing was started, so nothing is undone.
-  function picked() {
-    const photo = camera?.files?.[0], kind = choosing;
-    choosing = null;
-    if (camera) camera.value = '';
-    if (photo && kind) onlog(kind, photo);
-  }
 </script>
 
 <section class="tab">
   <h2>{copy.tabTitle} · {copy.tabYou} <span data-testid="tab-total">{total}</span></h2>
   <div class="grid">
     {#each DRINK_KINDS as kind (kind)}
-      <button type="button" class:clink={clinking === kind} disabled={!stopId} onclick={() => snap(kind)} data-testid="drink-{kind}">
+      <button type="button" class:clink={clinking === kind} disabled={!stopId} onclick={() => ontap(kind)} data-testid="drink-{kind}">
         <span class="icon" aria-hidden="true">{drinkIcons[kind]}</span>
         {#if sending.includes(kind)}<span class="name sending" data-testid="tab-sending-{kind}">{copy.tabSending}</span>
         {:else}<span class="name">{(copy as Record<string, string>)[`drink_${kind}`]}</span>{/if}
@@ -43,7 +27,6 @@
       </button>
     {/each}
   </div>
-  <input bind:this={camera} type="file" accept="image/*" capture="environment" hidden onchange={picked} oncancel={() => (choosing = null)} data-testid="tab-camera" />
   {#if !stopId}<p class="closed">{copy.tabClosed}</p>
   {:else}
     <p class="hint">{copy.tabProofHint}</p>

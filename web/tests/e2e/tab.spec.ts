@@ -1,5 +1,5 @@
 import { expect, test, type Page, type Request, type Route } from '@playwright/test';
-import { PB, clearRoutes, login, openTab, seedLockedCrawl, superuserToken, tapDrink } from './helpers';
+import { PB, PROOF_JPEG, clearRoutes, login, openTab, seedLockedCrawl, superuserToken, tapDrink } from './helpers';
 import { copy, proofCaption } from '../../src/lib/labels';
 
 const ADMIN = process.env.ADMIN_PASSWORD ?? 'admin-test-password';
@@ -84,29 +84,36 @@ test('cancelling the camera changes nothing', async ({ page }) => {
   await expect(page.getByTestId('drink-beer').locator('.count')).toHaveText('0');
 });
 
-test('a failed send takes the tap back and Retry lands it', async ({ page }) => {
+test('a failed send takes the tap back and Retry lands it, for every photo that failed', async ({ page }) => {
   await tabDay(page, 'E2E Tab Retry');
   const ids: string[] = [];
-  let failed = false;
+  let failures = 2;
   await page.route(MEDIA, async (r) => {
     if (!isProofPost(r.request())) return r.continue();
     ids.push(proofId(r.request()));
-    if (!failed) { failed = true; return r.abort(); }
+    if (failures > 0) { failures--; return r.abort(); }
     return r.continue();
   });
   await tapDrink(page, 'shot');
   await expect(page.getByRole('alert')).toHaveText(copy.noSignal);
-  await expect(page.getByTestId('drink-shot').locator('.count')).toHaveText('0');
-  await expect(page.getByTestId('tab-sending-shot')).toHaveCount(0);
   await expect(page.getByTestId('tab-retry')).toHaveText(copy.tabRetry);
+  // A second failure does not lose the first photo: one Retry sends both.
+  await tapDrink(page, 'beer');
+  await expect(page.getByTestId('tab-sending-beer')).toHaveCount(0);
+  await expect(page.getByTestId('tab-retry-toast')).toContainText(copy.drink_shot);
+  await expect(page.getByTestId('tab-retry-toast')).toContainText(copy.drink_beer);
+  await expect(page.getByTestId('drink-shot').locator('.count')).toHaveText('0');
+  await expect(page.getByTestId('drink-beer').locator('.count')).toHaveText('0');
+  await expect(page.getByTestId('tab-sending-shot')).toHaveCount(0);
   await page.getByTestId('tab-retry').click();
   await expect(page.getByTestId('drink-shot').locator('.count')).toHaveText('1');
+  await expect(page.getByTestId('drink-beer').locator('.count')).toHaveText('1');
   await expect(page.getByTestId('tab-retry')).toHaveCount(0);
   await expect(page.getByRole('alert')).toHaveCount(0);
   await expect(page.getByTestId('tab-toast')).toBeVisible();
-  // The same photo under the same id: a Retry can never make a second drink.
-  expect(ids).toHaveLength(2);
-  expect(ids[1]).toBe(ids[0]);
+  // The same photos under the same ids: a Retry can never make a second drink.
+  expect(ids).toHaveLength(4);
+  expect([...ids.slice(2)].sort()).toEqual([...ids.slice(0, 2)].sort());
 });
 
 test('a saved drink whose read-back fails counts as sent and arrives with the next reload', async ({ page }) => {
@@ -151,6 +158,25 @@ test('moving to the next stop while a photo sends still counts it at the stop it
   await expect(page.getByTestId('drink-beer').locator('.count')).toHaveText('0');   // not this bar's
   const drink = await (await record('drink_entries', held.ids[0])).json();
   expect(drink.stop).toBe(crawl.firstStopId);
+});
+
+test('a drink is filed at the stop where it was tapped, even if the camera returns after the Tab closed and the crawl moved on', async ({ page }) => {
+  const crawl = await tabDay(page, 'E2E Tab Tapped Here', true);
+  const chooser = page.waitForEvent('filechooser');
+  await page.getByTestId('drink-beer').click();
+  const camera = await chooser;
+  // While the camera is open the Tab is closed and the crawl walks on to the second bar.
+  await page.getByTestId('tab-close').click();
+  await expect(page.getByTestId('tab-sheet')).toHaveCount(0);
+  await page.clock.fastForward('01:30:00');
+  await page.clock.runFor(16_000);
+  await expect(page.getByTestId('strip-stop-1')).toHaveAttribute('aria-current', 'step');
+  await camera.setFiles(PROOF_JPEG);
+  await expect(page.getByTestId('tab-bar-total')).toHaveText('1');
+  await expect(page.getByTestId('tab-toast')).toBeVisible();
+  const drinks = await (await fetch(`${PB}/api/collections/drink_entries/records?filter=${encodeURIComponent(`stop.itinerary="${crawl.itineraryId}"`)}`,
+    { headers: { Authorization: await superuserToken() } })).json();
+  expect(drinks.items.map((d: { stop: string }) => d.stop)).toEqual([crawl.firstStopId]);
 });
 
 test('overlapping taps with a slow server count exactly once each, and never while in flight', async ({ page }) => {

@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { proofForm, sameScope, sendProof, type ProofScope, type ProofSend } from '../../src/lib/live/proof';
+import { clockFailure, proofForm, sameScope, sendProof, type ProofScope, type ProofSend } from '../../src/lib/live/proof';
 import { copy } from '../../src/lib/labels';
 import type { DrinkEntry, Media } from '../../src/lib/types';
 
@@ -71,5 +71,15 @@ describe('sendProof', () => {
     expect(await fail({ status: 400, response: { message: 'Proof_needs_image.' } })).toEqual({ status: 'failed', message: copy.proofNeedsImage });
     expect(await fail({ status: 400, response: { message: 'Proof_needs_stop.' } })).toEqual({ status: 'failed', message: copy.proofNeedsStop });
     expect(await fail({ status: 500 })).toEqual({ status: 'failed', message: copy.uploadFailed });
+  });
+});
+
+describe('clockFailure', () => {
+  it('keeps our own words and turns a raw browser error into No signal', () => {
+    expect(clockFailure(new Error(copy.simUnavailable))).toBe(copy.simUnavailable);
+    expect(clockFailure(new Error(copy.noSignal))).toBe(copy.noSignal);
+    expect(clockFailure(new TypeError('Failed to fetch'))).toBe(copy.noSignal);
+    expect(clockFailure(new DOMException('The operation timed out.', 'TimeoutError'))).toBe(copy.noSignal);
+    expect(clockFailure('nope')).toBe(copy.noSignal);
   });
 });

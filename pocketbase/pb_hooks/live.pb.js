@@ -143,6 +143,7 @@ onRecordCreateRequest((e) => {
 // round on the wrong day. The client's `at` is only its optimistic guess. A drink's photo is paired
 // by the media hook alone; only a superuser may name one in a drink create.
 onRecordCreateRequest((e) => {
+  // Defence only: createRule null already refuses every non-superuser create before this hook.
   if (e.record.getString('media') && !e.auth?.isSuperuser()) throw new BadRequestError('proof_locked')
   e.record.set('at', require(`${__hooks}/clock.js`).eventNow(e.app))
   e.next()
