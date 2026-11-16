@@ -187,7 +187,7 @@ A single getter on `liveDay` used by chat, the Crew Board and the celebration:
   `spikeTriple: 'Triple Header'`, `spikeFullConsist: 'Full Consist'`, `spikeWhistleStop: 'Whistle Stop'`,
   `spikeRailfan: 'Railfan'`
 - Meanings (overlay and laurel tooltip): `spikePathfinderWhy: 'First to log it today'`,
-  `spikeBigBoyWhy: 'Most drinks'`, `spikeCabooseWhy: 'Fewest drinks'`, `spikeTripleWhy: 'Three drinks at one stop'`,
+  `spikeBigBoyWhy: 'Most drinks'`, `spikeCabooseWhy: 'Fewest drinks'`, `spikeTripleWhy: 'Three drinks at one station'`,
   `spikeFullConsistWhy: 'One of each'`, `spikeWhistleStopWhy: 'Most messages'`, `spikeRailfanWhy: 'Most photos'`
 - Chat glue: `spikeFirst: 'first'`, `spikeTakesFrom: 'takes it from'`, `spikeLaurel: 'Golden Spikes'`
 - Remove `milestoneFirst` and `milestoneLead` if nothing else uses them.
