@@ -99,13 +99,17 @@ Goal: nobody misses a train, nobody is lost, and the plan can change without cha
   Everyone can Cheers any entry once. Only Conductor Bulletins are pinned.
 - **The Tab** is a one-tap row of shot / cocktail / beer / non-alcoholic / food buttons in a sheet
   opened from the tab bar (from any screen it goes to Live first; X, a tap outside or Escape closes
-  it, and it stays open between taps), with personal counters per drink and a running total for the day. A tap logs
-  a drink at the current stop instantly; a toast with Undo confirms it, and it stays up (with a retry
+  it, and it stays open between taps), with personal counters per drink and a running total for the day. A tap opens
+  the camera; the drink counts once its photo lands (the photo is Freight, filed at the stop where
+  the button was tapped, and shows once in Crew chat). While the photo sends the button says
+  "Sending…"; a failed send offers Retry while the page stays open (a retry after a lost response
+  never counts twice). A video is refused. Drinks logged before photos were required keep counting.
+  A toast with Undo confirms the drink, and it stays up (with a retry
   if the delete fails) until it fades or another tap replaces it — after which "Undo my last one here"
   still undoes your newest entry at the stop. The Tab and Freight are available only while the position
   source is `clock` or `override`; a stop still appears before and after the crawl, but the Tab
   stays closed (buttons disabled, no toast).
-- **Freight** uploads photos and videos from the chat box at any time. Every upload is filed under the
+- **Freight** uploads photos and videos from the chat box at any time (a Tab drink's photo is also Freight). Every upload is filed under the
   current route; while a stop is open it is also tagged with the stop the uploader's shared board
   shows. The server checks that the stop belongs to the current route; an invalid tag is cleared
   without losing the upload. Images are compressed in the browser (the original is used if compression fails), videos

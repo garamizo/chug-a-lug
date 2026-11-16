@@ -93,6 +93,9 @@ dev (the PocketBase hook calls the SvelteKit server with that secret and URL aft
   board's position and where planning the remaining legs starts, only on the event's Chicago date.
   Off-day edits use the route's scheduled start time. The Tab and Freight open only for a `clock` or
   `override` position; merely having a current stop is not enough before or after the crawl.
+- A Tab drink is written together with its photo. The migration `1759300000_photo_tab.js` applies on a
+  PocketBase restart (`docker compose restart pocketbase`; `pb_migrations/` is a bind mount, no rebuild for it);
+  `just up` ships the web change. Drinks logged without a photo before the change keep counting.
 - Save calls `POST /api/plan/commit`. It reconciles the persisted stop ids before validating rideability
   from the anchor onward; impossible legs behind the crew do not block Save. A 409 "The Route changed"
   means reload and make the change again. Reconciliation checks stop membership, not a version of
@@ -381,8 +384,8 @@ for a running clock. A conflict adopts the current clock and asks for another de
 
 Use The Route editor to move the crew, Hold, Annul or add a venue. The same preview/Save/Bulletin
 flow is used as on the live day. A clock revision refreshes previews and prevents obsolete saves.
-Tab, Undo, uploads, acknowledgements and standalone Bulletins resynchronize before writing. Offline
-writes are not queued. A previously synchronized browser can display its last running mapping while
+Tab (photo and drink together), Undo, uploads, acknowledgements and standalone Bulletins resynchronize before writing. Offline
+writes are not queued; a failed Tab send offers Retry only while the page stays open. A previously synchronized browser can display its last running mapping while
 marked unsynchronized; a fresh offline browser shows only its route mirror and clock-unavailable
 status. Mirror ages and parked-edit expiry remain wall time, as do auth, cache budgets and photo dates.
 
