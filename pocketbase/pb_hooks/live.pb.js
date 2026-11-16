@@ -93,6 +93,8 @@ onRecordUpdateRequest((e) => {
 // Deletes go through the drink: Undo, a stop or user cascade, or the Conductor deleting the photo
 // (which cascades here through drink_entries.media). The photo goes with its drink in the same
 // transaction; one already gone is fine, and a photo that cannot be deleted keeps the drink too.
+// Only the drink's own proof goes (a proof photo under the drink's id): a drink pointing at any
+// other photo must not become a way round the Conductor-only media delete.
 onRecordDelete((e) => {
   const original = e.app
   try {
@@ -100,8 +102,8 @@ onRecordDelete((e) => {
       e.app = tx
       e.next()
       const photo = e.record.getString('media')
-      if (!photo) return
-      const found = tx.findRecordsByFilter('media', 'id = {:id}', '', 1, 0, { id: photo })
+      if (!photo || photo !== e.record.id) return
+      const found = tx.findRecordsByFilter('media', "id = {:id} && drink_kind != ''", '', 1, 0, { id: photo })
       if (found.length) tx.delete(found[0])
     })
   } finally { e.app = original }
@@ -138,8 +140,10 @@ onRecordCreateRequest((e) => {
 }, 'chat_messages')
 
 // Drinks are stamped by the server like every other live row, so a phone's wrong clock cannot put a
-// round on the wrong day. The client's `at` is only its optimistic guess.
+// round on the wrong day. The client's `at` is only its optimistic guess. A drink's photo is paired
+// by the media hook alone; only a superuser may name one in a drink create.
 onRecordCreateRequest((e) => {
+  if (e.record.getString('media') && !e.auth?.isSuperuser()) throw new BadRequestError('proof_locked')
   e.record.set('at', require(`${__hooks}/clock.js`).eventNow(e.app))
   e.next()
 }, 'drink_entries')

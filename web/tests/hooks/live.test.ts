@@ -205,7 +205,7 @@ describe('proof uploads', () => {
   let strayStop = '';
 
   type Proof = { id?: string; user?: string; stop?: string | null; kind?: string; drinkKind?: string;
-    bytes?: Uint8Array<ArrayBuffer> | string; type?: string; name?: string };
+    bytes?: Uint8Array<ArrayBuffer> | string; type?: string; name?: string; noFile?: boolean };
   const send = async (token: string, p: Proof = {}) => {
     const form = new FormData();
     if (p.id) form.set('id', p.id);
@@ -215,7 +215,7 @@ describe('proof uploads', () => {
     const stop = p.stop === undefined ? stopId : p.stop;
     if (stop !== null) form.set('stop', stop);
     if (p.drinkKind !== '') form.set('drink_kind', p.drinkKind ?? 'beer');
-    form.set('file', new Blob([p.bytes ?? await JPEG], { type: p.type ?? 'image/jpeg' }), p.name ?? 'proof.jpg');
+    if (!p.noFile) form.set('file', new Blob([p.bytes ?? await JPEG], { type: p.type ?? 'image/jpeg' }), p.name ?? 'proof.jpg');
     const res = await fetch(`${PB}/api/collections/media/records`, { method: 'POST', headers: { Authorization: token }, body: form });
     return { status: res.status, body: await res.json() };
   };
@@ -279,6 +279,16 @@ describe('proof uploads', () => {
       expect(sent.body.message).toBe('Proof_needs_image.');
       expect(await exists('media', id)).toBe(false);
     }
+    expect(await drinkCount()).toBe(drinks);
+  });
+
+  it('a proof with no file is refused', async () => {
+    const drinks = await drinkCount();
+    const id = newId();
+    const sent = await send(crew, { id, noFile: true });
+    expect(sent.status).toBe(400);
+    expect(sent.body.data.file.code).toBe('validation_required');
+    expect(await exists('media', id)).toBe(false);
     expect(await drinkCount()).toBe(drinks);
   });
 
@@ -363,6 +373,37 @@ describe('proof uploads', () => {
     }
     expect((await del(`/api/collections/drink_entries/records/${id}`, crew)).status).toBe(204);
     expect(await exists('media', id)).toBe(false);
+  });
+
+  it('a crew drink pointing at someone else’s photo is refused', async () => {
+    const su = await superuserToken();
+    const form = new FormData();
+    form.set('user', conductorId); form.set('kind', 'image'); form.set('stop', stopId);
+    form.set('file', new Blob([await JPEG], { type: 'image/jpeg' }), 'conductor.jpg');
+    const photo = await (await fetch(`${PB}/api/collections/media/records`, { method: 'POST', headers: { Authorization: conductor }, body: form })).json();
+    const drinks = await drinkCount();
+    const res = await post('/api/collections/drink_entries/records', {
+      user: crewId, stop: stopId, kind: 'beer', at: '2026-12-26T20:00:00.000Z', media: photo.id
+    }, crew);
+    expect(res.status).toBe(400);
+    expect((await res.json()).message).toBe('Proof_locked.');
+    expect(await drinkCount()).toBe(drinks);
+    expect(await exists('media', photo.id)).toBe(true);
+    await del(`/api/collections/media/records/${photo.id}`, su);
+  });
+
+  it('deleting a drink leaves a photo that is not its own proof', async () => {
+    const su = await superuserToken();
+    const plain = await send(crew, { drinkKind: '' });
+    expect(plain.status).toBe(200);
+    const drink = await post('/api/collections/drink_entries/records', {
+      user: crewId, stop: stopId, kind: 'beer', at: '2026-12-26T20:00:00.000Z', media: plain.body.id
+    }, su);
+    expect(drink.status).toBe(200);
+    const drinkId = (await drink.json()).id;
+    expect((await del(`/api/collections/drink_entries/records/${drinkId}`, crew)).status).toBe(204);
+    expect(await exists('drink_entries', drinkId)).toBe(false);
+    expect(await exists('media', plain.body.id)).toBe(true);
   });
 
   it('the Conductor deleting the photo removes the drink', async () => {
