@@ -605,6 +605,48 @@ describe('the run home', () => {
     expect(day.rideHome?.riding).toBe(true);
   });
 
+  describe('closedAt: Closing Time on the activity clock', () => {
+    const at = (day: ReturnType<typeof homeDay>, iso: string) => { day.realNow = new Date(iso); day.syncPlan(); return day; };
+    it('is null before the crawl is over, and the closing arrival once home on the event day', () => {
+      const day = homeDay();
+      expect(at(day, '2026-12-26T23:39:59Z').here?.source).not.toBe('after');
+      expect(day.closedAt).toBeNull();
+      at(day, '2026-12-26T23:40:00Z');
+      expect(day.here?.source).toBe('after');
+      expect(day.closedAt).toBe(trainSeg.arr);
+    });
+    it('is null on a legacy route with no closing leg', () => {
+      const day = homeDay();
+      day.legs = [between] as never;
+      at(day, '2026-12-27T03:00:00Z');
+      expect(day.closedAt).toBeNull();
+    });
+    it('is null when the run home is impossible', () => {
+      const day = homeDay({ ...home, kind: 'impossible', reason: 'after_midnight', segments: [] });
+      at(day, '2026-12-27T03:00:00Z');
+      expect(day.closedAt).toBeNull();
+    });
+    // Practice: the plan clock lays today's time of day onto the route date; Closing Time must flip at the
+    // same real instant `here` turns `after`. 5:40 PM Chicago is the closing arrival (23:40Z in December).
+    it.each([
+      ['before the event date, other DST offset', '2026-09-22T22:40:00Z', '2026-09-22T22:39:59Z'],
+      ['before the event date, same DST offset', '2026-02-10T23:40:00Z', '2026-02-10T23:39:59Z'],
+      ['after the event date', '2027-01-12T23:40:00Z', '2027-01-12T23:39:59Z']
+    ])('practice day %s: lands on today\'s activity clock', (_name, flip, justBefore) => {
+      const day = homeDay();
+      at(day, justBefore);
+      expect(day.practice).toBe(true);
+      expect(day.here?.source).not.toBe('after');
+      expect(day.closedAt).toBeNull();
+      at(day, flip);
+      expect(day.here?.source).toBe('after');
+      expect(Math.abs(Date.parse(day.closedAt!) - day.realNow.getTime())).toBeLessThan(1000);
+      expect(Date.parse(day.closedAt!)).toBeLessThanOrEqual(day.realNow.getTime());
+      at(day, new Date(Date.parse(flip) + 600_000).toISOString());
+      expect(Date.parse(day.closedAt!)).toBe(Date.parse(flip));
+    });
+  });
+
   it('an impossible run home keeps today\'s board: nothing counts down to it', () => {
     const day = homeDay({ ...home, kind: 'impossible', reason: 'after_midnight', segments: [] });
     day.realNow = new Date('2026-12-26T22:00:00Z'); day.syncPlan();

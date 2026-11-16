@@ -6,7 +6,7 @@ import { pb, subscribe } from '$lib/pb';
 import { dayBounds, localToUtc, parseHm, todayInTz } from '$lib/time';
 import { clearMirror, mirrorPayload, readMirror, saveMirror, scopeMirror } from '$lib/offline';
 import { anchorOnEventDay } from '$lib/anchor';
-import { currentStop, type Current } from './current';
+import { closingLeg, crawlEnd, currentStop, type Current } from './current';
 import { boardingJourney, pickTrip, plannedTrain, rideHome, type Boarding, type RideHome } from './board';
 import { fetchAlerts, fetchDay, fetchNext, fetchStatus } from './feed';
 import { isEventDay as onEventDate, planNow } from './planClock';
@@ -67,6 +67,21 @@ export class LiveDay {
   get here(): Current | null {
     if (!this.hasRoute) return null;
     return currentStop(this.stops, this.legs, this.now, { startAt: this.startAt, override: this.effectiveAnchor });
+  }
+  /**
+   * Closing Time on the activity clock: when the train home arrives, as the day's own instants (ISO).
+   * Null until the crawl is over, and on routes with no run home (legacy, or an impossible one).
+   * Activity is stamped with real time while the timetable runs on plan time, so on a practice day
+   * the plan-date arrival is shifted by the plan clock's own offset: "the crawl is over" and
+   * "activity stops counting" flip at the same instant, with no wall-clock inverse to get wrong
+   * across a DST gap or fold. On the event day `now === realNow`, so this is the arrival itself.
+   */
+  get closedAt(): string | null {
+    if (this.here?.source !== 'after') return null;
+    const closing = closingLeg(this.stops, this.legs);
+    if (!closing || closing.kind === 'impossible') return null;
+    const end = crawlEnd(this.stops, this.legs, this.startAt).at;
+    return end ? new Date(end.getTime() - (this.now.getTime() - this.realNow.getTime())).toISOString() : null;
   }
   /** Before the crawl on a route that boards elsewhere: the ride to stop 1 (see `boardingJourney`). */
   get boarding(): Boarding | null {
