@@ -15,7 +15,7 @@
   let error = $state('');
   $effect(() => { if (!$auth.user) goto('/login'); });
   // Session-scoped effects key on the user id, not the record: authStore.save publishes a fresh
-  // record on every renewal or rename, and re-running them would restart the poller and the queue.
+  // record on every renewal or rename, and re-running them would restart the poller.
   const userId = $derived($auth.user?.id ?? '');
   // One owner for the live day: every screen reads this instance, so there is a single poller.
   $effect(() => {

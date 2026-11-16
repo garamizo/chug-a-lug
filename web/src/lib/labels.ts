@@ -50,17 +50,13 @@ export function label(key: LabelKey): string {
 
 // UI copy lives alongside the glossary so it can be changed in one place.
 export const copy = {
-  later: 'Later',
-  alreadyAnswered: 'Someone already answered this one.',
   putOff: 'Put off',
   letBackOn: 'Let back on',
   lastSeen: 'Last seen',
   never: 'never',
   accessLog: 'Access log',
   allEvents: 'All events',
-  /** Shown where a value is missing (no approver, no country). */
-  none: '—',
-  /** "· by <Conductor>" after a decision or an access-log entry. */
+  /** "· by <Conductor>" after an access-log entry. */
   byWhom: 'by',
   personStatus: 'Status',
   personAboard: 'Aboard',
@@ -98,7 +94,7 @@ export const copy = {
   appSubtitle: 'Your next stop starts here.',
   loginTitle: 'Welcome back',
   loginIntro: 'Sign in to catch up with the crew.',
-  passwordMismatch: "That email and password don't match. Try a sign-in code, or reset your password.",
+  passwordMismatch: "That email and password don't match. Try again, or reset your password.",
   passwordMissing: 'Enter your password.',
   forgotPassword: 'Forgot password?',
   forgotTitle: 'Reset your password',
@@ -115,14 +111,13 @@ export const copy = {
   emailLabel: 'Email address',
   emailPlaceholder: 'you@example.com',
   codeLabel: '6-digit code',
-  /** The boarding page's code step: confirming the code files the request; it does not sign in. */
+  /** The join page's code step: a right code creates the account and signs in. */
   confirmCode: 'Verify email',
-  noCodeHintNoGoogle: 'Didn’t get a code? Check your spam folder or resend after a minute.',
+  noCodeHint: 'Didn’t get a code? Check your spam folder or resend after a minute.',
   sendAgain: 'Resend code',
   signIn: 'Sign in',
   boardTitle: 'Create an account',
   boardIntro: 'Join the Chug-a-Lug crew with the link the Conductor shared.',
-  turnedAway: 'The crew turned this request away.',
   emailError: 'Enter a valid email address.',
   codeError: 'Enter the 6-digit code.',
   name: 'Your name',
@@ -493,19 +488,17 @@ export const authCopy = {
   codeIntro: 'Enter the 6-digit code sent to',
   changeEmail: 'Change email',
   resent: 'A new code is on its way.',
-  /** The server's link message (join.js LINK), shown for no link, a dead link and a link that dies mid-sign-up. */
+  /** The server's link message (join.js LINK), shown for a dead link and a link that dies mid-sign-up. */
   linkDead: 'This link is used up or expired. Ask the Conductor for a new one.',
+  /** /join opened without a token (a chat app's "Open in browser" can drop the fragment). */
+  noLink: 'Open the join link the Conductor sent you.',
   startAgain: 'Start again',
   linkChecking: 'Checking your link…',
   maybeReadyTitle: 'Your seat may be ready',
   maybeReadyIntro: 'We lost the answer on the way. If the code was right, your account exists: sign in with your email and password.',
   inboxTitle: 'Check your inbox',
   resetHint: 'Check your spam folder if you don’t see it.',
-  verified: 'Email verified',
-  pending: 'Waiting for crew approval',
   approvedTitle: 'Welcome aboard',
-  checkFailed: 'Verification couldn’t load.',
-  retry: 'Try again',
   showPassword: 'Show password',
   hidePassword: 'Hide password',
   resetIntro: 'Choose a new password for your account.'

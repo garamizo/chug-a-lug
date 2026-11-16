@@ -51,7 +51,7 @@ exports.logEvent = function (app, fields, info) {
     if (!limits.consume('log:' + fields.event + ':' + (info.ip || ''), 1, 900)) return
   }
   const r = new Record(app.findCollectionByNameOrId('access_log'))
-  for (const k of ['event', 'method', 'name', 'email', 'user', 'actor', 'request', 'detail']) if (fields[k]) r.set(k, String(fields[k]).slice(0, 300))
+  for (const k of ['event', 'method', 'name', 'email', 'user', 'actor', 'detail']) if (fields[k]) r.set(k, String(fields[k]).slice(0, 300))
   for (const k of ['ip', 'country', 'city', 'user_agent']) if (info[k]) r.set(k, info[k])
   app.save(r)
 }

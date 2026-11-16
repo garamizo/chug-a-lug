@@ -21,11 +21,23 @@ async function usersWith(email: string): Promise<number> {
   return (await r.json()).items.length;
 }
 
-test('no link or a dead link asks for a new one', async ({ page }) => {
+test('no link asks for the link; a dead link asks for a new one', async ({ page }) => {
   await page.goto('/join');
-  await expect(page.getByTestId('join-dead')).toContainText(authCopy.linkDead);
+  await expect(page.getByTestId('join-no-link')).toHaveText(authCopy.noLink);
+  await expect(page.getByTestId('name-input')).toHaveCount(0);
+  // Pasted into the same tab: only the fragment changes, so the page has to notice.
   await page.goto('/join#' + 'Z'.repeat(32));
   await expect(page.getByTestId('join-dead')).toContainText(authCopy.linkDead);
+  await page.goto('/login');
+  await page.goto('/join#' + 'Y'.repeat(32));
+  await expect(page.getByTestId('join-dead')).toContainText(authCopy.linkDead);
+});
+
+test('a rate-limited link check still shows the form, without an error', async ({ page }) => {
+  await page.route('**/api/crawl/join/link', (route) => route.fulfill({ status: 429, json: { message: 'Too many tries. Try again in an hour.' } }));
+  await page.goto('/join#' + 'r'.repeat(32));
+  await expect(page.getByTestId('name-input')).toBeVisible();
+  await expect(page.getByTestId('error')).toHaveCount(0);
 });
 
 test('a link signs up, lands on Home and stays signed in', async ({ page }) => {
@@ -145,4 +157,20 @@ test('an expired code says so and starts again with the name and email kept', as
   await page.reload();
   await expect(page.getByTestId('name-input')).toBeVisible();
   await expect(page.getByTestId('code-input')).toHaveCount(0);
+});
+
+test('a resend that works takes Start again away', async ({ page }) => {
+  const n = uid(), email = `stuck${n}@test.invalid`;
+  await clearMails();
+  await page.goto(await inviteLink());
+  await fillForm(page, `Join Stuck ${n}`, email);
+  await expect(page.getByTestId('code-input')).toBeVisible();
+  await page.route('**/api/crawl/join/verify', (route) => route.fulfill({ status: 410, json: { message: 'That code expired. Start again.' } }));
+  await page.getByTestId('code-input').fill('123456');
+  await page.getByTestId('verify').click();
+  await expect(page.getByTestId('start-again')).toBeVisible();
+  await page.route('**/api/crawl/join/resend', (route) => route.fulfill({ json: {} }));
+  await page.getByTestId('resend-code').click();
+  await expect(page.getByText(authCopy.resent)).toBeVisible();
+  await expect(page.getByTestId('start-again')).toHaveCount(0);
 });

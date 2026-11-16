@@ -44,14 +44,19 @@ test('signed-out pages', async ({ page }) => {
     { name: 'forgot password', open: (p) => p.goto('/login/forgot'), ready: (p) => p.getByTestId('send-link') },
     { name: 'reset form', open: (p) => p.goto('/reset-password#layout-sweep'), ready: (p) => p.getByTestId('set-password') },
     { name: 'reset, dead link', open: (p) => p.goto('/reset-password'), ready: (p) => p.getByTestId('reset-dead') },
+    { name: 'join, no link', open: (p) => p.goto('/join'), ready: (p) => p.getByTestId('join-no-link') },
     { name: 'join, checking', open: async (p) => { await p.route('**/api/crawl/join/link', () => {}); await p.goto('/join#' + 'c'.repeat(32)); }, ready: (p) => p.getByTestId('join-checking') },
-    { name: 'join, dead link', open: async (p) => { await p.unroute('**/api/crawl/join/link'); await p.goto('/join'); }, ready: (p) => p.getByTestId('join-dead') },
+    { name: 'join, dead link', open: async (p) => { await p.unroute('**/api/crawl/join/link'); await p.goto('/join#' + 'd'.repeat(32)); }, ready: (p) => p.getByTestId('join-dead') },
     { name: 'join, form', open: async (p) => { await p.goto('/login'); await p.goto(await inviteLink()); }, ready: (p) => p.getByTestId('send-code') },
     { name: 'join, code', open: async (p) => {
         await p.route('**/api/crawl/join', (r) => r.fulfill({ json: { signup_id: 'layout-signup', secret: 'layout-secret' } }));
         await p.getByTestId('name-input').fill('Alex Rider'); await p.getByTestId('email-input').fill('alex@example.com');
         await p.getByTestId('password-input').fill('layout-password'); await p.getByTestId('send-code').click();
       }, ready: (p) => p.getByTestId('code-input') },
+    { name: 'join, stuck', open: async (p) => {
+        await p.route('**/api/crawl/join/verify', (r) => r.fulfill({ status: 410, json: { message: 'That code expired. Start again.' } }));
+        await p.getByTestId('code-input').fill('123456'); await p.getByTestId('verify').click();
+      }, ready: (p) => p.getByTestId('start-again') },
     { name: 'join, maybe ready', open: async (p) => {
         await p.route('**/api/crawl/join/verify', (r) => r.fulfill({ status: 404, json: { message: 'nope' } }));
         await p.getByTestId('code-input').fill('123456'); await p.getByTestId('verify').click();

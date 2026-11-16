@@ -67,7 +67,7 @@ users see. Bars and restaurants keep their plain names.
 | Sign-in page `/login` | **Sign in** | Plain | "Welcome back"; email and password, with a reset link by email |
 | Sign-up page `/join` | **Sign up** | Plain | Name, email, password, then an emailed code; needs a join link |
 | Join link | **Join link** | Plain | The one link the Conductor shares; it has seats and an end date |
-| Conductor access panel `/crew/access` | **Manifest** | Rail | People, status, who let them aboard, last seen, access log |
+| Conductor access panel `/crew/access` | **Manifest** | Rail | People, status, last seen, access log |
 | Block / unblock a person | **Put off / Let back on** | Rail | Conductor only |
 | Account page `/account` | **Your ticket** | Rail | Name edit, email, sign out |
 | User roster | **Crew Board** | Rail | |

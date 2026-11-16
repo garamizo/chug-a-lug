@@ -11,12 +11,12 @@
   import { clearSignup, loadSignup, saveSignup, tokenFromHash, type StoredSignup } from '$lib/signup';
   import { onMount } from 'svelte';
 
-  let step = $state<'checking' | 'dead' | 'form' | 'code' | 'maybe-ready'>('checking');
+  let step = $state<'checking' | 'no-link' | 'dead' | 'form' | 'code' | 'maybe-ready'>('checking');
   let name = $state(''), email = $state(''), password = $state(''), code = $state('');
   let error = $state(''), notice = $state(''), busy = $state(false);
   // Plain (non-reactive) copy of what is stored: $state proxies are not what we want in storage.
   let current: StoredSignup | null = null;
-  const title = $derived({ checking: copy.boardTitle, dead: copy.boardTitle, form: copy.boardTitle, code: authCopy.codeTitle, 'maybe-ready': authCopy.maybeReadyTitle }[step]);
+  const title = $derived({ checking: copy.boardTitle, 'no-link': copy.boardTitle, dead: copy.boardTitle, form: copy.boardTitle, code: authCopy.codeTitle, 'maybe-ready': authCopy.maybeReadyTitle }[step]);
   $effect(() => { if ($auth.user) void goto('/', { replaceState: true }); });
   const status = (e: unknown) => (e instanceof ClientResponseError ? e.status : 0);
   const message = (e: unknown) => e instanceof ClientResponseError ? e.response?.message || copy.genericError : copy.genericError;
@@ -24,29 +24,48 @@
   const isLinkDead = (e: unknown) => status(e) === 410 && message(e) === authCopy.linkDead;
   const keep = (s: StoredSignup) => { current = s; saveSignup(sessionStorage, s); };
   const dead = () => { clearSignup(sessionStorage); current = null; step = 'dead'; };
+  // No token at all (not a dead one): a chat app's "Open in browser" can drop the fragment.
+  const noLink = () => { clearSignup(sessionStorage); current = null; step = 'no-link'; };
 
   onMount(() => {
+    // A link pasted into this tab changes only the fragment: no reload, so no new mount.
+    const pasted = () => {
+      const token = tokenFromHash(location.hash);
+      if (!token) return;
+      history.replaceState(history.state, '', '/join');
+      if (busy || (step === 'code' && token === current?.token)) return;
+      error = ''; notice = ''; stuck = false; code = ''; password = '';
+      step = 'checking'; checkLink(token);
+    };
+    addEventListener('hashchange', pasted);
     const stored = loadSignup(sessionStorage);
     const fromHash = tokenFromHash(location.hash);
     if (location.hash) history.replaceState(history.state, '', '/join');
     // A mailed code outranks the link check: on the last seat the link may already read as full.
     if (stored?.codeSent && stored.signupId && stored.secret && !(fromHash && fromHash !== stored.token)) {
-      current = stored; name = stored.name ?? ''; email = stored.email ?? ''; step = 'code'; return;
+      current = stored; name = stored.name ?? ''; email = stored.email ?? ''; step = 'code';
+    } else {
+      const token = fromHash ?? stored?.token ?? null;
+      if (token) checkLink(token); else noLink();
     }
-    const token = fromHash ?? stored?.token ?? null;
-    if (!token) { dead(); return; }
-    checkLink(token);
+    return () => removeEventListener('hashchange', pasted);
   });
   function checkLink(token: string) {
     keep({ token, savedAt: Date.now() });
-    void checkJoinLink(token).then(() => { if (step === 'checking') step = 'form'; }, (e) => { if (status(e) === 410) dead(); else { error = message(e); step = 'form'; } });
+    // Only the newest check counts. A 429 only means this IP checked too often; the form works
+    // anyway, since the server checks the link again on submit.
+    const mine = () => step === 'checking' && current?.token === token;
+    void checkJoinLink(token).then(() => { if (mine()) step = 'form'; }, (e) => {
+      if (!mine()) return;
+      if (status(e) === 410) dead(); else { if (status(e) !== 429) error = message(e); step = 'form'; }
+    });
   }
   // The code step cannot go on (code expired, name or seat taken): say why, offer a fresh start.
   let stuck = $state(false);
   const refused = (e: unknown) => status(e) === 410 || status(e) === 409;
   const startAgain = () => {
     const token = current?.token; error = ''; notice = ''; stuck = false; code = ''; password = '';
-    if (!token) { dead(); return; }
+    if (!token) { noLink(); return; }
     step = 'checking'; checkLink(token);
   };
 
@@ -59,7 +78,7 @@
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())) { error = copy.emailError; return; }
     const problem = passwordProblem(password); if (problem) { error = problem; return; }
     const token = current?.token;
-    if (!token) { dead(); return; }
+    if (!token) { noLink(); return; }
     void run(async () => {
       try {
         const r = await startSignup(token, cleanName(), email.trim(), password);
@@ -88,7 +107,7 @@
     }); };
   const again = () => void run(async () => {
     const s = current; if (!s) return;
-    try { await resendSignup(s.signupId!, s.secret!); code = ''; notice = authCopy.resent; }
+    try { await resendSignup(s.signupId!, s.secret!); code = ''; stuck = false; notice = authCopy.resent; }
     catch (e) { if (isLinkDead(e)) dead(); else { if (refused(e)) stuck = true; throw e; } }
   });
 </script>
@@ -98,6 +117,8 @@
     <p class="intro" role="status" data-testid="join-checking">{authCopy.linkChecking}</p>
   {:else if step === 'dead'}
     <p class="intro" data-testid="join-dead">{authCopy.linkDead}</p>
+  {:else if step === 'no-link'}
+    <p class="intro" data-testid="join-no-link">{authCopy.noLink}</p>
   {:else if step === 'form'}
     <p class="intro">{copy.boardIntro}</p>
     <form onsubmit={start} aria-busy={busy}>
@@ -117,7 +138,7 @@
       <div class="field"><label for="code">{copy.codeLabel}</label><input id="code" class="code-input" inputmode="numeric" autocomplete="one-time-code" maxlength="6" bind:value={code} data-testid="code-input" disabled={busy} /></div>
       <button type="submit" class="primary" disabled={busy} data-testid="verify">{busy ? copy.working : copy.confirmCode}</button>
     </form>
-    <p class="resend">{copy.noCodeHintNoGoogle}<br /><button type="button" class="text-button" onclick={again} disabled={busy} data-testid="resend-code">{copy.sendAgain}</button></p>
+    <p class="resend">{copy.noCodeHint}<br /><button type="button" class="text-button" onclick={again} disabled={busy} data-testid="resend-code">{copy.sendAgain}</button></p>
     {#if notice}<p class="notice" role="status">{notice}</p>{/if}
     {#if stuck}<button type="button" class="primary" onclick={startAgain} data-testid="start-again">{authCopy.startAgain}</button>{/if}
   {:else}
