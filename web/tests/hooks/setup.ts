@@ -165,3 +165,13 @@ export const turnstileToken = () => `ok-${process.pid}-${++tokens}-${Math.random
 /** A code the fake OIDC provider exchanges for this identity. */
 export const oidcCode = (identity: { sub: string; email: string; email_verified?: boolean; name?: string }) =>
   Buffer.from(JSON.stringify({ email_verified: true, name: 'Fake Person', ...identity })).toString('base64url');
+/** Makes a join link as the Conductor does on the host: the internal secret, no CF-Connecting-IP. */
+export async function invite(seats = 5, days = 14): Promise<{ url: string; token: string; expires_at: string }> {
+  const res = await fetch(`${PB}/api/crawl/invite`, {
+    method: 'POST', headers: { 'content-type': 'application/json', 'x-internal-secret': process.env.INTERNAL_SECRET ?? '' },
+    body: JSON.stringify({ action: 'create', seats, days })
+  });
+  if (!res.ok) throw new Error(`Invite failed: ${res.status} ${await res.text()}`);
+  const body = await res.json();
+  return { url: body.url, token: /#(.+)$/.exec(body.url)![1], expires_at: body.expires_at };
+}

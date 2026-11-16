@@ -197,7 +197,8 @@ it('crew access can be rolled back and applied again', async () => {
     const run = (...args: string[]) => execFileSync(resolve('../pocketbase/pocketbase'), ['migrate', ...args, '--dir', join(dir, 'data'),
       '--migrationsDir', migrations, '--hooksDir', hooks], { encoding: 'utf8', timeout: 15000, input: 'y\n', stdio: 'pipe', env: { ...process.env, CONDUCTOR_EMAIL: 'conductor@test.invalid' } });
     run('up');
-    const down = run('down', '2');
+    const down = run('down', '3');
+    expect(down).toContain('Reverted 1759100000_join_link');
     expect(down).toContain('Reverted 1759000000_password_sign_in');
     expect(down).toContain('Reverted 1758900000_crew_access');
     expect(run('up')).toContain('1758900000_crew_access');
@@ -229,7 +230,7 @@ it('password sign-in applies its settings, rolls back keeping history, and appli
     const run = (...args: string[]) => execFileSync(resolve('../pocketbase/pocketbase'), ['migrate', ...args, '--dir', join(dir, 'data'),
       '--migrationsDir', migrations, '--hooksDir', hooks], { encoding: 'utf8', timeout: 15000, input: 'y\n', stdio: 'pipe', env: { ...process.env, CONDUCTOR_EMAIL: 'conductor@test.invalid' } });
     expect(run('up')).toContain('1759000001_check_up');
-    expect(run('down', '2')).toContain('Reverted 1759000000_password_sign_in');
+    expect(run('down', '3')).toContain('Reverted 1759000000_password_sign_in');
     // An older, unapplied file runs first on the next `up`, so it sees the rolled-back state.
     await writeFile(join(migrations, '1758999999_check_down.js'), `migrate(app => {
       const u = app.findCollectionByNameOrId('users');
@@ -254,5 +255,44 @@ it('crew access refuses to run without CONDUCTOR_EMAIL', async () => {
     const env = { ...process.env }; delete env.CONDUCTOR_EMAIL;
     expect(() => execFileSync(resolve('../pocketbase/pocketbase'), ['migrate', 'up', '--dir', join(dir, 'data'),
       '--migrationsDir', migrations, '--hooksDir', hooks], { encoding: 'utf8', timeout: 15000, env, stdio: 'pipe' })).toThrow(/CONDUCTOR_EMAIL/);
+  } finally { await rm(dir, { recursive: true, force: true }); }
+});
+
+it('join link adds its collections and rolls back', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'chugalug-joinlink-'));
+  try {
+    const migrations = join(dir, 'migrations'), hooks = join(dir, 'hooks');
+    await mkdir(migrations); await mkdir(hooks);
+    for (const name of await readdir('../pocketbase/pb_migrations')) await copyFile(`../pocketbase/pb_migrations/${name}`, join(migrations, name));
+    // Sorts after 1759100000_join_link.js, so it runs after the migration under test.
+    await writeFile(join(migrations, '1759100000_zcheck_up.js'), `migrate(app => {
+      const links = app.findCollectionByNameOrId('join_links');
+      const hash = links.fields.getByName('token_hash');
+      if (!hash || !hash.hidden || !hash.required) throw new Error('token_hash');
+      for (const f of ['seats', 'seats_left', 'expires_at', 'revoked_at', 'created', 'updated']) if (!links.fields.getByName(f)) throw new Error('join_links.' + f);
+      const su = app.findCollectionByNameOrId('signups');
+      for (const f of ['email', 'name', 'name_key', 'password_hash', 'code_hash', 'secret_hash']) {
+        if (!su.fields.getByName(f)) throw new Error('signups.' + f);
+      }
+      for (const f of ['password_hash', 'code_hash', 'secret_hash']) if (!su.fields.getByName(f).hidden) throw new Error(f + ' not hidden');
+      for (const f of ['link', 'user', 'expires_at', 'created', 'updated']) if (!su.fields.getByName(f)) throw new Error('signups.' + f);
+      for (const c of [links, su]) if (c.listRule !== null || c.viewRule !== null || c.createRule !== null || c.updateRule !== null || c.deleteRule !== null) throw new Error('rule open on ' + c.name);
+      for (const v of ['link_created', 'link_revoked', 'joined']) {
+        const r = new Record(app.findCollectionByNameOrId('access_log'));
+        r.set('event', v); app.save(r);
+      }
+    }, app => {})`);
+    const run = (...args: string[]) => execFileSync(resolve('../pocketbase/pocketbase'), ['migrate', ...args, '--dir', join(dir, 'data'),
+      '--migrationsDir', migrations, '--hooksDir', hooks], { encoding: 'utf8', timeout: 15000, input: 'y\n', stdio: 'pipe', env: { ...process.env, CONDUCTOR_EMAIL: 'conductor@test.invalid' } });
+    expect(run('up')).toContain('1759100000_zcheck_up');
+    const down = run('down', '2');
+    expect(down).toContain('Reverted 1759100000_zcheck_up');
+    expect(down).toContain('Reverted 1759100000_join_link');
+    await writeFile(join(migrations, '1759099999_check_down.js'), `migrate(app => {
+      for (const n of ['join_links', 'signups']) { let found = true; try { app.findCollectionByNameOrId(n) } catch (_) { found = false } if (found) throw new Error(n + ' kept') }
+    }, app => {})`);
+    const again = run('up');
+    expect(again).toContain('1759099999_check_down');
+    expect(again).toContain('1759100000_join_link');
   } finally { await rm(dir, { recursive: true, force: true }); }
 });

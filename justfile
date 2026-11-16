@@ -55,6 +55,16 @@ places-warm:
     curl --fail-with-body -sS --max-time 900 -X POST -H "x-internal-secret: $INTERNAL_SECRET" http://127.0.0.1:3000/api/internal/places/warm
     @echo
 
+# Make the join link (the Conductor's only way to let people in); DAYS defaults to 14.
+invite SEATS DAYS="14":
+    node web/scripts/invite.mjs create {{SEATS}} {{DAYS}}
+
+invite-status:
+    node web/scripts/invite.mjs status
+
+invite-revoke:
+    node web/scripts/invite.mjs revoke
+
 sim-fixture:
     node web/scripts/generate-sim-fixture.mjs
 

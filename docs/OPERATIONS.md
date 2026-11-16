@@ -184,6 +184,17 @@ Everyone has their own account, keyed by email. There is no shared password; eac
   per-run credentials (`node web/scripts/sim.mjs`), not from `.env`.
 - PocketBase's own rate limits are on (`PB_RATE_LIMITS`; only the test harness sets `off`).
 
+### Making the join link
+
+Run on the host, against the live PocketBase (it refuses anything that came through the tunnel):
+
+- `just invite 12` (optionally `just invite 12 7` for 7 days; default 14) prints the link and its expiry.
+- `just invite-status` shows seats left and whether it is active, full, expired or revoked.
+- `just invite-revoke` kills it.
+
+The link is shown once; lose it and make a new one. A new link kills the old one, including sign-ups
+halfway through. Needs `INTERNAL_SECRET` and `APP_URL` in `.env`.
+
 ## Deploying crew access
 
 The migration `1758900000_crew_access.js` is destructive: it wipes every user except the Conductor and
