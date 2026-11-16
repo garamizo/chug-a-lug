@@ -8,12 +8,12 @@
   import { copy, drinkIcons } from '$lib/labels';
   import { mirrorSavedWhen } from '$lib/offline';
   import { auth, pb } from '$lib/pb';
-  import type { DrinkEntry, DrinkKind } from '$lib/types';
+  import type { DrinkEntry, DrinkKind, Media } from '$lib/types';
   import { liveDay } from '$lib/live/day.svelte';
   import { compressForUpload, uploadBatch } from '$lib/live/upload';
   import { openStop } from '$lib/nav';
   import { stripStops } from '$lib/live/strip';
-  import { withPending } from '$lib/live/tab';
+  import { sameScope, sendProof, type ProofScope, type ProofSend } from '$lib/live/proof';
   import { drinkCount } from '$lib/live/crew';
   import { topLine } from '$lib/live/leaderboard';
   import { newRecordId } from '$lib/live/staged';
@@ -40,17 +40,24 @@
   const tabStop = $derived(here?.source === 'clock' || here?.source === 'override' ? here.stop : null);
   const strip = $derived(stripStops(liveDay.stops, liveDay.legs, here, liveDay.startAt));
 
-  // Taps sent but not yet confirmed. Each has the id its row will be saved under.
-  let pending = $state<DrinkEntry[]>([]);
+  // A drink is its photo: a tap sends one, and nothing counts until the server has it. These are
+  // the photos still on their way (from the moment one is picked), each under the id its drink gets.
+  let sending = $state<{ key: number; kind: DrinkKind }[]>([]);
+  let sendKey = 0;
+  // The last send that failed, kept (with its photo and id) for Retry while its scope is current.
+  let retry = $state<ProofSend | null>(null);
   let clinking = $state<DrinkKind | null>(null);
   // The toast's target stays until its delete succeeds, so a failed Undo can be retried.
   let toast = $state<{ id: string; kind: DrinkKind; failed: boolean } | null>(null);
   let toastTimer: ReturnType<typeof setTimeout> | undefined;
   const me = $derived($auth.user?.id ?? '');
-  const tabEntries = $derived(withPending(liveDay.feed.drinks, pending));
-  // Saved rows count by the server's day; a tap in flight is today's by definition (the server stamps it).
-  const dayTotal = $derived(drinkCount(liveDay.feed.drinks, me, liveDay.today)
-    + pending.filter((p) => p.user === me && !liveDay.feed.drinks.some((d) => d.id === p.id)).length);
+  // Who, which route, which server day and which simulation run a send belongs to. A change of any
+  // of them makes an unfinished send stale: no Retry, and a late answer is left to the feed's reload.
+  const scope = $derived<ProofScope | null>(me && liveDay.itinerary
+    ? { user: me, itinerary: liveDay.itinerary.id, day: liveDay.today, runId: clientClock.runId ?? null } : null);
+  $effect(() => { if (retry && !sameScope(retry.scope, scope)) retry = null; });
+  // Only saved rows count, by the server's day.
+  const dayTotal = $derived(drinkCount(liveDay.feed.drinks, me, liveDay.today));
   const leaders = $derived($auth.user ? topLine(liveDay.feed.drinks, { id: $auth.user.id, name: $auth.user.name }, liveDay.today) : []);
   const showToast = (id: string, kind: DrinkKind) => {
     clearTimeout(toastTimer);
@@ -58,35 +65,67 @@
     toastTimer = setTimeout(() => { if (toast?.id === id && !toast.failed) toast = null; }, 4000);
   };
 
-  async function logDrink(kind: DrinkKind) {
-    const stop = tabStop, user = $auth.user;
-    if (!stop || !user) return;
+  // The camera answered: shrink the photo, then send it as the drink, at the stop it was taken.
+  async function logDrink(kind: DrinkKind, photo: File) {
+    const stop = tabStop, at = scope;
+    if (!stop || !at) return;
     error = '';
-    // Only an optimistic guess at wall time: the server stamps the saved row.
-    liveDay.syncNow();
-    const at = liveDay.realNow.toISOString();
-    const draft = { id: newRecordId(), user: user.id, stop: stop.id, kind, at } as DrinkEntry;
-    pending = [...pending, draft];
-    clinking = kind;
-    setTimeout(() => { if (clinking === kind) clinking = null; }, 400);
+    const key = ++sendKey;
+    sending = [...sending, { key, kind }];
     navigator.vibrate?.(30);
+    try {
+      const prepared = await compressForUpload(photo);
+      if (prepared.kind !== 'image') throw new Error(copy.proofNeedsImage);
+      await submit({ id: newRecordId(), kind, stop: stop.id, scope: at, file: prepared.file, takenAt: prepared.takenAt });
+    } catch (err) {
+      // Only a photo the phone could not use lands here; there is nothing to retry.
+      if (sameScope(at, scope)) error = err instanceof Error ? err.message : copy.uploadFailed;
+    } finally {
+      sending = sending.filter((s) => s.key !== key);
+    }
+  }
+
+  async function submit(send: ProofSend) {
     // A new tap supersedes whatever the toast was showing: hide it now, so Undo can never remove
-    // the previous drink while this one is still in flight. showToast below retargets it once this
-    // tap is confirmed.
+    // the previous drink while this one is in flight. showToast below retargets it once this
+    // photo has landed.
     clearTimeout(toastTimer);
     toast = null;
+    let result: Awaited<ReturnType<typeof sendProof>>;
     try {
       await clientClock.ready();
       liveDay.syncNow();
-      if (tabStop?.id !== stop.id) throw new Error(copy.simClockConflict);
-      const row = await pb.collection('drink_entries').create<DrinkEntry>(
-        { id: draft.id, user: user.id, stop: stop.id, kind, at: liveDay.realNow.toISOString() },
-        { expand: 'user,stop' });
-      liveDay.upsertDrink(row);
-      showToast(row.id, kind);
-      void liveDay.loadFeed();
-    } catch { error = copy.noSignal; }
-    finally { pending = pending.filter((p) => p.id !== draft.id); }
+      result = await sendProof(send, {
+        createMedia: (form) => pb.collection('media').create<Media>(form, { expand: 'user' }),
+        getDrink: (id) => pb.collection('drink_entries').getOne<DrinkEntry>(id, { expand: 'user,stop' }),
+        getMedia: (id) => pb.collection('media').getOne<Media>(id, { expand: 'user' }),
+        currentScope: () => scope
+      });
+    } catch (err) {
+      // No clock to send by (offline, or the simulation is away): the photo is kept for Retry.
+      result = sameScope(send.scope, scope)
+        ? { status: 'failed', message: err instanceof Error && err.message ? err.message : copy.noSignal } : { status: 'stale' };
+    }
+    if (result.status === 'stale') { if (retry?.id === send.id) retry = null; return; }
+    if (result.status === 'failed') { error = result.message; retry = send; return; }
+    if (retry?.id === send.id) retry = null;
+    if (result.drink) liveDay.upsertDrink(result.drink);
+    if (result.media) liveDay.upsertMedia(result.media);
+    clinking = send.kind;
+    setTimeout(() => { if (clinking === send.kind) clinking = null; }, 400);
+    showToast(send.id, send.kind);
+    void liveDay.loadFeed();
+  }
+
+  // Retry sends the same photo under the same id, so a first attempt that did land is counted once.
+  async function retrySend() {
+    const send = retry;
+    retry = null;
+    if (!send || !sameScope(send.scope, scope)) return;
+    error = '';
+    const key = ++sendKey;
+    sending = [...sending, { key, kind: send.kind }];
+    try { await submit(send); } finally { sending = sending.filter((s) => s.key !== key); }
   }
 
   // Mirrors CrewChat's reaction guard: a target already being undone ignores a repeat tap outright,
@@ -104,6 +143,7 @@
       try { await pb.collection('drink_entries').delete(target.id); }
       catch (err) { if (!(err instanceof ClientResponseError && err.status === 404)) throw err; }
       liveDay.dropDrink(target.id);
+      liveDay.dropMedia(target.id);   // a proof's photo goes with its drink (same id)
       if (toast?.id === target.id) toast = null;
       void liveDay.loadFeed();
     } catch {
@@ -172,22 +212,30 @@
 {#if tabStop && liveDay.media.length}<FreightStrip media={liveDay.media} />{/if}
 {#if error && !ui.tabOpen}<p role="alert">{error}</p>{/if}
 {#snippet toastView()}
-  {#if toast}
-    <div class="toast" class:floating={!ui.tabOpen} role="status" data-testid="tab-toast">
-      <span>{copy.tabAdded} {drinkIcons[toast.kind]} {(copy as Record<string, string>)[`drink_${toast.kind}`]}</span>
-      <button type="button" onclick={() => void undoDrink(toast!)} data-testid="tab-undo">{copy.undoDrink}</button>
+  {#if toast || retry}
+    <div class="toasts" class:floating={!ui.tabOpen}>
+      {#if retry}
+        <div class="toast" role="status" data-testid="tab-retry-toast">
+          <span>{drinkIcons[retry.kind]} {(copy as Record<string, string>)[`drink_${retry.kind}`]}</span>
+          <button type="button" onclick={() => void retrySend()} data-testid="tab-retry">{copy.tabRetry}</button>
+        </div>
+      {/if}
+      {#if toast}
+        <div class="toast" role="status" data-testid="tab-toast">
+          <span>{copy.tabAdded} {drinkIcons[toast.kind]} {(copy as Record<string, string>)[`drink_${toast.kind}`]}</span>
+          <button type="button" onclick={() => void undoDrink(toast!)} data-testid="tab-undo">{copy.undoDrink}</button>
+        </div>
+      {/if}
     </div>
   {/if}
 {/snippet}
 {#if ui.tabOpen && liveDay.hasRoute}
   <TabSheet onclose={() => (ui.tabOpen = false)}>
-    <!-- `!pending.length` keeps the fallback off a tap still in flight: while it's non-empty,
-         tabEntries carries drafts with no saved row yet, and deleting one 404s (or races a later
-         upsertDrink back in). Once pending is empty, tabEntries is exactly liveDay.feed.drinks, so
-         tally()'s lastMine can only be a saved entry. -->
-    <TabRow entries={tabEntries} stopId={tabStop?.id ?? null} userId={me} total={dayTotal} {clinking}
-      showUndoLast={!toast && !pending.length}
-      onlog={(kind) => void logDrink(kind)} onundo={(entry) => void undoDrink(entry)} />
+    <!-- Counts read saved rows only. Undo my last one stays hidden while a photo is sending, so it is
+         never mistaken for undoing that tap: the drink it would remove is an older one. -->
+    <TabRow entries={liveDay.feed.drinks} stopId={tabStop?.id ?? null} userId={me} total={dayTotal} {clinking}
+      sending={sending.map((s) => s.kind)} showUndoLast={!toast && !sending.length}
+      onlog={(kind, photo) => void logDrink(kind, photo)} onundo={(entry) => void undoDrink(entry)} />
     {#if error}<p role="alert">{error}</p>{/if}
     {@render toastView()}
   </TabSheet>
@@ -212,7 +260,7 @@
   :global(body:has(.practice-banner)) { padding-bottom: calc(24px + env(safe-area-inset-bottom)); }
   :global(body:has(.tabbar)) .practice-banner { bottom: calc(64px + env(safe-area-inset-bottom)); padding-bottom: 4px; }
   :global(body:has(.tabbar):has(.practice-banner)) { padding-bottom: calc(88px + env(safe-area-inset-bottom)); }
-  :global(body:has(.tabbar):has(.practice-banner)) .toast.floating { bottom: calc(100px + env(safe-area-inset-bottom)); }
+  :global(body:has(.tabbar):has(.practice-banner)) .toasts.floating { bottom: calc(100px + env(safe-area-inset-bottom)); }
   .actions { display: grid; grid-template-columns: minmax(0, 1fr); gap: 10px; padding: 0 0 14px; align-items: start; }
   .action { display: flex; width: 100%; margin: 0; flex-direction: row; align-items: center; justify-content: center; gap: 8px; border-radius: 16px; padding: 8px 5px; border: 1px solid #b5873b; color: #ffe3a3; background: linear-gradient(145deg, #443319, #211b13); box-shadow: 0 3px 0 #695024; font-size: 13px; }
   .action span { font-size: 22px; line-height: 1.2; }
@@ -220,9 +268,11 @@
   .speaker { background: linear-gradient(145deg, #403050, #241d2d); border-color: #886a9b; box-shadow: 0 3px 0 #574363; color: #efdcff; }
   .action:disabled { opacity: .45; box-shadow: none; }
   .stale { margin: 12px 0; padding: 10px 12px; border: 1px solid #555; border-radius: 9px; font-size: 13px; color: #cfcfcf; }
+  .toasts { display: flex; flex-direction: column; gap: 8px; margin-top: 10px; }
   .toast { display: flex; justify-content: space-between; align-items: center; gap: 14px; padding: 8px 8px 8px 16px; border-radius: 999px; background: #f2efe6; color: #111;
-    font-weight: 700; margin-top: 10px; }
-  .toast.floating { position: fixed; left: 50%; bottom: calc(76px + env(safe-area-inset-bottom)); transform: translateX(-50%); z-index: 16;
-    margin: 0; box-shadow: 0 6px 20px #000a; }
+    font-weight: 700; }
+  .toasts.floating { position: fixed; left: 50%; bottom: calc(76px + env(safe-area-inset-bottom)); transform: translateX(-50%); z-index: 16;
+    margin: 0; }
+  .floating .toast { box-shadow: 0 6px 20px #000a; }
   .toast button { width: auto; min-height: 36px; margin: 0; padding: 6px 14px; border-radius: 999px; background: #111; color: #ffb400; }
 </style>

@@ -1,5 +1,5 @@
 import { expect, test, devices, type Page } from '@playwright/test';
-import { login, openTab } from '../e2e/helpers';
+import { login, openTab, tapDrink } from '../e2e/helpers';
 import { admin } from './setup';
 import { copy } from '../../src/lib/labels';
 async function token(page: Page) {
@@ -134,9 +134,9 @@ test('three sessions rehearse clock, replay, route edits, Tab, Freight and recon
     await crew.goto('/live');
     await expect(crew.getByTestId('departure-board')).toBeVisible();
     await openTab(crew); // the Tab is a sheet over Live, opened from the tab bar
-    await crew.getByTestId('drink-beer').click();
+    await tapDrink(crew, 'beer');
     await expect(crew.getByTestId('tab-undo')).toBeVisible();
-    await crew.getByTestId('drink-water').click();
+    await tapDrink(crew, 'water');
     await expect(crew.getByTestId('drink-water').locator('.count')).toHaveText('1');
     await crew.getByTestId('tab-undo').click();
     await expect(crew.getByTestId('drink-water').locator('.count')).toHaveText('0');
@@ -144,10 +144,12 @@ test('three sessions rehearse clock, replay, route edits, Tab, Freight and recon
     expect(drinks).toHaveLength(1); expect(drinks[0].kind).toBe('beer');
     expect(new Date(drinks[0].at).toISOString()).toBe('2026-12-26T18:25:00.000Z');
     await crew.getByTestId('freight-input').setInputFiles({ name: 'rehearsal.gif', mimeType: 'image/gif', buffer: Buffer.from('R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7', 'base64') });
-    await expect(crew.getByTestId('freight-strip').locator('img')).toHaveCount(1);
+    // The beer's photo is Freight too: it and the chat box's photo.
+    await expect(crew.getByTestId('freight-strip').locator('img')).toHaveCount(2);
     expect(externalRequests).toEqual([]);
     const media = await pb.collection('media').getFullList();
-    expect(Math.abs(new Date(media[0].taken_at).getTime() - Date.now())).toBeLessThan(60_000);
+    expect(media.map((m) => m.drink_kind).sort()).toEqual(['', 'beer']);
+    for (const m of media) expect(Math.abs(new Date(m.taken_at).getTime() - Date.now())).toBeLessThan(60_000);
     const bulletins = await pb.collection('broadcasts').getFullList();
     expect(new Date(bulletins[0].at).toISOString()).toBe(new Date(drinks[0].at).toISOString());
     const anchors = await pb.collection('checkins').getFullList({ sort: '-at,-action_order' });
@@ -167,16 +169,15 @@ test('three sessions rehearse clock, replay, route edits, Tab, Freight and recon
     await crewContext.setOffline(true);
     await expect(crew.getByTestId('simulation-status')).toHaveAttribute('data-status', /Not synchronized/);
     await openTab(crew);
-    await crew.getByTestId('drink-beer').click();
+    await tapDrink(crew, 'beer');
     await expect(crew.getByRole('alert')).toHaveText(copy.noSignal);
     expect((await pb.collection('drink_entries').getFullList()).length).toBe(1);
     await change(page, { action: 'seek', at: '2026-12-26T18:26:00.000Z' });
     await crewContext.setOffline(false);
     await expect(crew.getByTestId('simulation-status')).toContainText('12:26', { timeout: 7000 });
-    await crew.getByTestId('drink-water').click();
+    await tapDrink(crew, 'water');
+    // The count moves only once the server has the photo; the toast follows the same confirmation.
     await expect(crew.getByTestId('drink-water').locator('.count')).toHaveText('1');
-    // The count updates optimistically on tap; wait for the toast (shown only once the server has
-    // confirmed the write) before reading the row back through a separate connection.
     await expect(crew.getByTestId('tab-toast')).toBeVisible();
     const after = await pb.collection('drink_entries').getFullList({ sort: '-action_order' });
     expect(new Date(after[0].at).toISOString()).toBe('2026-12-26T18:26:00.000Z');

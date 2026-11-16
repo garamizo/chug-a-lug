@@ -1,5 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
-import { clearRoutes, login, seedLockedCrawl, openTab, sessionFor } from './helpers';
+import { clearRoutes, login, seedLockedCrawl, openTab, sessionFor, tapDrink } from './helpers';
 import { copy } from '../../src/lib/labels';
 import { fmtDateTime } from '../../src/lib/time';
 import type { NextTrip } from '../../src/lib/types';
@@ -98,7 +98,7 @@ test('the route still reads when PocketBase cannot be reached', async ({ page })
   await expect(page.getByTestId('departure-board')).toContainText('min walk from The Whistle Stop');
   await expect(page.getByTestId('departure-board')).toContainText('2:34 PM');
   await openTab(page);
-  await page.getByTestId('drink-beer').click();
+  await tapDrink(page, 'beer');
   await expect(page.getByRole('alert')).toHaveText(copy.noSignal);
   await page.getByTestId('tab-close').click();
   await page.getByTestId('freight-input').setInputFiles({ name: 'tunnel.mp4', mimeType: 'video/mp4', buffer: Buffer.from('offline video') });

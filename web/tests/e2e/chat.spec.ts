@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test';
-import { clearRoutes, login, openTab, seedLockedCrawl } from './helpers';
+import { clearRoutes, login, openTab, seedLockedCrawl, tapDrink } from './helpers';
 test('live actions open the Tab and camera choices and share activity with the crew', async ({ page, browser }) => {
   await login(page, 'Chat Conductor', process.env.ADMIN_PASSWORD ?? 'admin-test-password');
   await clearRoutes();
@@ -16,7 +16,7 @@ test('live actions open the Tab and camera choices and share activity with the c
     await other.goto('/live');
     await expect(other.getByTestId('action-bulletin')).toBeDisabled();
     await openTab(page);
-    await page.getByTestId('drink-beer').click();
+    await tapDrink(page, 'beer');
     await expect(other.getByTestId('crew-chat')).toContainText('Chat Conductor');
     await expect(other.getByTestId('crew-chat')).toContainText('Beer');
     await page.getByTestId('tab-undo').click();

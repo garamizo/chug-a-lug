@@ -69,31 +69,46 @@ describe('broadcast_acks', () => {
   });
 });
 
+// A drink is written only by the media hook, as a photo's proof (see 'proof uploads' below).
+const proofUpload = async (token: string, user: string) => {
+  const form = new FormData();
+  form.set('user', user);
+  form.set('stop', stopId);
+  form.set('kind', 'image');
+  form.set('drink_kind', 'beer');
+  form.set('taken_at', '2020-01-01T00:00:00.000Z');
+  form.set('file', new Blob([new Uint8Array(await readFile(new URL('../fixtures/proof.jpg', import.meta.url)))], { type: 'image/jpeg' }), 'proof.jpg');
+  return fetch(`${PB}/api/collections/media/records`, { method: 'POST', headers: { Authorization: token }, body: form });
+};
+
 describe('drink_entries', () => {
-  it('logs and removes your own drink', async () => {
-    const created = await post('/api/collections/drink_entries/records', {
-      user: crewId, stop: stopId, kind: 'beer', at: '2026-12-26T20:00:00.000Z'
-    }, crew);
+  it('logs your own drink with its photo, and only you can remove it', async () => {
+    const created = await proofUpload(crew, crewId);
     expect(created.status).toBe(200);
     const id = (await created.json()).id;
+    expect((await get(`/api/collections/drink_entries/records/${id}`, crew)).status).toBe(200);
     expect((await del(`/api/collections/drink_entries/records/${id}`, conductor)).status).toBe(404);
     expect((await del(`/api/collections/drink_entries/records/${id}`, crew)).status).toBe(204);
   });
 
   it('refuses a drink logged for someone else', async () => {
-    const res = await post('/api/collections/drink_entries/records', {
-      user: conductorId, stop: stopId, kind: 'shot', at: '2026-12-26T20:05:00.000Z'
-    }, crew);
+    const res = await proofUpload(crew, conductorId);
     expect(res.status).toBe(400);
+  });
+
+  it('crew cannot create a drink directly', async () => {
+    const res = await post('/api/collections/drink_entries/records', {
+      user: crewId, stop: stopId, kind: 'beer', at: '2026-12-26T20:00:00.000Z'
+    }, crew);
+    expect(res.status).toBe(403);
   });
 
   it('stamps a drink with server time, whatever time the phone sent', async () => {
     const before = Date.now();
-    const res = await post('/api/collections/drink_entries/records', {
-      user: crewId, stop: stopId, kind: 'beer', at: '2020-01-01T00:00:00.000Z'
-    }, crew);
+    const res = await proofUpload(crew, crewId);
     expect(res.status).toBe(200);
-    const at = Date.parse((await res.json()).at);
+    const drink = await (await get(`/api/collections/drink_entries/records/${(await res.json()).id}`, crew)).json();
+    const at = Date.parse(drink.at);
     expect(at).toBeGreaterThanOrEqual(before - 5000);
     expect(at).toBeLessThanOrEqual(Date.now() + 5000);
   });
@@ -112,7 +127,7 @@ describe('anonymous access', () => {
     const drink = await post('/api/collections/drink_entries/records', {
       user: crewId, stop: stopId, kind: 'beer', at: '2026-12-26T20:00:00.000Z'
     });
-    expect(drink.status).toBe(400);
+    expect(drink.status).toBe(403);
 
     const form = new FormData();
     form.set('user', crewId);
@@ -385,8 +400,7 @@ describe('proof uploads', () => {
     const res = await post('/api/collections/drink_entries/records', {
       user: crewId, stop: stopId, kind: 'beer', at: '2026-12-26T20:00:00.000Z', media: photo.id
     }, crew);
-    expect(res.status).toBe(400);
-    expect((await res.json()).message).toBe('Proof_locked.');
+    expect(res.status).toBe(403);   // drink_entries.createRule is null: no crew create reaches the hook
     expect(await drinkCount()).toBe(drinks);
     expect(await exists('media', photo.id)).toBe(true);
     await del(`/api/collections/media/records/${photo.id}`, su);

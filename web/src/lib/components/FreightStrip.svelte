@@ -1,14 +1,14 @@
 <script lang="ts">
   // Freight from this stop: proof your shot landed. The album, the lightbox and the downloads are
   // Closing Time's business.
-  import { copy, labels } from '$lib/labels';
+  import { copy, labels, proofCaption } from '$lib/labels';
   import { pb } from '$lib/pb';
   import { openLightbox } from '$lib/nav';
   import type { LightboxItem, Media } from '$lib/types';
   let { media }: { media: Media[] } = $props();
   const thumb = (m: Media) => pb.files.getURL(m, m.file, { thumb: '400x300' });
   const full = (m: Media) => pb.files.getURL(m, m.file);
-  const items = $derived<LightboxItem[]>(media.map((m) => ({ url: pb.files.getURL(m, m.file, { thumb: '1200x0' }), full: full(m), kind: m.kind })));
+  const items = $derived<LightboxItem[]>(media.map((m) => ({ url: pb.files.getURL(m, m.file, { thumb: '1200x0' }), full: full(m), kind: m.kind, caption: proofCaption(m.drink_kind, m.expand?.user?.name || copy.chatCrew) })));
 </script>
 
 <section class="freight">

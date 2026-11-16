@@ -5,7 +5,7 @@
   import { SvelteSet } from 'svelte/reactivity';
   import { pb } from '$lib/pb';
   import { clientClock } from '$lib/sim/clock.svelte';
-  import { copy, drinkIcons, labels } from '$lib/labels';
+  import { copy, drinkIcons, labels, proofCaption } from '$lib/labels';
   import { fmtTime } from '$lib/time';
   import { chatEntries, reactionSummary, type ChatEntry } from '$lib/live/chat';
   import { milestones } from '$lib/live/milestones';
@@ -29,7 +29,7 @@
   const entries = $derived(all.slice(-shown));
   const cheers = $derived(reactionSummary(liveDay.feed.reactions, userId));
   const photos = $derived(all.filter((e) => e.media));
-  const viewer = $derived<LightboxItem[]>(photos.map((e) => ({ url: pb.files.getURL(e.media!, e.media!.file, { thumb: '1200x0' }), full: pb.files.getURL(e.media!, e.media!.file), kind: e.media!.kind, caption: e.author })));
+  const viewer = $derived<LightboxItem[]>(photos.map((e) => ({ url: pb.files.getURL(e.media!, e.media!.file, { thumb: '1200x0' }), full: pb.files.getURL(e.media!, e.media!.file), kind: e.media!.kind, caption: proofCaption(e.media!.drink_kind, e.author) })));
   const error = $derived(sendError || (liveDay.feedError ? copy.chatLoadError : ''));
 
   // `cheers` (from `liveDay.feed.reactions`) is the only source of truth for who cheered what — no
@@ -107,7 +107,9 @@
             onclick={() => openLightbox(viewer, photos.findIndex((p) => p.id === entry.id))}>
             {#if entry.media.kind === 'image'}<img src={pb.files.getURL(entry.media, entry.media.file, { thumb: '400x300' })} alt="" width="160" height="120" loading="lazy" draggable="false" />{:else}<span class="video">▶</span>{/if}
           </button>
-          <p class="sr">{copy.chatPhoto}</p>
+          <!-- A Tab proof is the drink's one chat line: the photo, captioned with what it proves. -->
+          {#if entry.media.drink_kind}<p class="proof"><span aria-hidden="true">{drinkIcons[entry.media.drink_kind]}</span> {(copy as Record<string, string>)[`drink_${entry.media.drink_kind}`]}{#if entry.media.stop}{' · '}{liveDay.stops.find((s) => s.id === entry.media!.stop)?.name ?? ''}{/if}<span class="pad"></span></p>
+          {:else}<p class="sr">{copy.chatPhoto}</p>{/if}
         {:else}<p><span aria-hidden="true">{drinkIcons[entry.kind] ?? '☕'}</span> {copy.chatAdded} {(copy as Record<string, string>)[`drink_${entry.kind}`] ?? copy.chatDrink}{#if entry.stop}{' · '}{entry.stop}{/if}<span class="pad"></span></p>{/if}
         <time datetime={entry.at}>{fmtTime(entry.at)}</time>
         {#if c?.count}<span class="react" class:on={!!c.mine} data-testid="chat-cheers"><span aria-hidden="true">🍻</span>{#if c.count > 1} {c.count}{:else}<span class="sr"> 1</span>{/if}</span>{/if}

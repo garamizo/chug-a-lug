@@ -1,5 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
-import { PB, clearRoutes, login, seedLockedCrawl, superuserToken, openTab, stubLiveStatus } from './helpers';
+import { PB, clearRoutes, login, seedLockedCrawl, superuserToken, openTab, stubLiveStatus, tapDrink } from './helpers';
 import { copy } from '../../src/lib/labels';
 
 const ADMIN = process.env.ADMIN_PASSWORD ?? 'admin-test-password';
@@ -62,7 +62,7 @@ test('on a practice day Live runs the route at today’s time with timetable tra
   // Live carries the tab bar on a practice day so the Tab can be opened; practice drinks count.
   await expect(page.getByTestId('tab-bar')).toBeVisible();
   await openTab(page);
-  await page.getByTestId('drink-beer').click();
+  await tapDrink(page, 'beer');
   await expect(page.getByTestId('drink-beer').locator('.count')).toHaveText('1');
   // Other screens stay practice-free: no tab bar off Live.
   await page.goto('/plan');

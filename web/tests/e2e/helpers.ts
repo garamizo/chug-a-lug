@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs';
 import { expect, type Page } from '@playwright/test';
 
 export const PB = process.env.PB_URL ?? 'http://127.0.0.1:18093';
@@ -176,6 +177,16 @@ export async function openTab(page: Page): Promise<void> {
   if (await page.getByTestId('tab-sheet').isVisible()) return;
   await page.getByTestId('tab-drinks').click();
   await page.getByTestId('tab-sheet').waitFor();
+}
+
+/** A real 16x12 JPEG: the photo every Tab tap now has to send. */
+export const PROOF_JPEG = { name: 'proof.jpg', mimeType: 'image/jpeg', buffer: readFileSync(new URL('../fixtures/proof.jpg', import.meta.url)) };
+
+/** A Tab tap opens the camera; this answers it with the fixture photo. Nothing counts until it lands. */
+export async function tapDrink(page: Page, kind: string): Promise<void> {
+  const chooser = page.waitForEvent('filechooser');
+  await page.getByTestId(`drink-${kind}`).click();
+  await (await chooser).setFiles(PROOF_JPEG);
 }
 
 const MAIL = process.env.MAIL_SINK_URL ?? 'http://127.0.0.1:12526';

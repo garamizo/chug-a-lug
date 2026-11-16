@@ -2,7 +2,7 @@
   // A stop's details over whatever screen opened it. Read-only: the planning page is where stops are
   // edited. Driven by ?stop= so the back gesture closes it and a link can open it.
   import { pb } from '$lib/pb';
-  import { copy } from '$lib/labels';
+  import { copy, proofCaption } from '$lib/labels';
   import { fmtWeekday } from '$lib/time';
   import { closeStop, openLightbox, pageStop, sheetStopId } from '$lib/nav';
   import { hoursFor, safeWebsite, telHref, walkUrl } from '$lib/live/venue';
@@ -24,7 +24,7 @@
   const website = $derived(safeWebsite(stop?.website));
   const gallery = $derived<LightboxItem[]>(!stop ? [] : [
     ...(place?.photos ?? []).map((f: string) => ({ url: pb.files.getURL(place!, f, { thumb: '800x0' }), full: pb.files.getURL(place!, f), kind: 'image' as const, caption: copy.googlePhoto })),
-    ...media.filter((m) => m.stop === stop.id).map((m) => ({ url: pb.files.getURL(m, m.file, { thumb: '1200x0' }), full: pb.files.getURL(m, m.file), kind: m.kind, caption: m.expand?.user?.name }))
+    ...media.filter((m) => m.stop === stop.id).map((m) => ({ url: pb.files.getURL(m, m.file, { thumb: '1200x0' }), full: pb.files.getURL(m, m.file), kind: m.kind, caption: proofCaption(m.drink_kind, m.expand?.user?.name || copy.chatCrew) }))
   ]);
 
   let dialog = $state<HTMLDialogElement>();

@@ -157,6 +157,23 @@ describe('live feed', () => {
     expect(day.feed.drinks).toEqual([]);
   });
 
+  it('applies a confirmed photo at once, and Undo takes it out, ignoring reads that started before', async () => {
+    const day = new LiveDay();
+    day.itinerary = { id: 'it' } as Itinerary;
+    let finish!: (rows: unknown[]) => void;
+    mocks.getFullList.mockImplementationOnce(() => new Promise((r) => { finish = r; })).mockResolvedValue([]);
+    day.feed = { drinks: [], media: [{ id: 'old', stop: 'a' }] as never, messages: [], reactions: [] };
+    const stale = day.loadFeed();
+    day.upsertMedia({ id: 'proof', stop: 'a', drink_kind: 'beer' } as never);
+    day.upsertMedia({ id: 'proof', stop: 'a', drink_kind: 'beer' } as never);
+    expect(day.feed.media.map((m) => m.id)).toEqual(['old', 'proof']);
+    finish([]);
+    await stale;
+    expect(day.feed.media.map((m) => m.id)).toEqual(['old', 'proof']);
+    day.dropMedia('proof');
+    expect(day.feed.media.map((m) => m.id)).toEqual(['old']);
+  });
+
   it('keeps the last good feed and flags the error when a reload fails', async () => {
     const day = new LiveDay();
     day.itinerary = { id: 'it' } as Itinerary;

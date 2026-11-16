@@ -1,5 +1,5 @@
 import { expect, test, type Locator, type Page } from '@playwright/test';
-import { clearRoutes, login, seedLockedCrawl, openTab } from './helpers';
+import { clearRoutes, login, seedLockedCrawl, openTab, tapDrink } from './helpers';
 import { copy } from '../../src/lib/labels';
 
 const ADMIN = process.env.ADMIN_PASSWORD ?? 'admin-test-password';
@@ -163,8 +163,9 @@ test('a Freight photo is labelled in chat, back closes its viewer, and a fast do
 test('the first beer is celebrated in chat, and the leaderboard line puts me on the podium and opens the Crew Board', async ({ page }) => {
   await liveDay(page, 'E2E Podium');
   await openTab(page);
-  await page.getByTestId('drink-beer').click();
-  await expect(page.getByTestId('crew-chat').locator('article.milestone')).toContainText('First of the day: Beer · E2E Podium');
+  await tapDrink(page, 'beer');
+  // The beer's photo is Freight too, so the stop's first-photo milestone shows beside it.
+  await expect(page.getByTestId('crew-chat').locator('article.milestone').filter({ hasText: 'First of the day' })).toContainText('First of the day: Beer · E2E Podium');
   await page.getByTestId('tab-close').click();
   await expect(page.getByTestId('leaderboard')).toContainText('you 1');
   await expect(page.getByRole('link', { name: /Leaderboard: .*you 1/ })).toBeVisible();

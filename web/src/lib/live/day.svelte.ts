@@ -296,6 +296,18 @@ export class LiveDay {
     this.feed = { ...this.feed, drinks: this.feed.drinks.filter((d) => d.id !== id) };
   }
 
+  /** `upsertDrink` for a confirmed photo (a Tab proof lands as both). */
+  upsertMedia(row: Media) {
+    this.feedRead++;
+    this.feed = { ...this.feed, media: [...this.feed.media.filter((m) => m.id !== row.id), row] };
+  }
+
+  /** `dropDrink` for a photo: Undo removes a proof's drink and its photo, which share an id. */
+  dropMedia(id: string) {
+    this.feedRead++;
+    this.feed = { ...this.feed, media: this.feed.media.filter((m) => m.id !== id) };
+  }
+
   private trainRead = 0;
   private alertRead = 0;
   async loadTrains() {

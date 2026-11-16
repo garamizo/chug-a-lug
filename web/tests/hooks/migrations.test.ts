@@ -442,6 +442,8 @@ it('photo Tab pairs a drink with its photo and rolls back', async () => {
       const rel = drinks.fields.getByName('media');
       if (!rel || rel.type() !== 'relation' || rel.collectionId !== media.id || rel.maxSelect !== 1 || rel.required || !rel.cascadeDelete) throw new Error('drink_entries.media');
       if (!drinks.indexes.some((i) => i.includes('UNIQUE') && i.includes('idx_drinks_media'))) throw new Error('unique index');
+      // Only the media hook (and superusers) write drinks: a crew create is refused before any hook.
+      if (drinks.createRule !== null) throw new Error('drink_entries.createRule ' + JSON.stringify(drinks.createRule));
       // Two drinks cannot share a photo; any number of legacy drinks have none. Seeded on the first
       // run only: the second \`up\` runs this again over the rolled-back rows.
       let seeded = true; try { app.findRecordById('drink_entries', 'legacydrink0001') } catch (_) { seeded = false }
@@ -478,6 +480,8 @@ it('photo Tab pairs a drink with its photo and rolls back', async () => {
       const drinks = app.findCollectionByNameOrId('drink_entries');
       if (drinks.fields.getByName('media')) throw new Error('drink_entries.media kept');
       if (drinks.indexes.some((i) => i.includes('idx_drinks_media'))) throw new Error('index kept');
+      // The rule reads back as a Go *string: compare its text.
+      if (String(drinks.createRule) !== "@request.auth.id != '' && @request.body.user = @request.auth.id") throw new Error('createRule ' + JSON.stringify(drinks.createRule));
       if (!app.findRecordById('drink_entries', 'proofmedia00001')) throw new Error('drink lost');
     }, app => {})`);
     const again = run('up');
