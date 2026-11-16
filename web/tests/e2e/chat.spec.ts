@@ -56,7 +56,7 @@ test('the crew chat shows the newest first, under its chat box', async ({ page }
   await expect(chat).toContainText('Older line');
   await page.getByTestId('chat-input').fill('Newer line');
   await page.getByTestId('chat-input').press('Enter');
-  const log = chat.getByRole('log');
+  const log = chat.getByRole('feed');
   await expect(log.locator('article').first()).toContainText('Newer line');
   await expect(log.locator('article').last()).toContainText('Older line');
   const box = await page.getByTestId('chat-input').boundingBox();

@@ -150,6 +150,9 @@ test('Conductor pages', async ({ page }) => {
 test('Live on a practice day', async ({ page }) => {
   await eventDay(page, 'E2E Sweep Practice', PRACTICE_DAY);
   await sweep(page, [
-    { name: 'practice live', open: (p) => p.goto('/live'), ready: (p) => p.getByTestId('departure-board') }
+    { name: 'practice live', open: (p) => p.goto('/live'), ready: (p) => p.getByTestId('departure-board') },
+    // The tab bar's other screens carry it on a practice day too.
+    { name: 'practice route', open: (p) => p.goto('/route'), ready: (p) => p.getByTestId('tab-bar') },
+    { name: 'practice crew board', open: (p) => p.goto('/crew'), ready: (p) => p.getByTestId('tab-bar') }
   ]);
 });

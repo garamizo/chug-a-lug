@@ -100,7 +100,8 @@
     <ChatBox onsend={send} {onfiles} {onunsaved} busy={uploading} status={uploading ? copy.uploading : undefined} maxlength={280} placeholder={copy.messagePlaceholder}
       inputTestid="chat-input" sendTestid="chat-send" fileTestid="freight-input" cameraTestid="freight-camera" />
   </div>
-  <div class="log" role="log" aria-label={copy.crewChat} aria-live="polite" aria-relevant="additions text">
+  <!-- A feed, not a log: a log takes new lines at its end, and this thread puts them first. -->
+  <div class="log" role="feed" aria-label={copy.crewChat} aria-live="polite" aria-relevant="additions text">
     {#each entries as entry (entry.id)}
       {@const key = entry.target ? `${entry.target.kind}:${entry.target.id}` : null}
       {@const c = key ? cheers.get(key) : undefined}
