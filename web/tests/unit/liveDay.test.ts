@@ -16,6 +16,7 @@ vi.mock('$lib/pb', () => ({
 vi.mock('$lib/live/route', () => ({ resolveCurrentRoute: mocks.resolve }));
 vi.mock('$lib/live/feed', () => ({ fetchStatus: async () => ({ mode: 'schedule_only' }), fetchDay: mocks.fetchDay, fetchNext: mocks.fetchNext, fetchAlerts: mocks.fetchAlerts }));
 const { LiveDay } = await import('$lib/live/day.svelte');
+const { clientClock } = await import('$lib/sim/clock.svelte');
 
 beforeEach(() => {
   vi.useFakeTimers(); vi.clearAllMocks(); mocks.callbacks.clear(); mocks.unsubs.length = 0;
@@ -677,6 +678,198 @@ describe('the run home', () => {
       expect(Date.parse(day.closedAt!)).toBeLessThanOrEqual(day.realNow.getTime());
       at(day, new Date(Date.parse(flip) + 600_000).toISOString());
       expect(Date.parse(day.closedAt!)).toBe(Date.parse(flip));
+    });
+  });
+
+  describe('reelReady: the reel is built from a read that started after Closing Time', () => {
+    const at = (day: ReturnType<typeof homeDay>, iso: string) => { day.realNow = new Date(iso); day.syncPlan(); return day; };
+    /** Holds each `loadFeed` (four lists asked together) until the test lets it answer or fail. */
+    function heldReads() {
+      const reads: { ok: () => void; fail: () => void; promise: Promise<unknown[]> }[] = [];
+      let calls = 0;
+      mocks.getFullList.mockImplementation(() => {
+        const n = Math.floor(calls++ / 4);
+        while (reads.length <= n) {
+          let ok!: () => void, fail!: () => void;
+          const promise = new Promise<unknown[]>((resolve, reject) => { ok = () => resolve([]); fail = () => reject(new Error('offline')); });
+          promise.catch(() => {});
+          reads.push({ ok, fail, promise });
+        }
+        return reads[n].promise;
+      });
+      return reads;
+    }
+    const settle = () => vi.advanceTimersByTimeAsync(0);
+    function closedDay(iso = '2026-12-26T23:41:00Z') {
+      const day = homeDay();
+      day.enterScope(false);
+      return at(day, iso);
+    }
+    afterEach(() => { clientClock.enabled = false; });
+
+    it('has no scope without a route or before the clock is known, and carries the run id', () => {
+      expect(new LiveDay().closingScope).toBeNull();
+      const day = closedDay();
+      expect(day.closingScope).toEqual({ itinerary: 'r1', date: '2026-12-26', runId: null });
+      vi.spyOn(clientClock, 'runId', 'get').mockReturnValue('run-a');
+      expect(day.closingScope).toEqual({ itinerary: 'r1', date: '2026-12-26', runId: 'run-a' });
+      clientClock.enabled = true;
+      vi.spyOn(clientClock, 'sample', 'get').mockReturnValue(null);
+      expect(day.closingScope).toBeNull();
+    });
+
+    it('is not ready before Closing Time, and asks for nothing', () => {
+      const day = closedDay('2026-12-26T23:39:59Z');
+      heldReads();
+      day.checkClosing();
+      expect(day.closedAt).toBeNull();
+      expect(day.closingRead).toBeNull();
+      expect(day.reelReady).toBe(false);
+      expect(mocks.getFullList).not.toHaveBeenCalled();
+    });
+
+    it('a read in flight when Closing Time arrives does not make it ready; the one started after it does', async () => {
+      const day = closedDay('2026-12-26T23:39:00Z');
+      const reads = heldReads();
+      const early = day.loadFeed();
+      at(day, '2026-12-26T23:40:00Z');
+      expect(day.reelReady).toBe(false);
+      day.checkClosing();
+      expect(day.closingRead).not.toBeNull();
+      // Asked once: another check in the same scope does not start a second read.
+      day.checkClosing();
+      expect(reads).toHaveLength(2);
+      reads[0].ok(); await early;
+      expect(day.reelReady).toBe(false);
+      reads[1].ok(); await settle();
+      expect(day.feedOkRead).toBe(day.closingRead);
+      expect(day.reelReady).toBe(true);
+    });
+
+    it('stays not ready when the qualifying read fails, and turns ready on a later success', async () => {
+      const day = closedDay();
+      const reads = heldReads();
+      day.checkClosing();
+      reads[0].fail(); await settle();
+      expect(day.feedError).toBe(true);
+      expect(day.reelReady).toBe(false);
+      const again = day.loadFeed();
+      reads[1].ok(); await again;
+      expect(day.reelReady).toBe(true);
+    });
+
+    it('a confirmed write is not a read: the optimistic upsert never certifies the reel', async () => {
+      const day = closedDay();
+      const reads = heldReads();
+      day.checkClosing();
+      const before = day.feedOkRead;
+      day.upsertDrink({ id: 'new', stop: 'b' } as never);
+      reads[0].ok(); await settle();
+      expect(day.feedOkRead).toBe(before);
+      expect(day.reelReady).toBe(false);
+      const next = day.loadFeed();
+      reads[1].ok(); await next;
+      expect(day.reelReady).toBe(true);
+    });
+
+    it('a response for an old scope never certifies the new one', async () => {
+      const day = closedDay();
+      const reads = heldReads();
+      day.checkClosing();
+      // The Conductor switches the current route: same stops, new route id.
+      day.itinerary = { ...day.itinerary!, id: 'r2' };
+      day.enterScope(false);
+      expect(day.reelReady).toBe(false);
+      day.checkClosing();
+      expect(day.closingScope?.itinerary).toBe('r2');
+      reads[0].ok(); await settle();
+      expect(day.reelReady).toBe(false);
+      reads[1].ok(); await settle();
+      expect(day.reelReady).toBe(true);
+    });
+
+    it('a run change resets it, and the old run\'s answer never certifies the new run', async () => {
+      const runId = vi.spyOn(clientClock, 'runId', 'get').mockReturnValue('run-a');
+      const day = closedDay();
+      const reads = heldReads();
+      day.checkClosing();
+      runId.mockReturnValue('run-b');
+      // The old run's read lands (the route reload has not caught up yet): it was asked for another run.
+      reads[0].ok(); await settle();
+      expect(day.reelReady).toBe(false);
+      day.checkClosing();
+      expect(day.closingScope?.runId).toBe('run-b');
+      expect(day.reelReady).toBe(false);
+      reads[1].ok(); await settle();
+      expect(day.reelReady).toBe(true);
+    });
+
+    it('resets when Closing Time goes back to null, and the next Closing Time asks again', async () => {
+      const day = closedDay();
+      mocks.getFullList.mockResolvedValue([]);
+      day.checkClosing(); await settle();
+      expect(day.reelReady).toBe(true);
+      at(day, '2026-12-26T23:30:00Z');
+      expect(day.reelReady).toBe(false);
+      day.checkClosing();
+      expect(day.closingRead).toBeNull();
+      const reads = heldReads();
+      at(day, '2026-12-26T23:45:00Z');
+      day.checkClosing();
+      expect(day.reelReady).toBe(false);
+      reads[0].ok(); await settle();
+      expect(day.reelReady).toBe(true);
+    });
+
+    it('the layout asks for the read itself once the crawl closes, and a seek starts over', async () => {
+      vi.setSystemTime(new Date('2026-12-26T23:41:00Z'));
+      let seek!: () => void;
+      vi.spyOn(clientClock, 'onRevision').mockImplementation((fn) => { seek = fn; return () => {}; });
+      const day = homeDay();
+      vi.spyOn(day, 'loadRoute').mockResolvedValue(undefined);
+      for (const method of ['loadBulletins', 'loadTrains', 'loadAlerts'] as const) vi.spyOn(day, method).mockResolvedValue(undefined);
+      mocks.fetchDay.mockRejectedValue(new Error('offline'));
+      mocks.getFullList.mockResolvedValue([]);
+      const stop = day.start();
+      try {
+        await settle();
+        expect(day.closedAt).toBe(trainSeg.arr);
+        expect(day.reelReady).toBe(true);
+        const first = day.closingRead!;
+        const reads = heldReads();
+        seek();
+        // A seek resets at once; the reload after it is the next qualifying read.
+        expect(day.closingRead).toBeNull();
+        expect(day.reelReady).toBe(false);
+        await settle();
+        expect(day.closingRead).toBeGreaterThan(first);
+        expect(day.reelReady).toBe(false);
+        reads[reads.length - 1].ok(); await settle();
+        expect(day.reelReady).toBe(true);
+        // The poller's next tick leaves a settled reel alone.
+        const settled = day.closingRead;
+        await vi.advanceTimersByTimeAsync(15_000);
+        expect(day.closingRead).toBe(settled);
+      } finally { stop(); }
+      expect(day.closingRead).toBeNull();
+    });
+
+    it('the poller\'s tick notices Closing Time without any other trigger', async () => {
+      vi.setSystemTime(new Date('2026-12-26T23:39:50Z'));
+      const day = homeDay();
+      vi.spyOn(day, 'loadRoute').mockResolvedValue(undefined);
+      for (const method of ['loadBulletins', 'loadTrains', 'loadAlerts'] as const) vi.spyOn(day, method).mockResolvedValue(undefined);
+      mocks.fetchDay.mockRejectedValue(new Error('offline'));
+      mocks.getFullList.mockResolvedValue([]);
+      const stop = day.start();
+      try {
+        await settle();
+        expect(day.closedAt).toBeNull();
+        expect(day.reelReady).toBe(false);
+        await vi.advanceTimersByTimeAsync(15_000);
+        expect(day.closedAt).toBe(trainSeg.arr);
+        expect(day.reelReady).toBe(true);
+      } finally { stop(); }
     });
   });
 

@@ -6,6 +6,7 @@ import { pb, subscribe } from '$lib/pb';
 import { dayBounds, localToUtc, parseHm, todayInTz } from '$lib/time';
 import { clearMirror, mirrorPayload, readMirror, saveMirror, scopeMirror } from '$lib/offline';
 import { anchorOnEventDay } from '$lib/anchor';
+import { closingKey, type ClosingScope } from './closing';
 import { closingLeg, crawlEnd, currentStop, toActivityClock, type Current } from './current';
 import { boardingJourney, pickTrip, plannedTrain, rideHome, type Boarding, type RideHome } from './board';
 import { fetchAlerts, fetchDay, fetchNext, fetchStatus } from './feed';
@@ -99,6 +100,46 @@ export class LiveDay {
   spikeEvents = $derived<SpikeEvent[]>(spikes({
     drinks: this.feed.drinks, media: this.feed.media, messages: this.feed.messages, stops: this.stops, date: this.today, closedAt: this.closedAt
   }));
+  /**
+   * The night a Closing Time reel belongs to: the route, the server's Chicago day and the simulation run.
+   * Null without a route, or before a rehearsal's clock is known.
+   */
+  get closingScope(): ClosingScope | null {
+    if (!this.itinerary || !this.clockKnown) return null;
+    return { itinerary: this.itinerary.id, date: this.today, runId: clientClock.runId ?? null };
+  }
+  // The reel may only be built from a feed read that started after Closing Time was seen for this
+  // scope: rows posted up to the last second must be in it. Request numbers, not timestamps, decide
+  // that, so no two clocks are ever compared and a read in flight across the boundary never counts.
+  private closingAsk = $state<number | null>(null);
+  private closingFor = $state<string | null>(null);
+  private feedOk = $state(0);
+  /** The `loadFeed` request started once Closing Time was seen for `closingScope`; null until then. */
+  get closingRead(): number | null { return this.closingAsk; }
+  /** The request number of the last feed read whose answer was published. */
+  get feedOkRead(): number { return this.feedOk; }
+  /** The feed holds the whole night: a read started after Closing Time, for this scope, was accepted. */
+  get reelReady(): boolean {
+    const scope = this.closingScope;
+    return this.closedAt !== null && this.closingAsk !== null && !!scope && this.closingFor === closingKey(scope)
+      && this.feedOk >= this.closingAsk;
+  }
+  private resetClosing() { this.closingAsk = null; this.closingFor = null; }
+  /**
+   * Starts the qualifying read the first time Closing Time is seen for the current scope, and forgets it
+   * when Closing Time goes away or the scope (route, day, run) moves on. True if it started a read.
+   * The layout's poller calls it on every tick and after every route load.
+   */
+  checkClosing(): boolean {
+    const scope = this.closingScope;
+    if (this.closedAt === null || !scope) { this.resetClosing(); return false; }
+    const key = closingKey(scope);
+    if (this.closingFor === key && this.closingAsk !== null) return false;
+    void this.loadFeed();
+    // `loadFeed` numbers its request before its first await.
+    this.closingAsk = this.feedRead; this.closingFor = key;
+    return true;
+  }
   /** Before the crawl on a route that boards elsewhere: the ride to stop 1 (see `boardingJourney`). */
   get boarding(): Boarding | null {
     return this.hasRoute ? boardingJourney(this.itinerary, this.stops, this.legs, this.here) : null;
@@ -312,6 +353,7 @@ export class LiveDay {
       if (request !== this.feedRead || scope !== this.scopeKey || id !== this.itinerary?.id) return;
       this.feed = { drinks, media, messages, reactions };
       this.feedError = false;
+      this.feedOk = request;
     } catch { if (request === this.feedRead && scope === this.scopeKey) this.feedError = true; }
   }
 
@@ -386,17 +428,20 @@ export class LiveDay {
     let stopped = false;
     this.syncNow();
     const revisionRefresh = clientClock.onRevision(() => {
+      // A seek: whatever was read is from another moment of the run. The next Closing Time asks again.
+      this.resetClosing();
       this.syncNow();
       this.anchorRead++; this.feedRead++; this.bulletinRead++;
       this.trainRead++; this.alertRead++; this.trips = []; this.alerts = [];
       const reloads = this.scopeReloads;
       void this.loadRoute().then(() => {
         if (stopped) return;
-        if (this.scopeReloads === reloads) { void this.loadBulletins(); void this.loadTrains(); void this.loadAlerts(); void this.loadFeed(); }
+        const asked = this.checkClosing();
+        if (this.scopeReloads === reloads) { void this.loadBulletins(); void this.loadTrains(); void this.loadAlerts(); if (!asked) void this.loadFeed(); }
       }).catch(() => {});
     });
     const refreshRoute = () => void this.loadRoute()
-      .then(() => { if (!stopped) return this.loadBulletins(); })
+      .then(() => { if (stopped) return; this.checkClosing(); return this.loadBulletins(); })
       .catch(() => {});
     let refreshTimer: ReturnType<typeof setTimeout> | undefined;
     // One Save produces many stop/leg events. Reload after the burst settles.
@@ -414,11 +459,16 @@ export class LiveDay {
     const early = { runId: clientClock.runId, at: this.routeRead, startedAt: new Date(), read: this.readRoute() };
     early.read.catch(() => {});
     void this.loadDay().then(() => { if (!stopped) return this.loadRoute(early); })
-      .then(() => { if (stopped || this.scopeReloads !== reloads) return; void this.loadBulletins(); void this.loadTrains(); void this.loadFeed(); }).catch(() => {});
+      .then(() => {
+        if (stopped) return;
+        const asked = this.checkClosing();
+        if (this.scopeReloads !== reloads) return;
+        void this.loadBulletins(); void this.loadTrains(); if (!asked) void this.loadFeed();
+      }).catch(() => {});
     void this.loadAlerts();
     void fetchStatus().then((s) => { if (stopped) return; this.rtFetchedAt = s.feeds?.tripupdates?.fetchedAt ?? null; this.mode = s.mode; }).catch(() => {});
     // `today` follows this phone's clock plus the server offset, so midnight is caught here without a fetch.
-    const tick = setInterval(() => { this.wallNow = new Date(); this.syncNow(); void this.checkScope(); }, clientClock.enabled ? 250 : 15_000);
+    const tick = setInterval(() => { this.wallNow = new Date(); this.syncNow(); void this.checkScope(); this.checkClosing(); }, clientClock.enabled ? 250 : 15_000);
     const replayPoll = clientClock.enabled ? setInterval(() => { if (this.clockKnown) { void this.loadTrains(); void this.loadAlerts(); } }, 1000) : undefined;
     const poll = setInterval(() => { void this.loadDay(); refreshRoute(); void this.loadTrains(); void this.loadAlerts(); void this.loadFeed(); }, 30_000);
     // Unit tests run under Node, where there is no window.
@@ -436,7 +486,7 @@ export class LiveDay {
       ...['drink_entries', 'media', 'chat_messages', 'reactions', 'users'].map((name) => subscribe(name, '', () => void this.loadFeed()))
     ];
     return () => {
-      stopped = true; this.routeRead++; this.anchorRead++; this.feedRead++; this.bulletinRead++; revisionRefresh(); this.trainRead++; this.alertRead++; clearInterval(replayPoll); clearTimeout(refreshTimer);
+      stopped = true; this.resetClosing(); this.routeRead++; this.anchorRead++; this.feedRead++; this.bulletinRead++; revisionRefresh(); this.trainRead++; this.alertRead++; clearInterval(replayPoll); clearTimeout(refreshTimer);
       clearInterval(tick); clearInterval(poll); unsubs.forEach((u) => u());
       if (typeof window !== 'undefined') window.removeEventListener('online', online);
     };
