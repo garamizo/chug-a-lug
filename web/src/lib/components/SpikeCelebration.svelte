@@ -9,6 +9,7 @@
   import { liveDay } from '$lib/live/day.svelte';
   import { SPIKE_LABELS, type SpikeEvent } from '$lib/live/spikes';
   import { CelebrationQueue, celebrationStore, type CelebrationScope } from '$lib/live/celebrate';
+  import SpikeArt from './SpikeArt.svelte';
 
   let { scope, quiet }: { scope: CelebrationScope | null; quiet: boolean } = $props();
 
@@ -71,15 +72,7 @@
     <div class="layer" data-testid="spike-celebration" transition:fade={{ duration: 250 }}>
       <button type="button" class="card" data-testid="spike-card"
         onclick={(e) => { e.preventDefault(); e.stopPropagation(); dismiss(); }}>
-        <svg class="spike" viewBox="0 0 64 64" aria-hidden="true">
-          <defs>
-            <linearGradient id="spike-gold" x1="0" x2="1" y1="0" y2="1">
-              <stop offset="0" stop-color="#fff2b0" /><stop offset=".45" stop-color="#f2c94c" /><stop offset="1" stop-color="#a87a12" />
-            </linearGradient>
-          </defs>
-          <rect x="6" y="44" width="52" height="8" rx="2" fill="#5a4a2a" />
-          <path d="M22 8h20l-4 6v26l-6 14-6-14V14z" fill="url(#spike-gold)" stroke="#7a5a0c" stroke-width="1.5" stroke-linejoin="round" />
-        </svg>
+        <span class="spike"><SpikeArt /></span>
         <span class="eyebrow">{copy.spikeAuthor}</span>
         <span class="name">{label.name}</span>
         <span class="why">{label.why}</span>
@@ -97,7 +90,7 @@
     max-width: min(320px, 100%); margin: 0; padding: 18px 28px; border-radius: 16px; background: rgba(27, 27, 27, .94);
     color: #ddd; font-weight: 400; border: 1px solid #f2c94c; box-shadow: 0 0 40px rgba(242, 201, 76, .45);
     animation: pop .55s cubic-bezier(.2, 1.4, .4, 1) both; }
-  .spike { width: 72px; height: 72px; animation: drive .55s .15s cubic-bezier(.3, 1.6, .5, 1) both; }
+  .spike { display: block; width: 72px; height: 72px; animation: drive .55s .15s cubic-bezier(.3, 1.6, .5, 1) both; }
   .eyebrow { font-size: .8rem; letter-spacing: .12em; text-transform: uppercase; color: #f2c94c; }
   .name { font-size: 1.8rem; font-weight: 800; color: #fff2b0; }
   .why { font-size: 1rem; }

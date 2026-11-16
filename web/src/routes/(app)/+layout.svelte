@@ -43,12 +43,14 @@
   const onLive = $derived(page.url.pathname === '/live');
   // Practice interrupts only the screen that is practising; planning and voting stay quiet.
   const quiet = $derived(liveDay.practice && !onLive);
+  // Closing Time's reel is a presentation: nothing of the app's own sits over it or hears its taps and keys.
+  const presenting = $derived(page.url.pathname === '/live/closing');
   // Whose celebration, on which route, server day and simulation run: the Tab's proof scope. None
   // until the clock is known, so a run's first sync cannot replay another run's awards.
   const celebrationScope = $derived<CelebrationScope | null>(userId && liveDay.clockKnown && liveDay.itinerary
     ? { itinerary: liveDay.itinerary.id, date: liveDay.today, runId: clientClock.runId ?? null, user: userId } : null);
   // /live already shows the full ticket; the compact banner is for every *other* screen.
-  const showBanner = $derived(!!here?.stop && !onLive && !quiet);
+  const showBanner = $derived(!!here?.stop && !onLive && !quiet && !presenting);
   // Re-ask for trains the instant the leg we are counting down changes — a Conductor's correction
   // or a saved route change must not wait out the 30 s poll, since the whole app now reads this
   // same board. `here` is a fresh object every time anything about the route reloads (a save
@@ -110,16 +112,17 @@
         ridingHome={h?.riding ? { arriveAt: h.arriveAt, toName: h.toName } : undefined} />
     </a>
   {/if}
-  {#if liveDay.pinnedBulletin && !quiet}
+  {#if liveDay.pinnedBulletin && !quiet && !presenting}
     <PinnedBulletin bulletin={liveDay.pinnedBulletin} onack={() => void ack(liveDay.pinnedBulletin!.id)} />
   {/if}
   {#if error}<p role="alert">{error}</p>{/if}
   {@render children()}
   <!-- The Tab opens from the tab bar, so a practice day's Live needs it too; practice stays off the other screens. -->
-  {#if liveDay.isEventDay || (liveDay.practice && onLive)}<TabBar />{/if}
+  {#if !presenting && (liveDay.isEventDay || (liveDay.practice && onLive))}<TabBar />{/if}
   <Lightbox />
-  <SpikeCelebration scope={celebrationScope} {quiet} />
-  {#if liveDay.composing}
+  <!-- Paused, not dropped, under the reel: its queue waits as it does for practice's quiet. -->
+  <SpikeCelebration scope={celebrationScope} quiet={quiet || presenting} />
+  {#if liveDay.composing && !presenting}
     <BulletinSheet text="" onsend={(body) => void postBulletin(body)} onskip={() => (liveDay.composing = false)} ondismiss={() => (liveDay.composing = false)} />
   {/if}
 {/if}

@@ -324,6 +324,7 @@ export const copy = {
   closingFinale: 'That’s the night',
   closingCrewTotal: 'drinks, all told',
   closingCheers: 'Cheers',
+  closingRetry: 'Try again',
   spikeTriple: 'Triple Header',
   spikeFullConsist: 'Full Consist',
   spikeWhistleStop: 'Whistle Stop',
