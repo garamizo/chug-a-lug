@@ -20,3 +20,15 @@ export function formatInvite(action, answer) {
     default: return 'No join link yet. Run just invite <seats>.';
   }
 }
+
+/**
+ * What `just invite` prints when PocketBase refuses. The route answers 404 to a wrong or missing
+ * secret, so a 404 says where to look.
+ * @param {number} status
+ * @param {any} answer
+ * @returns {string}
+ */
+export function formatInviteError(status, answer) {
+  if (status === 404) return 'Not found. Check INTERNAL_SECRET in .env and that the stack is running (just up).';
+  return answer?.message ?? `Request failed: ${status}`;
+}

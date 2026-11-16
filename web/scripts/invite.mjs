@@ -1,6 +1,6 @@
 // `just invite|invite-status|invite-revoke`: asks the running PocketBase on this host (the route
 // refuses anything that came through the tunnel) and prints the answer. Node built-ins only.
-import { formatInvite } from './invite-format.mjs';
+import { formatInvite, formatInviteError } from './invite-format.mjs';
 
 const [action, seats, days] = process.argv.slice(2);
 if (!['create', 'status', 'revoke'].includes(action)) {
@@ -20,7 +20,7 @@ try {
   });
   const answer = await res.json().catch(() => ({}));
   if (!res.ok) {
-    console.error(answer.message ?? `Request failed: ${res.status}`);
+    console.error(formatInviteError(res.status, answer));
     process.exit(1);
   }
   console.log(formatInvite(action, answer));
