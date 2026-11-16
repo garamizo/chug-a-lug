@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { boardTone, compactLine, leadLine } from '../../src/lib/live/present';
 import { copy } from '../../src/lib/labels';
+import { fmtTime } from '../../src/lib/time';
 
 describe('boardTone', () => {
   it('maps each state to a card tone', () => {
@@ -43,5 +44,15 @@ describe('compactLine', () => {
   it('says so when no train is left', () => {
     expect(compactLine('The Hop Haus', 5, null, new Date('2026-12-26T23:00:00.000Z')))
       .toBe(`The Hop Haus · ${copy.noTrainLeft}`);
+  });
+});
+
+describe('compactLine riding home', () => {
+  it('says the crew is on the way home and when they arrive, never "no train left"', () => {
+    const line = compactLine('Pierce Tavern', 5, null, new Date('2026-12-26T23:10:00.000Z'), { arriveAt: '2026-12-26T23:40:00.000Z', toName: 'Aurora' });
+    expect(line).toContain(copy.ridingHome);
+    expect(line).toContain(copy.arrives);
+    expect(line).toContain(fmtTime('2026-12-26T23:40:00.000Z'));
+    expect(line).not.toContain(copy.noTrainLeft);
   });
 });

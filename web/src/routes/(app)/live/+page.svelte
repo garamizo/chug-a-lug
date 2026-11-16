@@ -152,15 +152,17 @@
 {:else if here?.stop}
   <AlertBubbles alerts={liveDay.alerts} onopen={() => goto('/notifications')} />
   {@const b = liveDay.boarding}
+  {@const h = liveDay.rideHome}
   <DepartureBoard
     station={b ? b.fromName : here.stop.station_name || here.stop.station_id}
     stopName={here.stop.name}
-    nextStation={b ? b.toName : here.onwardStop?.station_name || here.onwardStop?.station_id || ''}
+    nextStation={b ? b.toName : h ? h.toName : here.onwardStop?.station_name || here.onwardStop?.station_id || ''}
     trip={liveDay.trip}
     walkMin={b ? b.walkMin : here.stop.walk_min}
     now={liveDay.now}
     mode={liveDay.mode}
-    rtFetchedAt={liveDay.rtFetchedAt} />
+    rtFetchedAt={liveDay.rtFetchedAt}
+    ridingHome={h?.riding ? { arriveAt: h.arriveAt, toName: h.toName } : undefined} />
   <RouteStrip items={strip} onopen={openStop} />
 {/if}
 {#if liveDay.practice}<p class="practice-banner" data-testid="practice-badge" title={copy.practiceHint}>{copy.practiceBadge}</p>{/if}

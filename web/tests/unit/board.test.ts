@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { BUFFER_MIN, WARNING_MIN, boardState, boardingJourney, pickTrip, plannedTrain } from '../../src/lib/live/board';
+import { BUFFER_MIN, WARNING_MIN, boardState, boardingJourney, pickTrip, plannedTrain, rideHome } from '../../src/lib/live/board';
 import type { Current } from '../../src/lib/live/current';
 import type { Leg, NextTrip, Stop } from '../../src/lib/types';
 
@@ -139,5 +139,47 @@ describe('boardingJourney', () => {
     expect(boardingJourney({ start_station: '', start_station_name: '' }, stops, [opening], before)).toBeNull();
     expect(boardingJourney({ start_station: 'NAPERVILLE', start_station_name: 'Naperville' }, stops, [opening], before)).toBeNull();
     expect(boardingJourney(it1, stops, [{ ...opening, kind: 'impossible', segments: [] } as Leg], before)).toBeNull();
+  });
+});
+
+describe('rideHome', () => {
+  const stop = (id: string, order: number, station_id: string, dwell_min = 30) => ({ id, order, station_id, station_name: station_id, dwell_min, walk_min: 5 }) as Stop;
+  const stops = [stop('a', 1, 'NAPERVILLE'), stop('b', 2, 'LAGRANGE')];
+  const itin = { start_station: 'AURORA', start_station_name: 'Aurora' };
+  const seg = { kind: 'train' as const, tripId: 'BN9', routeId: 'BNSF', headsign: 'Aurora', from: 'LAGRANGE', to: 'AURORA', dep: '2026-12-26T23:00:00.000Z', arr: '2026-12-26T23:40:00.000Z' };
+  const closing = (extra: Partial<Leg> = {}) => ({ from_stop: 'b', to_stop: '', kind: 'train', ready_at: '2026-12-26T22:30:00.000Z',
+    depart_at: seg.dep, arrive_at: seg.arr, segments: [seg], ...extra }) as unknown as Leg;
+  const here = (over: Partial<Current> = {}) => ({ stop: stops[1], nextStop: null, onwardStop: null, departAt: seg.dep, source: 'clock', ...over }) as Current;
+  const at = (iso: string) => new Date(iso);
+
+  it('is null before the crawl and at a non-last stop', () => {
+    expect(rideHome(itin, stops, [closing()], here({ source: 'before' }), at('2026-12-26T22:00:00Z'), null)).toBeNull();
+    expect(rideHome(itin, stops, [closing()], here({ stop: stops[0] }), at('2026-12-26T22:00:00Z'), null)).toBeNull();
+    expect(rideHome(itin, stops, [closing()], here({ source: 'after' }), at('2026-12-26T23:50:00Z'), null)).toBeNull();
+  });
+  it('is null with no Board at station', () => {
+    expect(rideHome({ start_station: '', start_station_name: '' }, stops, [closing()], here(), at('2026-12-26T22:00:00Z'), null)).toBeNull();
+  });
+  it('no rideHome for a walk', () => {
+    const walk = closing({ kind: 'walk', segments: [{ kind: 'walk', minutes: 5, from: 'LAGRANGE', to: 'AURORA' }] } as Partial<Leg>);
+    expect(rideHome(itin, stops, [walk], here(), at('2026-12-26T22:00:00Z'), null)).toBeNull();
+  });
+  it('no rideHome when the run home is impossible, even though it still carries times', () => {
+    const impossible = closing({ kind: 'impossible', reason: 'after_midnight' } as Partial<Leg>);
+    expect(rideHome(itin, stops, [impossible], here(), at('2026-12-26T22:00:00Z'), null)).toBeNull();
+  });
+  it('is waiting before the home train leaves and riding from its departure minute', () => {
+    const waiting = rideHome(itin, stops, [closing()], here(), at('2026-12-26T22:59:00Z'), null);
+    expect(waiting).toEqual({ from: 'LAGRANGE', fromName: 'LAGRANGE', to: 'AURORA', toName: 'Aurora',
+      planned: { tripId: 'BN9', dep: seg.dep }, arriveAt: seg.arr, riding: false });
+    expect(rideHome(itin, stops, [closing()], here(), at('2026-12-26T23:00:00Z'), null)?.riding).toBe(true);
+    expect(rideHome(itin, stops, [closing()], here({ source: 'override' }), at('2026-12-26T23:20:00Z'), null)?.riding).toBe(true);
+  });
+  it('stale legs after a terminal correction are not riding', () => {
+    // Checked in at 22:40: the closing leg should be ready at 23:10, but it still says 22:30.
+    const anchor = { stopId: 'b', at: '2026-12-26T22:40:00.000Z' };
+    expect(rideHome(itin, stops, [closing()], here({ source: 'override' }), at('2026-12-26T23:05:00Z'), anchor)).toBeNull();
+    const fresh = closing({ ready_at: '2026-12-26T23:10:00.000Z' } as Partial<Leg>);
+    expect(rideHome(itin, stops, [fresh], here({ source: 'override' }), at('2026-12-26T23:05:00Z'), anchor)).not.toBeNull();
   });
 });

@@ -9,11 +9,13 @@
   import { boardTone, compactLine, leadLine } from '$lib/live/present';
   import type { FeedMode, NextTrip } from '$lib/types';
 
-  let { station, stopName, nextStation, trip, walkMin, now, mode, rtFetchedAt, compact = false }: {
+  let { station, stopName, nextStation, trip, walkMin, now, mode, rtFetchedAt, compact = false, ridingHome }: {
     station: string; stopName: string; nextStation: string;
     trip: NextTrip | null; walkMin: number; now: Date;
     mode: FeedMode; rtFetchedAt: string | null;
     compact?: boolean;
+    /** On the train home: show its arrival instead of a countdown. */
+    ridingHome?: { arriveAt: string; toName: string };
   } = $props();
 
   const stale = $derived(mode !== 'live');
@@ -27,12 +29,15 @@
 <div class="wrap">
   {#if compact}
     <div class="strip {tone}" data-testid="board-compact">
-      <span class="line">{compactLine(stopName, walkMin, trip, now)}</span>
-      {#if trip && departIso}<span class="at">{fmtTime(departIso)}</span>{/if}
+      <span class="line">{compactLine(stopName, walkMin, trip, now, ridingHome)}</span>
+      {#if !ridingHome && trip && departIso}<span class="at">{fmtTime(departIso)}</span>{/if}
     </div>
   {:else}
   <div class="card {tone}" data-testid="departure-board">
-    {#if trip && board && departIso && arriveIso}
+    {#if ridingHome}
+      <h2 class="station">{copy.ridingHome}</h2>
+      <p class="lead"><span class="big">{copy.arrives} {fmtTime(ridingHome.arriveAt)}</span><span class="sub">{ridingHome.toName}</span></p>
+    {:else if trip && board && departIso && arriveIso}
       <div class="head">
         <span class="agency">{copy.metraBnsf}</span>
         <span class="run">{copy.run} {trip.tripId}</span>

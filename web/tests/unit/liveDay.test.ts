@@ -529,3 +529,78 @@ describe('a route that boards at another station', () => {
     expect(mocks.fetchNext).toHaveBeenCalledWith('NAPERVILLE', 'CUS', '2026-12-26', expect.any(Date), false);
   });
 });
+
+describe('the run home', () => {
+  const boardsAt = { ...route, start_station: 'AURORA', start_station_name: 'Aurora' } as Itinerary;
+  const stops = [
+    { id: 'a', order: 1, station_id: 'NAPERVILLE', station_name: 'Naperville', dwell_min: 30, walk_min: 2 },
+    { id: 'b', order: 2, station_id: 'LAGRANGE', station_name: 'La Grange', dwell_min: 30, walk_min: 2 }
+  ];
+  const trainSeg = { kind: 'train', tripId: 'BN9', routeId: 'BNSF', headsign: 'Aurora', from: 'LAGRANGE', to: 'AURORA', dep: '2026-12-26T23:00:00.000Z', arr: '2026-12-26T23:40:00.000Z' };
+  const between = { from_stop: 'a', to_stop: 'b', kind: 'train', ready_at: '2026-12-26T20:00:00Z', depart_at: '2026-12-26T20:30:00Z', arrive_at: '2026-12-26T21:00:00Z',
+    segments: [{ ...trainSeg, tripId: 'BN5', from: 'NAPERVILLE', to: 'LAGRANGE', dep: '2026-12-26T20:30:00.000Z', arr: '2026-12-26T21:00:00.000Z' }] };
+  const home = { from_stop: 'b', to_stop: '', kind: 'train', ready_at: '2026-12-26T21:30:00Z', depart_at: trainSeg.dep, arrive_at: trainSeg.arr, segments: [trainSeg] };
+  const trip = (tripId: string, depart: string) => ({
+    tripId, routeId: 'BNSF', headsign: 'Aurora', schedDepart: depart, schedArrive: depart,
+    liveDepart: null, liveArrive: null, delayMin: null, status: 'scheduled' as const
+  });
+  function homeDay(closing: object = home) {
+    const day = new LiveDay();
+    day.itinerary = boardsAt;
+    day.stops = stops as never;
+    day.legs = [between, closing] as never;
+    return day;
+  }
+  beforeEach(() => { mocks.fetchNext.mockResolvedValue({ trips: [], mode: 'schedule_only', fetchedAt: null }); });
+
+  it('at the last stop the planned train is the home train, and the board asks toward the Board at station', async () => {
+    const day = homeDay();
+    day.realNow = new Date('2026-12-26T22:00:00Z'); day.syncPlan();
+    expect(day.here?.stop?.id).toBe('b');
+    expect(day.rideHome?.riding).toBe(false);
+    expect(day.plannedTrip).toEqual({ tripId: 'BN9', dep: trainSeg.dep });
+    day.trips = [trip('BN7', '2026-12-26T22:30:00.000Z'), trip('BN9', trainSeg.dep)];
+    expect(day.trip?.tripId).toBe('BN9');
+    await day.loadTrains();
+    expect(mocks.fetchNext).toHaveBeenCalledWith('LAGRANGE', 'AURORA', '2026-12-26', new Date('2026-12-26T22:59:00.000Z'), day.practice);
+  });
+
+  it('riding: no fetch, and the board carries the arrival', async () => {
+    const day = homeDay();
+    day.realNow = new Date('2026-12-26T23:10:00Z'); day.syncPlan();
+    expect(day.rideHome).toMatchObject({ riding: true, arriveAt: trainSeg.arr });
+    await day.loadTrains();
+    expect(mocks.fetchNext).not.toHaveBeenCalled();
+  });
+
+  it('rideHome on a practice day works off the projected clock', () => {
+    const day = homeDay();
+    // 4:00 PM Chicago on an ordinary September day plays the route's 4:00 PM (22:00Z on the 26th).
+    day.realNow = new Date('2026-09-22T21:00:00Z'); day.syncPlan();
+    expect(day.practice).toBe(true);
+    expect(day.now.toISOString()).toBe('2026-12-26T22:00:00.000Z');
+    expect(day.rideHome).toMatchObject({ riding: false, planned: { tripId: 'BN9' } });
+    day.realNow = new Date('2026-09-22T22:30:00Z'); day.syncPlan();
+    expect(day.rideHome?.riding).toBe(true);
+  });
+
+  it('an impossible run home keeps today\'s board: nothing counts down to it', () => {
+    const day = homeDay({ ...home, kind: 'impossible', reason: 'after_midnight', segments: [] });
+    day.realNow = new Date('2026-12-26T22:00:00Z'); day.syncPlan();
+    expect(day.here?.stop?.id).toBe('b');
+    expect(day.rideHome).toBeNull();
+    expect(day.plannedTrip).toBeNull();
+    day.trips = [trip('BN7', '2026-12-26T22:30:00.000Z'), trip('BN9', trainSeg.dep)];
+    expect(day.trip?.tripId).toBe('BN7');
+  });
+
+  it('stale legs after a terminal correction fall back to asking toward the Board at station', async () => {
+    const day = homeDay();
+    day.anchor = { stopId: 'b', at: '2026-12-26T22:40:00Z' };
+    day.realNow = new Date('2026-12-26T23:05:00Z'); day.syncPlan();
+    expect(day.isEventDay).toBe(true);
+    expect(day.rideHome).toBeNull();
+    await day.loadTrains();
+    expect(mocks.fetchNext).toHaveBeenCalledWith('LAGRANGE', 'AURORA', '2026-12-26', expect.any(Date), false);
+  });
+});

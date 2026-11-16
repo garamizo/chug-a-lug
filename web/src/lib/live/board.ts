@@ -1,6 +1,6 @@
 // The Departure Board's state machine. Pure, with `now` injected, so M4's sim clock drives it
 // without changing a line here.
-import type { Current } from './current';
+import { closingFresh, closingLeg, type Current } from './current';
 import type { Itinerary, Leg, NextTrip, Stop } from '$lib/types';
 
 /** Minutes of slack between arriving on the platform and the train leaving. */
@@ -65,5 +65,36 @@ export function boardingJourney(itinerary: Pick<Itinerary, 'start_station' | 'st
     from: itinerary.start_station, fromName: itinerary.start_station_name || itinerary.start_station,
     to: first.station_id, toName: first.station_name || first.station_id, walkMin: 0,
     planned: { tripId: train.tripId, dep: train.dep }
+  };
+}
+
+export type RideHome = {
+  from: string; fromName: string; to: string; toName: string;
+  planned: { tripId: string; dep: string }; arriveAt: string; riding: boolean;
+};
+
+/**
+ * At the last stop, the run home to the Board at station. Waiting until the planned train leaves,
+ * then riding until it arrives (`riding`). Null when there is nothing to count down to: no Board at
+ * station, not at the last stop, a walk or an impossible run home (the board stays as it was), or
+ * legs not yet replanned from the last check-in, which say nothing true about the train home.
+ */
+export function rideHome(
+  itinerary: Pick<Itinerary, 'start_station' | 'start_station_name'> | null,
+  stops: Stop[], legs: Leg[], here: Current | null, now: Date,
+  anchor: { stopId: string; at: string } | null
+): RideHome | null {
+  if (!itinerary?.start_station || !here?.stop || (here.source !== 'clock' && here.source !== 'override')) return null;
+  const last = stops.reduce<Stop | null>((m, s) => (m === null || s.order > m.order ? s : m), null);
+  if (!last || here.stop.id !== last.id) return null;
+  const closing = closingLeg(stops, legs);
+  if (!closing || closing.kind !== 'train' || !closingFresh(stops, legs, anchor)) return null;
+  const train = closing.segments?.find((seg) => seg.kind === 'train');
+  if (!train || train.kind !== 'train') return null;
+  return {
+    from: last.station_id, fromName: last.station_name || last.station_id,
+    to: itinerary.start_station, toName: itinerary.start_station_name || itinerary.start_station,
+    planned: { tripId: train.tripId, dep: train.dep }, arriveAt: closing.arrive_at,
+    riding: now.getTime() >= new Date(train.dep).getTime()
   };
 }

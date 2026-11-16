@@ -1,6 +1,7 @@
 // Presentation mapping for the board, kept out of the component so it can be unit-tested.
 import { labels, copy } from '$lib/labels';
 import { boardState, type BoardState } from './board';
+import { fmtTime } from '$lib/time';
 import type { NextTrip } from '$lib/types';
 
 export type Tone = 'calm' | 'last' | 'aboard';
@@ -17,7 +18,8 @@ export function leadLine(state: BoardState, departsInMin: number): string {
 }
 
 /** The one-line banner: where we are and how long we have. */
-export function compactLine(stopName: string, walkMin: number, trip: NextTrip | null, now: Date): string {
+export function compactLine(stopName: string, walkMin: number, trip: NextTrip | null, now: Date, riding?: { arriveAt: string; toName: string } | null): string {
+  if (riding) return `${stopName} · ${copy.ridingHome} · ${copy.arrives} ${fmtTime(riding.arriveAt)}`;
   if (!trip) return `${stopName} · ${copy.noTrainLeft}`;
   const departAt = new Date(trip.liveDepart ?? trip.schedDepart);
   const board = boardState({ departAt, walkMin, now });

@@ -7,7 +7,7 @@ import { dayBounds, localToUtc, parseHm, todayInTz } from '$lib/time';
 import { clearMirror, mirrorPayload, readMirror, saveMirror, scopeMirror } from '$lib/offline';
 import { anchorOnEventDay } from '$lib/anchor';
 import { currentStop, type Current } from './current';
-import { boardingJourney, pickTrip, plannedTrain, type Boarding } from './board';
+import { boardingJourney, pickTrip, plannedTrain, rideHome, type Boarding, type RideHome } from './board';
 import { fetchAlerts, fetchDay, fetchNext, fetchStatus } from './feed';
 import { isEventDay as onEventDate, planNow } from './planClock';
 import { resolveCurrentRoute } from './route';
@@ -72,10 +72,16 @@ export class LiveDay {
   get boarding(): Boarding | null {
     return this.hasRoute ? boardingJourney(this.itinerary, this.stops, this.legs, this.here) : null;
   }
+  /** At the last stop: waiting for, then riding, the train home (see `rideHome`). */
+  get rideHome(): RideHome | null {
+    return this.hasRoute ? rideHome(this.itinerary, this.stops, this.legs, this.here, this.now, this.effectiveAnchor) : null;
+  }
   /** Before the crawl, the train the plan starts on; the board counts down to it, not the next one. */
   get plannedTrip(): { tripId: string; dep: string } | null {
     const boarding = this.boarding;
     if (boarding) return boarding.planned;
+    const home = this.rideHome;
+    if (home) return home.planned;
     const here = this.here;
     return here?.source === 'before' && here.stop ? plannedTrain(this.stops, this.legs, here.stop.station_id) : null;
   }
@@ -294,13 +300,19 @@ export class LiveDay {
   private alertRead = 0;
   async loadTrains() {
     const request = ++this.trainRead, revision = clientClock.revision, scope = this.scopeKey;
-    const here = this.here, boarding = this.boarding;
+    const here = this.here, boarding = this.boarding, home = this.rideHome;
     // The train goes to the next *different* station: with several bars at one station the literal
     // next stop is another bar here, and a trip from a station to itself does not exist. Before the
     // crawl on a route that boards elsewhere, it is the ride from the start station to stop 1.
     const from = boarding?.from ?? here?.stop?.station_id;
-    const to = boarding?.to ?? here?.onwardStop?.station_id;
-    if (!from || !to || !this.itinerary) { this.trips = []; return; }
+    // At the last stop nothing is onward: the train goes to the Board at station. That holds with stale
+    // or impossible legs too, so the board shows the next trains home rather than "no train left".
+    const lastStop = here?.stop && !here.nextStop && (here.source === 'clock' || here.source === 'override');
+    const homeStation = lastStop ? this.itinerary?.start_station : undefined;
+    const to = home?.to ?? boarding?.to ?? here?.onwardStop?.station_id ?? homeStation;
+    if (!from || !to || from === to || !this.itinerary) { this.trips = []; return; }
+    // Riding the train home: the board shows the arrival, not a countdown, so there is nothing to ask.
+    if (home?.riding) return;
     try {
       // Ask from just before the planned train, so the three trips returned include it.
       const planned = this.plannedTrip;
