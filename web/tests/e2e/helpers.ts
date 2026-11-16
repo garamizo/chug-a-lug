@@ -223,3 +223,12 @@ export async function stubLiveStatus(page: Page, opts: { hold?: Promise<void> } 
   });
   return { requested: () => requested, answered: () => answered };
 }
+
+/** A fresh join link (a new one revokes the last): the `/join#token` path, as the Conductor would share it. */
+export async function inviteLink(seats = 3): Promise<string> {
+  const res = await fetch(`${PB}/api/crawl/invite`, { method: 'POST', headers: { 'content-type': 'application/json', 'x-internal-secret': 'e2e-secret' },
+    body: JSON.stringify({ action: 'create', seats, days: 1 }) });
+  if (!res.ok) throw new Error(`Invite failed: ${res.status}`);
+  const u = new URL((await res.json()).url);
+  return u.pathname + u.hash;
+}

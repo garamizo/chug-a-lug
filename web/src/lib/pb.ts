@@ -71,16 +71,18 @@ export async function requestPasswordReset(email: string): Promise<void> {
 export async function confirmPasswordReset(token: string, password: string): Promise<void> {
   await pb.collection('users').confirmPasswordReset(token, password, password);
 }
-export const joinCrew = (name: string, email: string, password: string, turnstile: string) =>
-  pb.send<{ request_id: string; secret: string }>('/api/crawl/join', { method: 'POST', body: { name, email, password, turnstile } });
-export const verifyJoin = (request_id: string, secret: string, code: string) =>
-  pb.send('/api/crawl/join/verify', { method: 'POST', body: { request_id, secret, code } });
-export const joinStatus = (request_id: string, secret: string) =>
-  pb.send<{ status: string }>('/api/crawl/join/status', { method: 'POST', body: { request_id, secret } });
-export const resendJoin = (request_id: string, secret: string) =>
-  pb.send('/api/crawl/join/resend', { method: 'POST', body: { request_id, secret } });
-export const cancelJoin = (request_id: string, secret: string) =>
-  pb.send('/api/crawl/join/cancel', { method: 'POST', body: { request_id, secret } });
+/** Join link spec §4.2. The server's refusals carry `{message}`; the page shows it. */
+export const checkJoinLink = (token: string): Promise<void> =>
+  pb.send('/api/crawl/join/link', { method: 'POST', body: { token } }).then(() => undefined);
+export const startSignup = (token: string, name: string, email: string, password: string) =>
+  pb.send<{ signup_id: string; secret: string }>('/api/crawl/join', { method: 'POST', body: { token, name, email, password } });
+export async function verifySignup(signupId: string, secret: string, code: string): Promise<void> {
+  const res = await pb.send<{ token: string; record: Parameters<typeof pb.authStore.save>[1] }>('/api/crawl/join/verify',
+    { method: 'POST', body: { signup_id: signupId, secret, code } });
+  pb.authStore.save(res.token, res.record);
+}
+export const resendSignup = (signupId: string, secret: string): Promise<void> =>
+  pb.send('/api/crawl/join/resend', { method: 'POST', body: { signup_id: signupId, secret } }).then(() => undefined);
 const DAY_MS = 86400e3;
 /** users.authToken.duration, set by the crew-access migration. */
 const TOKEN_SECONDS = 90 * 86400;
