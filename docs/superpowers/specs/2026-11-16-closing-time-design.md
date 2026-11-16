@@ -119,11 +119,11 @@ Durations (below) put a 6-stop night at about 2 minutes and a 10-stop night at a
 - **Gestures**: tap the right third → next, left third → previous, press and hold → pause, ✕ (`reel-close`);
   keyboard ←/→/Space/Escape. The reel ends on the finale with **Watch again** (`reel-replay`) and **Done**
   (`reel-done`). A slide whose image fails to load is skipped.
-- **Loading.** The reel is built only from a feed that loaded successfully **after** Closing Time for the current
-  route, day and simulation run: `liveDay` records the scope key of its last successful `loadFeed` and the time it
-  finished (`liveDay.feedLoadedAt`, `liveDay.feedScope`). Until that holds, the player shows a loading line; if the
-  latest load failed it shows "No signal" with **Try again** (re-runs `loadFeed`). The slide list is snapshotted once
-  built, so a live update doesn't reshuffle a playing reel.
+- **Loading.** The reel is built only from a feed read that **started after** Closing Time was seen for the current
+  route, day and simulation run: when `closedAt` turns non-null, `liveDay` starts a fresh read and the reel is ready
+  (`liveDay.reelReady`) once that read — or a later one — is accepted. A seek or a scope change resets it. Until
+  ready, the player shows a loading line; if the latest read failed it shows "No signal" with **Try again** (re-runs
+  `loadFeed`). The slide list is snapshotted once built, so a live update doesn't reshuffle a playing reel.
 - **Not yet.** If `liveDay.closedAt` is null the page shows `copy.closingNotYet` and a link back to Live.
 - **History.** Entering pushes `/live/closing` (Play and the automatic open both use `goto`). ✕ and Done go back if
   the previous entry is Live in this app session (`guardedBack`-style, so a double tap pops once), otherwise
@@ -138,8 +138,10 @@ Durations (below) put a 6-stop night at about 2 minutes and a 10-stop night at a
 - The first time a phone is on Live after Closing Time **and** the reel's data is ready (the feed loaded after
   Closing Time for this scope), it opens the reel by itself — once per device, keyed
   `{itineraryId}:{date}:{runId ?? ''}` in `localStorage` (`chugalug.closingShown`, guarded like `seen.ts`, with an
-  in-memory fallback). The key is written when the reel actually starts playing, not when it is scheduled. Deferred
-  while a sheet, the Lightbox, the Tab or the Bulletin composer is open, and while practice `quiet` applies.
+  in-memory fallback). The key is written when the reel actually starts playing, not when it is scheduled. Leaving the
+  reel before it started (✕, Done or Back while loading) keeps the phone from opening it automatically again this
+  session, without marking it watched. Deferred while a sheet, the Lightbox, the Tab or the Bulletin composer is open,
+  and while practice `quiet` applies.
 
 ### Labels (web/src/lib/labels.ts)
 
@@ -170,13 +172,13 @@ arrives". FEATURES.md gains a Closing Time bullet; ROADMAP's M5 notes it.
   last window ends at `closedAt`, practice shift. `current.test.ts`: `stopTimings` is the old `timings`.
 - Unit for the auto-open decision (`shouldAutoOpen(...)`: closedAt set, feed loaded after it for this scope, not
   shown, no overlay, not quiet) and the marker (written on play; memory fallback).
-- e2e `web/tests/e2e/closing.spec.ts` (ordinary e2e harness): `seedLockedCrawl` gains a `withRunHome` option that
-  seeds stops whose recomputed plan includes a resolved closing leg on the fixture GTFS (Aurora is in it), waits for
-  the recompute, and returns the closing leg's `arrive_at`; the spec seeds drinks, a photo with Cheers and a message
-  (superuser, `at` before that arrival on the event date), sets the browser clock past the arrival with
-  `page.clock`, opens Live, and checks: the card shows; the reel opens once by itself; tap advances; a Cheered photo
-  and the finale appear; ✕ returns to Live and Live does not reopen it; Back from the reel returns to Live; direct
-  entry to `/live/closing` before Closing Time shows the not-yet line. One `layoutSweep` line for the reel.
+- e2e in the **simulation** suite (`web/tests/sim/closing.spec.ts`), because only it moves the server's event clock
+  (drinks and photos are stamped by the server): a route on the simulation's event date boarding at Aurora with two
+  CUS stops (dwell 5, walk 4) recomputes to a resolved run home (~20:42Z on the fixture day); activity is posted
+  while the clock is inside the night, then the clock moves past the home arrival. Checks: the card; one automatic
+  open; tap/hold/keys; a Cheered photo and the finale; ✕ and Back return to Live without reopening; leaving while
+  loading; Try again; reduced motion; no celebration over the reel; the automatic open waits for the Tab sheet.
+  Ordinary e2e: direct entry before Closing Time shows the not-yet line; one `layoutSweep` line for that state.
 
 ## Left to the builder
 

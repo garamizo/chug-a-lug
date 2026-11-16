@@ -35,7 +35,8 @@ gated on a feed loaded after Closing Time.
 ## Review Focus
 
 1. Caboose must reach the finale (stamped at `closedAt`, never re-cut) — Task 1.
-2. A feed that hasn't loaded after Closing Time must never be snapshotted or marked shown — Tasks 2 and 4.
+2. A feed read that started before Closing Time must never certify the reel; nothing unplayed is marked shown —
+   Tasks 2, 3 and 4.
 3. Closing the reel must never bring it back automatically, and Back/double-✕ must pop once — Tasks 3 and 4.
 4. Nothing from the layout (banner, Bulletin, tab bar, spike celebration) may sit over or capture input from the
    reel — Task 3.
@@ -65,29 +66,40 @@ gated on a feed loaded after Closing Time.
 - [ ] **Step 2:** FAIL. **Step 3:** implement. **Step 4:** full gate.
 - [ ] **Step 5: Commit** `feat(live): a highlight reel worked out from the night`.
 
-### Task 2: Ready to build — feed scope and the auto-open decision
+### Task 2: Ready to build — a read after Closing Time, and the auto-open decision
 
 **Files:**
-- Modify: `web/src/lib/live/day.svelte.ts` (record `feedScope` — the `scopeKey` of the last successful `loadFeed` —
-  and `feedLoadedAt` — the activity-clock instant it finished; `feedError` stays)
+- Modify: `web/src/lib/live/day.svelte.ts`
 - Create: `web/src/lib/live/closing.ts`
 - Test: `web/tests/unit/closing.test.ts`, `web/tests/unit/liveDay.test.ts`
 
+**Readiness without comparing clocks** (Codex plan review: `feedLoadedAt >= closedAt` mixes clocks, and four
+concurrent requests can straddle the boundary). In `liveDay`:
+- a public read-only `closingScope: ClosingScope | null` (`{ itinerary, date, runId }` with `runId` from
+  `clientClock.runId`; null without an itinerary or a known clock);
+- `closingRead: number | null` — when `closedAt` turns non-null for the current closing scope, liveDay starts a fresh
+  `loadFeed()` and records that request's number (`feedRead`) as `closingRead`;
+- `feedOkRead: number` — the request number of the last `loadFeed` whose result was accepted (inside the existing
+  publication guard, never from optimistic upserts or stale responses);
+- `get reelReady(): boolean` — `closedAt !== null && closingRead !== null && feedOkRead >= closingRead`;
+- a scope change, a clock revision (seek) or `closedAt` going back to null resets `closingRead` (and the next
+  non-null `closedAt` starts a new qualifying read).
+
 **Interfaces:**
-- Produces:
+- Produces in `closing.ts`:
   ```ts
   export type ClosingScope = { itinerary: string; date: string; runId: string | null };
   export const closingKey: (s: ClosingScope) => string;           // `${itinerary}:${date}:${runId ?? ''}`
-  export function reelReady(day: { closedAt: string | null; feedScope: string | null; scopeKey: string; feedLoadedAt: string | null }): boolean;
-  export function shouldAutoOpen(o: { ready: boolean; shown: boolean; overlayOpen: boolean; quiet: boolean }): boolean;
+  export function shouldAutoOpen(o: { ready: boolean; shown: boolean; leftThisSession: boolean; overlayOpen: boolean; quiet: boolean }): boolean;
   export function closingStore(): { has(key: string): boolean; add(key: string): void }; // localStorage + memory
+  export const closingSession: { left: Set<string> };              // in-memory only: reels entered and left unplayed
   ```
-  `reelReady`: closedAt set, `feedScope === scopeKey`, and `feedLoadedAt >= closedAt`.
 
-- [ ] **Step 1: Failing tests:** liveDay records `feedScope`/`feedLoadedAt` only on success, keeps them on a failed
-  read, and drops them on a scope change; `reelReady` false before Closing Time, false for a feed loaded before it,
-  false for another scope, true after; `shouldAutoOpen` truth table; `closingStore` persists, survives throwing
-  storage via memory.
+- [ ] **Step 1: Failing tests:** liveDay — `reelReady` false before Closing Time; a load in flight when Closing Time
+  is reached does not make it ready (only the read started after it does); a failed qualifying read keeps it false
+  and a later success makes it true; a stale response for an old scope or run never certifies; a seek resets it; a
+  run change resets it; `closingScope` includes the run id. `shouldAutoOpen` truth table (including
+  `leftThisSession`); `closingStore` persists and falls back to memory when storage throws.
 - [ ] **Step 2:** FAIL. **Step 3:** implement. **Step 4:** full gate.
 - [ ] **Step 5: Commit** `feat(live): know when the night's reel can be built`.
 
@@ -101,35 +113,54 @@ gated on a feed loaded after Closing Time.
 - Test: `web/tests/e2e/closing.spec.ts` (new; the player-only cases), `web/tests/e2e/layoutSweep.spec.ts`
 
 **Interfaces:**
-- Consumes: `buildReel`, `stopWindows`, `REEL_DURATIONS` (Task 1); `reelReady` (Task 2); `liveDay.closedAt`,
+- Consumes: `buildReel`, `stopWindows`, `REEL_DURATIONS` (Task 1); `liveDay.reelReady`, `closingScope`,
+  `closingStore`, `closingSession` (Task 2); `liveDay.closedAt`,
   `liveDay.spikeEvents`, `liveDay.feed`, `liveDay.loadFeed`, `liveDay.feedError`.
 - Behaviour exactly as the spec's "The player" section: dialog role and focus; snapshot once ready; loading line
   (`reel-loading`) and No signal + Try again (`reel-retry`); not-yet line when closedAt is null; tap thirds, hold,
   keys; ✕/Done go back once if the previous entry is Live in this session, else `goto('/live', { replaceState: true
   })`; Watch again; image-failure skip; reduced motion.
 
-- [ ] **Step 1: Failing e2e** (player only; reaching Closing Time is Task 4): direct entry before Closing Time shows
-  `copy.closingNotYet` and a link to Live; with the feed failing (route the feed GETs) after Closing Time the player
-  shows Try again, and it recovers when unrouted — if this needs Task 4's seed, write it in Task 4 instead and say so.
-  layoutSweep line: the reel page (not-yet state is acceptable here; Task 4 adds the playing state if cheap).
+- Leaving the player before playback started (✕, Done, Back during loading or retry) adds its key to
+  `closingSession.left`; playback starting writes `closingStore`.
+- Unit-test what can be pure: slide timing/advance/back/pause state as a small controller (`reelPlayer.ts`) with a
+  fake clock, and image-failure skip.
+
+- [ ] **Step 1: Failing tests:** the controller unit tests; ordinary e2e: direct entry before Closing Time shows
+  `copy.closingNotYet` and a link to Live; the layout shows no tab bar, banner or pinned Bulletin on
+  `/live/closing`. layoutSweep line: the reel page in its not-yet state. (Playing-state e2e is Task 4.)
 - [ ] **Step 2:** FAIL. **Step 3:** implement. **Step 4:** full gate.
 - [ ] **Step 5: Commit** `feat(live): play the night as a reel`.
 
-### Task 4: Opening at Closing Time, the end-to-end night, docs
+### Task 4: Opening at Closing Time, the night end to end, docs
 
 **Files:**
 - Modify: `web/src/routes/(app)/live/+page.svelte` (the `closing-card` with `closing-play`; the automatic open via
-  `shouldAutoOpen`, deferred while a sheet, the Lightbox, the Tab or the composer is open, marker written by the
-  player when playback starts), `web/tests/e2e/helpers.ts` (`seedLockedCrawl({ withRunHome: true })` → stops whose
-  recompute yields a resolved closing leg on the fixture GTFS; waits for the recompute; returns `homeArrival`),
-  `README.md`, `docs/FEATURES.md`, `docs/ROADMAP.md`
-- Test: `web/tests/e2e/closing.spec.ts`, `web/tests/e2e/layoutSweep.spec.ts` (playing reel)
+  `shouldAutoOpen(ready: liveDay.reelReady, shown: closingStore().has(key), leftThisSession, overlayOpen: a sheet,
+  the Lightbox, the Tab or the composer is open, quiet)`), `README.md`, `docs/FEATURES.md`, `docs/ROADMAP.md`
+- Create: `web/tests/sim/closing.spec.ts` (simulation suite, `npm run test:sim`, `playwright.sim.config.ts`)
+- Test: also `web/tests/e2e/layoutSweep.spec.ts` only if the playing reel can be reached there cheaply; otherwise a
+  layout check inside the sim spec using `layoutRules.ts`
 
-- [ ] **Step 1: Failing e2e** (`closing.spec.ts`): seed with `withRunHome`, seed two drinks, a photo with a Cheers and
-  a Cheered message before `homeArrival` (superuser, event date); `page.clock` past `homeArrival`; open Live →
-  `closing-card` shows and the reel opens by itself once; tapping the right third advances; the Cheered photo slide
-  and `reel-slide-finale` appear; ✕ returns to Live and the reel does not reopen; reopen with Play, browser Back
-  returns to Live; a double ✕ pops only once. layoutSweep line for the playing reel.
+**Why the simulation suite:** the server stamps drinks and media with its own event clock (`live.pb.js`; only chat
+accepts a superuser `at`), and Live reads the server's day (`/api/day`). Only the simulation harness moves the server
+clock, so it is the one place a whole night — activity, then the train home — can happen in order.
+
+**Seed (proven by the plan review against the fixture GTFS):** a locked route on the simulation's event date, Board
+at Aurora, start 11:00 local, two stops at CUS (Union Station), each dwell 5 min and walk 4 min, no hand-written
+legs — create the stops and wait for the recompute until the closing leg exists (`to_stop = ''`, kind train); its
+`arrive_at` (BN3, ~20:42Z on the fixture day) is `homeArrival`.
+
+- [ ] **Step 1: Failing sim spec:** set the simulation clock inside the first stop's window; as crew (through the
+  API or UI, so the server stamps event time): two drinks (Tab with photos via `tapDrink` or proof uploads), one more
+  photo, one message; as a second crew member, Cheers the photo and the message; assert the stamped `at` values are
+  before `homeArrival`. Advance the simulation clock past `homeArrival`; open Live → `closing-card`; the reel opens by
+  itself once (`closing-reel`); tap right third advances; hold pauses; ←/→/Space/Escape work; the Cheered photo slide
+  and `reel-slide-finale` appear; ✕ returns to Live and it does not reopen; Play then browser Back returns to Live; a
+  double ✕ pops once; leaving during loading (route the feed GET to hang, then ✕) does not auto-open again this
+  session and does not mark it shown; with the feed failing, Try again recovers; `emulateMedia({ reducedMotion:
+  'reduce' })` still plays; while the reel plays, a fresh Golden Spike for this phone does not show its celebration
+  over it; the automatic open waits while the Tab sheet is open.
 - [ ] **Step 2:** FAIL. **Step 3:** implement + docs (README Closing Time row; FEATURES bullet; ROADMAP M5 note).
 - [ ] **Step 4:** full gate. Rerun a failing spec once; report both outcomes.
 - [ ] **Step 5: Commit** `feat(live): Closing Time opens when the train home arrives`.
