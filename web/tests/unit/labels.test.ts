@@ -8,6 +8,10 @@ describe('labels', () => {
     expect(copy.seenBulletin).toBe('Seen');
     expect(copy.unseenBulletin).toBe('Not seen');
   });
+  it('carries the Metra credit', () => {
+    expect(copy.notAffiliated).toBe('Schedule from Metra’s public feed. Not affiliated with Metra.');
+    expect(copy.timetablePublished).toBe('Timetable published');
+  });
   it('maps developer terms to the README glossary', () => {
     expect(label('planningPhase')).toBe('Route Planner');
     expect(label('lockedItinerary')).toBe('The Route');

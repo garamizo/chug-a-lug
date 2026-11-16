@@ -207,8 +207,9 @@ export const copy = {
   arrives: 'arrives',
   changeAt: 'change at',
   deleteDraftConfirm: 'Delete this draft and all its stops?',
-  // The Metra license's disclaimer (see the README's data sources); keep it even while unrendered.
-  notAffiliated: 'Schedule from Metra’s public feed. Not affiliated with Metra. Saturday timetable, published',
+  // The Metra credit, the footer on every page (the license's disclaimer; see the README's data sources).
+  notAffiliated: 'Schedule from Metra’s public feed. Not affiliated with Metra.',
+  timetablePublished: 'Timetable published',
   newRoutePlaceholder: 'Name a new route…',
   newRoute: 'New route',
   byBuilder: 'by',

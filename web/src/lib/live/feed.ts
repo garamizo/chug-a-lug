@@ -2,7 +2,7 @@
 // $lib/server/places callers do, so every request carries it.
 import { clientClock } from '$lib/sim/clock.svelte';
 import { pb } from '$lib/pb';
-import type { Alert, FeedMode, NextTrip } from '$lib/types';
+import type { Alert, FeedMode, MetraSource, NextTrip } from '$lib/types';
 
 const authed = async (path: string, cache?: RequestCache) => {
   const revision = clientClock.revision;
@@ -23,6 +23,7 @@ export const fetchNext = (from: string, to: string, date: string, after: Date, p
   authed(`/api/metra/next?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}&date=${date}&after=${after.toISOString()}&limit=3${practice ? '&practice=1' : ''}`);
 
 export const fetchStatus = (): Promise<{
+  source?: MetraSource; staticPublishedAt: string; staticSource: string;
   rtFetchedAt: string | null; mode: FeedMode;
   feeds: Record<'positions' | 'tripupdates' | 'alerts', { fetchedAt: string | null; ageSec: number | null; mode: FeedMode }>;
 }> => authed('/api/metra/status');
