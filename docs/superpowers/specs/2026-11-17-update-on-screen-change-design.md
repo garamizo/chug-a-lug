@@ -39,9 +39,11 @@ one service worker).
 ## Design
 
 1. **Knowing an update is waiting.** In the root layout's existing `onMount` registration (production only):
-   keep the `ServiceWorkerRegistration`. An update is waiting when `registration.waiting` is set — at
-   registration, or later via `updatefound` → the installing worker reaching `installed` while an active worker
-   exists. A first install (no active worker before it) never waits, so it never counts.
+   keep the `ServiceWorkerRegistration`. An update is waiting when `registration.waiting` is set. Reconcile at
+   registration, on `updatefound`, and on every `statechange` of an installing worker — including one already
+   in `registration.installing` when the listeners attach (its `updatefound` may have fired first) — by
+   re-reading `registration.waiting`. A first install (no active worker before it) never waits, so it never
+   counts.
    Also count a `controllerchange` this page did not ask for (another window of the app switched first): this
    page is then running old code under the new worker, and should load fresh at its next link tap.
 2. **Checking for a deploy on return.** When the document becomes visible again, call `registration.update()`
@@ -50,20 +52,27 @@ one service worker).
    `type === 'link'` (a tap on an `<a>`; not `goto`, `popstate`, `leave`, or shallow routing, which never reaches
    `beforeNavigate`) to a same-origin URL, and nothing is sending (step 4): `cancel()` it, post
    `{ type: 'SKIP_WAITING' }` to the waiting worker, wait for it to reach `activated` (bounded, ~3 s), then
-   `location.assign(to.url.href)`. A link push becomes a full-page push, so Back still returns to the screen
-   the tap left. On timeout or error, load the page anyway (the old worker serves the old shell; nothing is
-   lost, and the next tap tries again). The full load is answered by the now-active worker's precached shell
+   **wait until nothing is sending** (the screen stays usable during the handoff, so a send may have started
+   since the tap), then `location.assign(to.url.href)`. A link push becomes a full-page push, so Back still
+   returns to the screen the tap left. The handoff is best effort: on timeout or error the page loads anyway,
+   and that load may itself wait for an activation already under way, or be served by the old worker; either
+   way nothing is lost, and a still-waiting worker is taken up at the next tap. The full load is answered by the now-active worker's precached shell
    (`navigateFallback: '/'`), which boots the new bundles, offline included. When the update was counted from
    an unasked `controllerchange` (step 1), skip the messaging and load at once.
 4. **Never mid-send.** A small app-wide registry of sends in flight: callers wrap the promise
    (`track(promise)`), and it stays counted until the promise settles, whether or not its screen is still
-   mounted. Wrapped: ChatBox's send (`onsend`), the Live chat upload batch, the stop Comments upload batch.
+   mounted. Wrapped: ChatBox's send (`onsend`), the whole Live chat upload (`upload()` in
+   `routes/(app)/live/+page.svelte`, from its first `clientClock.ready()`), the stop Comments upload batch.
+   The registry also offers "resolve when nothing is sending" for step 3's final wait.
    `ui.tabBusy` (Tab photo taken, sending, or held for Retry; TabHost is never unmounted while signed in) also
    counts. While anything counts, a link tap navigates client-side as today and the next tap tries again.
 5. **Landing.** The root layout's `beforeNavigate` already feeds `landing.noteNavigation(from)`. Before the full
-   load, store `landing`'s resulting state (moved or still an entry) in `sessionStorage`; `Landing` restores and
-   clears it on boot. A real launch, a reload by the person, or a deep link has no stored state and stays an
-   entry, as today. If `sessionStorage` throws (private mode), fall back to today's behaviour.
+   load, store `landing`'s resulting state (moved, or still an entry when leaving `/login`) in `sessionStorage`,
+   which lasts for the tab or app window. On boot, `Landing` uses the stored state unless the load is the
+   person's own reload (Navigation Timing `type === 'reload'`), and keeps it rather than clearing it, so Back
+   to an earlier screen whose document is rebuilt (no back-forward cache) is still not an entry: Back to a
+   Home opened on purpose on the event day stays on Home. A fresh launch or new tab has empty storage and
+   stays an entry, as today. If `sessionStorage` throws (private mode), fall back to today's behaviour.
 
 The decision (update waiting, navigation type, same origin, nothing sending) is a pure function; the
 registration/messaging wiring is a small module taking a `ServiceWorkerContainer`-like object so it can be
@@ -71,16 +80,23 @@ unit-tested with fakes; the root layout only connects them.
 
 ## Testing
 
-- **Unit (vitest):** the decision function (each navigation type, cross-origin, busy, no update); the update
+- **Unit (vitest):** the decision function (each navigation type, cross-origin, busy, no update); `Landing`'s
+  boot rule (stored state × navigation type); the update
   watcher with a fake registration (waiting at start, `updatefound` → `installed` with and without an active
-  worker, unasked `controllerchange`, activation timeout); the send registry (counts until settle, survives the
+  worker, an installing worker present at start, unasked `controllerchange`, timeout before and during activation, a
+  send started during the handoff); the send registry (counts until settle, survives the
   caller going away, rejected promises still uncount); `Landing` restoring and clearing its stored state, and
   surviving a throwing `sessionStorage`.
-- **Production browser test** (`web/tests/sim/`, run by `playwright.sim.config.ts`, which builds and serves the
-  production bundle with its real worker, as `offline.spec.ts` does): with a controlled page, make a new worker
-  wait (how — a byte-changed `/sw.js` served through routing, or a second build — is for the plan to settle with
-  a short spike), then tap a tab-bar link: the page fully loads, the new worker controls it, Back returns to the
-  previous screen. Same setup with a Tab photo held in flight: the tap stays client-side and the photo lands.
+- **Production browser test**, beside `web/tests/sim/offline.spec.ts`: the production project selects specs
+  explicitly (`web/tests/browser-config.ts`) and the build happens in `web/scripts/smoke-sim-offline.mjs`, so
+  both need the new spec added. Playwright cannot route an updating worker's own script, so the second version
+  has to come from the server: a second build (or a build variant) with a **distinct shell marker**, swapped in
+  while a controlled page is open; the plan settles the mechanism with a short spike. Assertions: after a
+  tab-bar tap the page has fully loaded, the new worker controls it and the new marker is on screen (also
+  offline after that); Back returns to the previous screen; a send held in flight (started before the tap,
+  and one started during a delayed activation) lands before the load; Back to an intentional Home on the
+  event day stays on Home. If the spike shows this costs more than it proves, the plan says so and falls back
+  to unit tests plus the manual check.
 - Manual check after deploy: open the installed app, deploy a change, bring the app back, tap a tab: the new
   build is on screen.
 
