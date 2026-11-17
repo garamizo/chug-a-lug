@@ -112,6 +112,7 @@ test('crew pages on the event day', async ({ page, browser }) => {
       // Mid-crawl the train home has not arrived: the reel's page says when it starts.
       { name: 'closing time, not yet', open: (p) => p.goto('/live/closing'), ready: (p) => p.getByTestId('reel-not-yet') },
       { name: 'route', open: (p) => p.goto('/route'), ready: (p) => p.getByTestId('locked-on') },
+      { name: 'route, Tab open', open: (p) => openTab(p), ready: (p) => p.getByTestId('drink-beer') },
       { name: 'crew board', open: (p) => p.goto('/crew'), ready: (p) => p.getByTestId('crew-row') },
       { name: 'notifications', open: (p) => p.goto('/notifications'), ready: (p) => p.getByRole('heading', { name: copy.bulletins }) },
       { name: 'account', open: (p) => p.goto('/account'), ready: (p) => p.getByTestId('account-save') },

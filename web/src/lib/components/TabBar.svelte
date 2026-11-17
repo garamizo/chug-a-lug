@@ -1,7 +1,6 @@
 <script lang="ts">
   // Live's navigation: the three screens people actually switch between, plus the Tab. The menu is
-  // in the header already; the Tab opens its sheet over Live, going to Live first if need be.
-  import { goto } from '$app/navigation';
+  // in the header already; the Tab opens its sheet over whatever screen is up.
   import { page } from '$app/state';
   import { copy, labels } from '$lib/labels';
   import { auth } from '$lib/pb';
@@ -14,10 +13,6 @@
     { href: '/crew', id: 'crew', icon: '🏆', label: labels.userRoster }
   ];
   const total = $derived($auth.user ? drinkCount(liveDay.feed.drinks, $auth.user.id, liveDay.today) : 0);
-  function openTab() {
-    ui.tabOpen = true;
-    if (page.url.pathname !== '/live') void goto('/live');
-  }
 </script>
 
 <nav class="tabbar" aria-label={copy.mainNav} data-testid="tab-bar">
@@ -26,7 +21,7 @@
       <span aria-hidden="true">{tab.icon}</span>{tab.label}
     </a>
   {/each}
-  <button type="button" onclick={openTab} aria-expanded={ui.tabOpen} data-testid="tab-drinks">
+  <button type="button" onclick={() => (ui.tabOpen = true)} aria-expanded={ui.tabOpen} data-testid="tab-drinks">
     <span aria-hidden="true">🍻</span>{copy.tabTitle}{#if total}<b class="count" data-testid="tab-bar-total">{total}</b>{/if}
   </button>
 </nav>

@@ -114,7 +114,7 @@ Goal: nobody misses a train, nobody is lost, and the plan can change without cha
   hears each slide's words. ✕, Done or Back return to Live. Cheers are stamped by the server's clock, so a rehearsal
   counts them too. A Golden Spike card cut short (by the reel, or by practice's quiet) comes back while it is fresh.
 - **The Tab** is a one-tap row of shot / cocktail / beer / non-alcoholic / food buttons in a sheet
-  opened from the tab bar (from any screen it goes to Live first; X, a tap outside or Escape closes
+  opened from the tab bar (over whichever screen is up, without leaving it; X, a tap outside or Escape closes
   it, and it stays open between taps), with personal counters per drink and a running total for the day. A tap opens
   the camera; the drink counts once its photo lands (the photo is Freight, filed at the stop where
   the button was tapped, and shows once in Crew chat). While the photo sends the button says

@@ -152,7 +152,7 @@ users see. Bars and restaurants keep their plain names.
 | Crew chat message | **Message** | Plain | Anyone can post; never pinned |
 | Computed chat milestone | **Milestone** | Plain | Worked out from the Tab and Freight, never stored |
 | Event log | **Train Sheet** | Rail, the dispatcher's log | |
-| Drink log | **Tab** | Bar | Opens as a sheet over Live from the tab bar's 🍻 Tab button; a drink counts once its photo lands, and the photo is Freight |
+| Drink log | **Tab** | Bar | Opens as a sheet over the current screen from the tab bar's 🍻 Tab button; a drink counts once its photo lands, and the photo is Freight |
 | Scoreboard | **Hall of Fame** | Sports | |
 | Awards | **Golden Spikes** | Rail | Worked out from the night, never stored: Pathfinder, Big Boy, Caboose, Triple Header, Full Consist, Whistle Stop, Railfan; shown in Crew chat, as a laurel and count on the Crew Board, and as a card to the winner |
 | Media uploads | **Freight** | Rail | |

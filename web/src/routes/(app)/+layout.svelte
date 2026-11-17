@@ -9,6 +9,7 @@
   import PinnedBulletin from '$lib/components/PinnedBulletin.svelte';
   import BulletinSheet from '$lib/components/BulletinSheet.svelte';
   import TabBar from '$lib/components/TabBar.svelte';
+  import TabHost from '$lib/components/TabHost.svelte';
   import Lightbox from '$lib/components/Lightbox.svelte';
   import SpikeCelebration from '$lib/components/SpikeCelebration.svelte';
   import type { CelebrationScope } from '$lib/live/celebrate';
@@ -47,6 +48,7 @@
   const quiet = $derived(liveDay.practice && !onLive);
   // Closing Time's reel is a presentation: nothing of the app's own sits over it or hears its taps and keys.
   const presenting = $derived(page.url.pathname === '/live/closing');
+  const tabBar = $derived(!presenting && (liveDay.isEventDay || (liveDay.practice && onTabScreen)));
   // Whose celebration, on which route, server day and simulation run: the Tab's proof scope. None
   // until the clock is known, so a run's first sync cannot replay another run's awards.
   const celebrationScope = $derived<CelebrationScope | null>(userId && liveDay.clockKnown && liveDay.itinerary
@@ -120,7 +122,9 @@
   {#if error}<p role="alert">{error}</p>{/if}
   {@render children()}
   <!-- The Tab opens from the tab bar, so a practice day's Live, Route and Crew Board need it too; the planner stays practice-free. -->
-  {#if !presenting && (liveDay.isEventDay || (liveDay.practice && onTabScreen))}<TabBar />{/if}
+  {#if tabBar}<TabBar />{/if}
+  <!-- Mounted with the session, not the bar: a drink still sending finishes wherever its person went. -->
+  <TabHost shown={tabBar} />
   <Lightbox />
   <!-- Paused, not dropped, under the reel: its queue waits as it does for practice's quiet, and a card cut short comes back. -->
   <SpikeCelebration scope={celebrationScope} quiet={quiet || presenting} />

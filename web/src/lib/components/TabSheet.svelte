@@ -1,5 +1,5 @@
 <script lang="ts">
-  // The Tab as a sheet over Live: opened from the tab bar, closed by its X, a tap outside or Escape.
+  // The Tab as a sheet over the current screen: opened from the tab bar, closed by its X, a tap outside or Escape.
   // It stays open between taps so a round can be logged one drink after another.
   import type { Snippet } from 'svelte';
   import { copy } from '$lib/labels';

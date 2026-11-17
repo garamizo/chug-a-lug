@@ -78,6 +78,11 @@ export class LiveDay {
     if (!this.hasRoute) return null;
     return currentStop(this.stops, this.legs, this.now, { startAt: this.startAt, override: this.effectiveAnchor });
   }
+  /** The stop drinks and Freight are filed under: none before or after the crawl, when the board still shows one. */
+  get tabStop() {
+    const here = this.here;
+    return here?.source === 'clock' || here?.source === 'override' ? here.stop : null;
+  }
   /**
    * Closing Time on the activity clock: when the train home arrives, as the day's own instants (ISO).
    * Null until the crawl is over, and on routes with no run home (legacy, or an impossible one).

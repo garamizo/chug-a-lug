@@ -378,10 +378,22 @@ test('the Tab offers five counters, each a camera; the tab bar opens it from any
 
   await page.getByTestId('tab-crew').click();
   await expect(page).toHaveURL(/\/crew$/);
+  // The Tab opens over whatever screen is up, and logs from there.
   await page.getByTestId('tab-drinks').click();
-  await expect(page).toHaveURL(/\/live$/);
   await expect(page.getByTestId('tab-sheet')).toBeVisible();
+  await expect(page).toHaveURL(/\/crew$/);
   await expect(page.getByTestId('drink-beer').locator('.count')).toHaveText('1');
+  await tapDrink(page, 'beer');
+  await expect(page.getByTestId('drink-beer').locator('.count')).toHaveText('2');
   await page.getByTestId('tab-scrim').click({ position: { x: 10, y: 10 } });
+  await expect(page.getByTestId('tab-sheet')).toHaveCount(0);
+  await expect(page).toHaveURL(/\/crew$/);
+  await expect(page.getByTestId('tab-bar-total')).toHaveText('2');
+
+  // Leaving a screen closes the sheet over it.
+  await page.getByTestId('tab-drinks').click();
+  await expect(page.getByTestId('tab-sheet')).toBeVisible();
+  await page.goBack();
+  await expect(page).toHaveURL(/\/live$/);
   await expect(page.getByTestId('tab-sheet')).toHaveCount(0);
 });
