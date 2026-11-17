@@ -25,8 +25,17 @@
   afterNavigate(() => { ui.tabOpen = false; });
   // Signing out takes the Tab with it.
   onDestroy(() => { ui.tabOpen = false; ui.tabBusy = false; });
+  // A screen without the tab bar (the reel, or the clock leaving the event day) has no sheet either.
+  $effect(() => { if (!shown) ui.tabOpen = false; });
 
   let error = $state('');
+  // Once the sheet is closed the error floats over the screen: briefly, as the failed Undo or Retry
+  // it explains stays on offer in its own toast.
+  $effect(() => {
+    if (!error || ui.tabOpen) return;
+    const message = error, timer = setTimeout(() => { if (error === message) error = ''; }, 6000);
+    return () => clearTimeout(timer);
+  });
   const me = $derived($auth.user?.id ?? '');
   const tabStop = $derived(liveDay.tabStop);
 
@@ -64,12 +73,21 @@
   let tapped: ProofTap | null = null;
   /** The Tab's camera is open: from the tap until it answers with a photo or a cancel. */
   let picking = $state(false);
+  // Not every phone fires `cancel` when the camera is backed out of, and this flag outlives every screen:
+  // once the page has the focus back for a moment, the camera is taken as closed. `tapped` stays, so a
+  // photo that arrives later still sends.
+  let pickTimer: ReturnType<typeof setTimeout> | undefined;
+  function cameraMaybeClosed() {
+    clearTimeout(pickTimer);
+    if (picking) pickTimer = setTimeout(() => { picking = false; }, 1000);
+  }
   // Live holds Closing Time back while any of this is unfinished.
   $effect(() => { ui.tabBusy = picking || sending.length > 0 || retries.length > 0; });
   function tap(kind: DrinkKind) {
     const stop = tabStop, at = scope;
     if (!stop || !at || !camera) return;
     tapped = { kind, stop: stop.id, scope: at };
+    clearTimeout(pickTimer);
     picking = true;
     navigator.vibrate?.(30);
     camera.value = '';
@@ -77,6 +95,7 @@
   }
   // A cancelled picker fires no change (or a `cancel`): nothing was started, so nothing is undone.
   function picked() {
+    clearTimeout(pickTimer);
     const photo = camera?.files?.[0], t = tapped;
     tapped = null;
     picking = false;
@@ -179,6 +198,7 @@
   }
 </script>
 
+<svelte:window onfocus={cameraMaybeClosed} />
 {#snippet toastView()}
   {#if toast || retries.length || (error && !ui.tabOpen)}
     <div class="toasts" class:floating={!ui.tabOpen}>
@@ -226,7 +246,7 @@
   .toast { display: flex; justify-content: space-between; align-items: center; gap: 14px; padding: 8px 8px 8px 16px; border-radius: 999px; background: #f2efe6; color: #111;
     font-weight: 700; }
   .toasts.floating { position: fixed; left: 50%; bottom: calc(76px + env(safe-area-inset-bottom)); transform: translateX(-50%); z-index: 16;
-    margin: 0; }
+    margin: 0; width: max-content; max-width: calc(100vw - 32px); }
   /* Live's practice banner sits on top of the tab bar; the toasts clear it too. */
   :global(body:has(.tabbar):has(.practice-banner)) .toasts.floating { bottom: calc(100px + env(safe-area-inset-bottom)); }
   .floating .toast { box-shadow: 0 6px 20px #000a; }

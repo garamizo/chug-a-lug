@@ -262,6 +262,38 @@ test('overlapping taps with a slow server count exactly once each, and never whi
   expect(posts).toBe(2);
 });
 
+test('a photo still sending when its person leaves Live counts all the same', async ({ page }) => {
+  const crawl = await tabDay(page, 'E2E Tab Left Live');
+  const held = await holdProofs(page);
+  await tapDrink(page, 'beer');
+  await expect(page.getByTestId('tab-sending-beer')).toBeVisible();
+  await page.getByTestId('tab-close').click();
+  await page.getByTestId('tab-route').click();
+  await expect(page).toHaveURL(/\/route$/);
+  held.release();
+  await expect(page.getByTestId('tab-bar-total')).toHaveText('1');
+  const drink = await (await record('drink_entries', held.ids[0])).json();
+  expect(drink.stop).toBe(crawl.firstStopId);
+});
+
+test('a Tab error outlives the sheet as a toast that clears itself', async ({ page }) => {
+  await tabDay(page, 'E2E Tab Error Toast');
+  await tapDrink(page, 'beer');
+  await expect(page.getByTestId('tab-toast')).toBeVisible();
+  await page.keyboard.press('Escape');   // the first beer's Pathfinder card
+  await expect(page.getByTestId('spike-celebration')).toHaveCount(0);
+  const block = (r: Route) => r.request().method() === 'DELETE' ? r.abort() : r.continue();
+  await page.route('**/api/collections/drink_entries/records/**', block);
+  await page.getByTestId('tab-undo').click();
+  await expect(page.getByRole('alert')).toHaveText(copy.noSignal);
+  await page.getByTestId('tab-close').click();
+  await expect(page.getByTestId('tab-error')).toContainText(copy.noSignal);
+  await page.clock.runFor(7_000);
+  await expect(page.getByTestId('tab-error')).toHaveCount(0);
+  // The failed Undo itself stays offered.
+  await expect(page.getByTestId('tab-undo')).toBeVisible();
+});
+
 test('a failed Undo keeps its button so it can be retried', async ({ page }) => {
   await tabDay(page, 'E2E Tab Undo Retry');
   await tapDrink(page, 'beer');
