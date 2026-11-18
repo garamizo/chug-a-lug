@@ -2,8 +2,10 @@
   import { clientClock } from '$lib/sim/clock.svelte';
   import { onMount, untrack } from 'svelte';
   import { page } from '$app/state';
-  import { beforeNavigate } from '$app/navigation';
-  import { landing } from '$lib/landing';
+  import { afterNavigate, beforeNavigate } from '$app/navigation';
+  import { landing, safeSession } from '$lib/landing';
+  import { sending } from '$lib/sends';
+  import { shouldSwitch, watchUpdates, type UpdateWatcher } from '$lib/update';
   import { copy } from '$lib/labels';
   import { auth } from '$lib/pb';
   import AppMenu from '$lib/components/AppMenu.svelte';
@@ -45,15 +47,42 @@
     if (!creditUser) return;
     return untrack(() => watchCreditDate(fetchStatus, (d) => { creditDate = d; }));
   });
+  // A waiting new version is taken up at the next in-app link tap (see $lib/update). Production only,
+  // like the registration: dev and the e2e run never register a worker, so `watcher` stays null.
+  let watcher: UpdateWatcher | null = null;
+  let unmounted = false;
   onMount(() => {
     if (import.meta.env.PROD && 'serviceWorker' in navigator) {
-      navigator.serviceWorker.register('/sw.js').catch(() => {
+      navigator.serviceWorker.register('/sw.js').then((r) => {
+        if (!unmounted) watcher = watchUpdates(navigator.serviceWorker, r, document);
+      }).catch(() => {
         // Online use remains available when the browser declines offline storage.
       });
     }
+    return () => { unmounted = true; watcher?.dispose(); watcher = null; };
   });
   // Any move inside the app means Home was asked for, not landed on (see (app)/+page.svelte).
   beforeNavigate(({ from }) => landing.noteNavigation(from?.url.pathname ?? null));
+  // Registered after Landing's, so the state saved before the full load includes this move.
+  const busy = () => sending() || ui.tabBusy;
+  beforeNavigate(({ type, to, willUnload, cancel }) => {
+    if (!watcher || type !== 'link') return;
+    // A switch is already under way and will full-load the screen first tapped; later taps wait for it.
+    if (watcher.switching) { cancel(); return; }
+    if (!to || !shouldSwitch({ pending: watcher.pending, switching: false, type, sameOrigin: to.url.origin === location.origin,
+      willUnload, busy: busy() })) return;
+    // Cancel first: with nothing to wait for, `switchTo` loads before it returns.
+    cancel();
+    void watcher.switchTo(to.url.href, {
+      isBusy: busy,
+      load: (href, replace) => {
+        landing.persist(safeSession());
+        if (replace) location.replace(href); else location.assign(href);
+      }
+    });
+  });
+  // Only non-link moves complete during a switch (Back/Forward, a `goto`): load where they landed.
+  afterNavigate(() => { if (watcher?.switching) watcher.supersede(location.href); });
 </script>
 
 <svelte:head>
