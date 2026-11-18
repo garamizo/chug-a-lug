@@ -44,11 +44,24 @@ export interface UpdateWatcher {
   readonly pending: Pending;
   readonly switching: boolean;
   switchTo(href: string, o: SwitchOpts): Promise<void>;
-  supersede(href: string): void;
+  /** A later tap while switching: load `href` instead, and load again if a load was already issued. */
+  retarget(href: string): void;
   dispose(): void;
 }
 
 const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
+
+/** No time limit: a send begun during the handoff always settles. */
+async function untilIdle(o: SwitchOpts): Promise<void> {
+  const busy = () => {
+    try {
+      return o.isBusy();
+    } catch {
+      return true; // unknown means busy: never full-load while something may be sending
+    }
+  };
+  while (busy()) await sleep(o.pollMs ?? 100);
+}
 
 export function watchUpdates(
   container: ContainerLike,
@@ -59,6 +72,9 @@ export function watchUpdates(
   let switching = false;
   let asked = false; // this page posted SKIP_WAITING, so the next controllerchange is its own
   let target: { href: string; replace: boolean } | null = null;
+  let opts: SwitchOpts | null = null;
+  let issued = false; // this switch has called `load` (which a later navigation may have aborted)
+  let reloading = false; // a retarget's idle wait is under way
   let followed: WorkerLike | null = null;
 
   const read = () => {
@@ -112,6 +128,17 @@ export function watchUpdates(
       timer = setTimeout(done, ms);
     });
 
+  const issue = (o: SwitchOpts) => {
+    const t = target!;
+    issued = true;
+    try {
+      o.load(t.href, t.replace);
+    } catch {
+      switching = false; // never rejects, and later taps are not stuck
+      issued = false;
+    }
+  };
+
   return {
     get pending() {
       return pending;
@@ -119,12 +146,23 @@ export function watchUpdates(
     get switching() {
       return switching;
     },
-    supersede(href) {
-      if (switching) target = { href, replace: true };
+    retarget(href) {
+      if (!switching) return;
+      target = { href, replace: false };
+      // Before the load, or while a reload waits, the load still to come takes the new target.
+      if (!issued || reloading || !opts) return;
+      reloading = true;
+      const o = opts;
+      void untilIdle(o).finally(() => {
+        reloading = false;
+        issue(o);
+      });
     },
     async switchTo(href, o) {
       if (switching) return;
       switching = true;
+      issued = false;
+      opts = o;
       target = { href, replace: false };
       try {
         if (pending === 'waiting') {
@@ -137,22 +175,9 @@ export function watchUpdates(
             /* go straight to the idle wait */
           }
         }
-        // No time limit: a send begun during the handoff always settles.
-        const busy = () => {
-          try {
-            return o.isBusy();
-          } catch {
-            return true; // unknown means busy: never full-load while something may be sending
-          }
-        };
-        while (busy()) await sleep(o.pollMs ?? 100);
+        await untilIdle(o);
       } finally {
-        const t = target ?? { href, replace: false };
-        try {
-          o.load(t.href, t.replace);
-        } catch {
-          switching = false; // never rejects, and later taps are not stuck
-        }
+        issue(o);
       }
     },
     dispose() {

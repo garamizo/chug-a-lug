@@ -188,14 +188,48 @@ describe('switchTo', () => {
     await p;
     expect(load).toHaveBeenCalledWith('/crew', false);
   });
-  it('a navigation during the handoff wins', async () => {
+  it('a later tap retargets the load', async () => {
     const { worker, load, w } = setup();
     const p = w.switchTo('/crew', { isBusy: () => false, load });
-    w.supersede('/route');
+    w.retarget('/route');
     worker.activate();
     await vi.advanceTimersByTimeAsync(200);
     await p;
-    expect(load).toHaveBeenCalledWith('/route', true);
+    expect(load).toHaveBeenCalledTimes(1);
+    expect(load).toHaveBeenCalledWith('/route', false);
+  });
+  it('a tap after the load was issued loads again', async () => {
+    // The first load can be aborted (Back while it is pending): the page must not stay switching.
+    const { worker, load, w } = setup();
+    let busy = false;
+    const p = w.switchTo('/crew', { isBusy: () => busy, load });
+    worker.activate();
+    await vi.advanceTimersByTimeAsync(200);
+    await p;
+    expect(load).toHaveBeenCalledTimes(1);
+    expect(w.switching).toBe(true);
+    busy = true;
+    w.retarget('/route');
+    w.retarget('/live');
+    await vi.advanceTimersByTimeAsync(500);
+    expect(load).toHaveBeenCalledTimes(1);
+    busy = false;
+    await vi.advanceTimersByTimeAsync(200);
+    expect(load).toHaveBeenCalledTimes(2);
+    expect(load).toHaveBeenLastCalledWith('/live', false);
+  });
+  it('retarget outside a switch does nothing', async () => {
+    const { worker, load, w } = setup();
+    w.retarget('/route');
+    expect(w.switching).toBe(false);
+    await vi.advanceTimersByTimeAsync(500);
+    expect(load).not.toHaveBeenCalled();
+    expect(worker.postMessage).not.toHaveBeenCalled();
+    const p = w.switchTo('/crew', { isBusy: () => false, load });
+    worker.activate();
+    await vi.advanceTimersByTimeAsync(200);
+    await p;
+    expect(load).toHaveBeenCalledWith('/crew', false);
   });
   it('a throwing worker still loads', async () => {
     const { worker, load, w } = setup();

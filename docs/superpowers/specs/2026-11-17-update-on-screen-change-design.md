@@ -54,7 +54,10 @@ one service worker).
    `{ type: 'SKIP_WAITING' }` to the waiting worker, wait for it to reach `activated` (bounded, ~3 s), then
    **wait until nothing is sending** (the screen stays usable during the handoff, so a send may have started
    since the tap), then `location.assign(to.url.href)`. A link push becomes a full-page push, so Back still
-   returns to the screen the tap left. The handoff is best effort: on timeout or error the page loads anyway,
+   returns to the screen the tap left. While switching, Back and a `goto` are held off (every navigation
+   that does not unload the page is cancelled; SvelteKit restores a cancelled Back), so none can fall back
+   to a native load that cuts a send; a later tap retargets the load, and issues it again if a load was
+   already under way (it may have been aborted). The handoff is best effort: on timeout or error the page loads anyway,
    and that load may itself wait for an activation already under way, or be served by the old worker; either
    way nothing is lost, and a still-waiting worker is taken up at the next tap. The full load is answered by the now-active worker's precached shell
    (`navigateFallback: '/'`), which boots the new bundles, offline included. When the update was counted from

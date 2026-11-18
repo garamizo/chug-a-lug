@@ -2,7 +2,7 @@
   import { clientClock } from '$lib/sim/clock.svelte';
   import { onMount, untrack } from 'svelte';
   import { page } from '$app/state';
-  import { afterNavigate, beforeNavigate } from '$app/navigation';
+  import { beforeNavigate } from '$app/navigation';
   import { landing, safeSession } from '$lib/landing';
   import { sending } from '$lib/sends';
   import { shouldSwitch, watchUpdates, type UpdateWatcher } from '$lib/update';
@@ -78,9 +78,17 @@
   // Registered after Landing's, so the state saved before the full load includes this move.
   const busy = () => sending() || ui.tabBusy;
   beforeNavigate(({ type, to, willUnload, cancel }) => {
-    if (!watcher || type !== 'link') return;
-    // A switch is already under way and will full-load the screen first tapped; later taps wait for it.
-    if (watcher.switching) { cancel(); return; }
+    if (!watcher) return;
+    if (watcher.switching) {
+      // Hold every in-app move off until the full load: a `goto` or Back to a screen whose code the new
+      // version deleted would fall back to a native load and cut a send begun during the handoff
+      // (SvelteKit restores a cancelled Back itself). A later tap only changes where the load goes.
+      if (willUnload) return;
+      cancel();
+      if (type === 'link' && to && to.url.origin === location.origin) watcher.retarget(to.url.href);
+      return;
+    }
+    if (type !== 'link') return;
     if (!to || !shouldSwitch({ pending: watcher.pending, switching: false, type, sameOrigin: to.url.origin === location.origin,
       willUnload, busy: busy() })) return;
     // Cancel first: with nothing to wait for, `switchTo` loads before it returns.
@@ -93,8 +101,6 @@
       }
     });
   });
-  // Only non-link moves complete during a switch (Back/Forward, a `goto`): load where they landed.
-  afterNavigate(() => { if (watcher?.switching) watcher.supersede(location.href); });
 </script>
 
 <svelte:head>
