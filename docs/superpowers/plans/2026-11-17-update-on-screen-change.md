@@ -130,7 +130,7 @@ export interface SwitchOpts { isBusy: () => boolean; load: (href: string, replac
   activationMs?: number /* 3000 */; pollMs?: number /* 100 */ }
 export interface UpdateWatcher { readonly pending: Pending; readonly switching: boolean;
   switchTo(href: string, o: SwitchOpts): Promise<void>; // never rejects
-  supersede(href: string): void; // a navigation completed during the handoff: load this screen in place instead
+  retarget(href: string): void; // a later tap while switching: load this instead (again, if a load was issued)
   dispose(): void }
 export function watchUpdates(container: ContainerLike, registration: RegistrationLike, doc: DocLike): UpdateWatcher;
 ```
@@ -138,7 +138,7 @@ export function watchUpdates(container: ContainerLike, registration: Registratio
 Behaviour the tests pin (spec, Design 1–3):
 - `pending` is `'waiting'` whenever `registration.waiting` is set, re-read at start, on `updatefound`, and on every `statechange` of an installing worker (including one already in `registration.installing` at start). An unasked `controllerchange` sets `'active'`. A `controllerchange` after this page posted `SKIP_WAITING` is not unasked.
 - `doc` `visibilitychange` to `'visible'` calls `registration.update()`; a rejection is swallowed.
-- `switchTo` when `'waiting'`: `switching = true`; post `{ type: 'SKIP_WAITING' }` to `registration.waiting`; wait for its `state === 'activated'` or `activationMs`; then poll `isBusy` every `pollMs` with **no time limit** (spec, Design 3: a send that started during the handoff must land; it always settles, and a held Tab Retry ends when retried or undone); then `load(target, replace)`. `target`/`replace` start as `(href, false)`; `supersede(h)` while switching sets them to `(h, true)`. When `'active'`: no message, same idle wait, same load. Any throw (`postMessage`, a missing `waiting`) skips straight to the idle wait and load. `switching` stays true until `load` is called, so later taps are ignored, not lost into a stuck state.
+- `switchTo` when `'waiting'`: `switching = true`; post `{ type: 'SKIP_WAITING' }` to `registration.waiting`; wait for its `state === 'activated'` or `activationMs`; then poll `isBusy` every `pollMs` with **no time limit** (spec, Design 3: a send that started during the handoff must land; it always settles, and a held Tab Retry ends when retried or undone); then `load(target, replace)`. `target`/`replace` start as `(href, false)`; `retarget(h)` while switching sets them to `(h, false)`, and if a load was already issued it waits for idle again and calls `load(h, false)` (an aborted load cannot leave the page stuck); outside a switch it does nothing. When `'active'`: no message, same idle wait, same load. Any throw (`postMessage`, a missing `waiting`) skips straight to the idle wait and load. `switching` stays true from the tap until the page unloads (or `load` throws), so a second `switchTo` is ignored and later taps go through `retarget`.
 - `dispose()` removes every listener.
 
 - [ ] **Step 1: Failing tests.** Fakes: `class FakeWorker extends EventTarget { state = 'installed'; postMessage = vi.fn(); activate() { this.state = 'activated'; this.dispatchEvent(new Event('statechange')); } }`, `FakeRegistration` with the four fields and `update = vi.fn(async () => {})`, plain `EventTarget`s for container and doc. `vi.useFakeTimers()` for the timeouts.
@@ -150,7 +150,9 @@ Behaviour the tests pin (spec, Design 1–3):
   - `loads after the activation timeout`: never activate; advance 3000 ms; `load` called.
   - `waits for a send started during the handoff`: `isBusy` true until 500 ms after activation; `load` not called before, called after.
   - `waits for a send started during the handoff, however long`: `isBusy` true for 60 s after activation; `load` not called at 59 s, called with `('/crew', false)` after.
-  - `a navigation during the handoff wins`: `switchTo('/crew')`, then `supersede('/route')` before activation; `load` called with `('/route', true)`.
+  - `a later tap retargets the load`: `switchTo('/crew')`, then `retarget('/route')` before activation; `load` called once, with `('/route', false)`.
+  - `a tap after the load was issued loads again`: after the first `load`, `retarget` while busy → no load until idle, then `load` again with the newest href.
+  - `retarget outside a switch does nothing`.
   - `a throwing worker still loads`: `postMessage` throws; `switchTo` resolves; `load('/crew', false)` called; `switching` true until then.
   - `active loads without messaging`: after an unasked `controllerchange`, `switchTo` → no `postMessage`, `load` called.
   - `ignores taps while switching`: `switching` is true between the call and the load (the layout uses it with `shouldSwitch`).
@@ -172,8 +174,8 @@ Behaviour the tests pin (spec, Design 1–3):
 
 Layout changes:
 - In `onMount`: `register('/sw.js').then((r) => { watcher = watchUpdates(navigator.serviceWorker, r, document); })`; return a cleanup that calls `watcher?.dispose()`.
-- A second `beforeNavigate`, registered after the existing Landing one: if `!watcher || type !== 'link'` return; if `watcher.switching` → `cancel()`; else if `shouldSwitch({ pending: watcher.pending, switching: false, type, sameOrigin: to?.url.origin === location.origin, willUnload, busy: sending() || ui.tabBusy })` → `cancel()` and `void watcher.switchTo(to.url.href, { isBusy: () => sending() || ui.tabBusy, load: (href, replace) => { landing.persist(safeSession()); if (replace) location.replace(href); else location.assign(href); } })`.
-- An `afterNavigate` (root layout): `if (watcher?.switching) watcher.supersede(location.href)`. Only non-link navigations can complete while switching (links are cancelled), so this is Back/Forward or a `goto`.
+- A second `beforeNavigate`, registered after the existing Landing one: if `!watcher` return; if `watcher.switching` and not `willUnload` → `cancel()` every type, and for a same-origin `link` also `watcher.retarget(to.url.href)`; else if `type !== 'link'` return; else if `shouldSwitch({ pending: watcher.pending, switching: false, type, sameOrigin: to?.url.origin === location.origin, willUnload, busy: sending() || ui.tabBusy })` → `cancel()` and `void watcher.switchTo(to.url.href, { isBusy: () => sending() || ui.tabBusy, load: (href, replace) => { landing.persist(safeSession()); if (replace) location.replace(href); else location.assign(href); } })`.
+- No `afterNavigate`: nothing completes in-app while switching. A `pageshow` with `persisted` while switching (Back restored the document the load left) loads it fresh.
 
 - [ ] **Step 1: Failing browser test** in `update.spec.ts`: **one** test, `three deploys, each taken up at a link tap`, `test.setTimeout(180_000)`, because the page, its registration and history must carry across deploys (Playwright gives every test a fresh context). Each cycle: `swapBuild()`, `awaitWaiting(page)`, then the tap. Before each tap set `window.__beforeTap = 1`; a full load clears it, an in-app move keeps it. "New mark" means `servedMark()` after that cycle's swap.
   - *Cycle 1, offline at the tap, landing:* from `/route` (the fixture is on the event day), `context.setOffline(true)`, click `a.brand` → URL `/`, `__beforeTap` undefined, `readMark` is the new mark, registration `waiting` null and `controller` set; after 2 s still `/` (no event-day redirect to `/live`). `goBack()` → `/route`; `goForward()` → `/`, not `/live`. `setOffline(false)`.
@@ -184,4 +186,4 @@ Layout changes:
 - [ ] **Step 3: Implement** the layout changes.
 - [ ] **Step 4: Run** `npm run test:sim:offline`: PASS. Full gate green.
 - [ ] **Step 5: Commit** `web/src/routes/+layout.svelte web/tests/sim/update.spec.ts` and any doc touched: `feat(update): a new version takes over at the next link tap`.
-- [ ] **Step 6: Manual check after deploy** (for the person, after merge): open the installed app, deploy a change, bring the app back to the front, tap a tab: the new build is on screen. This deploy is the last that needs swipe-away-and-reopen.
+- [ ] **Step 6: Manual check after deploy** (for the person, after merge): open the installed app, deploy a change, bring the app back to the front, tap a tab: the new build is on screen; press Back, then tap a tab again. This deploy is the last that needs swipe-away-and-reopen: phones on earlier builds swipe the app away and reopen it once. The operator note is in `docs/OPERATIONS.md` ("Deploy a change").

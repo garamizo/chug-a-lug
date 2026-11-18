@@ -339,6 +339,11 @@ page; Cloudflare renames menus often, so re-check the page if a label is missing
     just up                                  # docker compose up -d --build
     docker compose logs -f web
 
+A new version takes over on each phone at the next tap of a link in the app (a tab, the logo), once
+nothing is sending; no reopen is needed. Phones still on a build from before 2026-11-17 need one last
+swipe-away-and-reopen to get there. After a deploy that touches the app, check on one phone: bring the
+app back to the front, tap a tab (the new build is on screen), press Back, then tap a tab again.
+
 After the deploy that added the run home, run `just recompute-all` once: it replans every route whose
 crawl day is today or later (Chicago time) so each gets its closing leg; past routes are left as they were. It prints `{ok, failed}` and exits non-zero if any route failed; re-run it to retry.
 
