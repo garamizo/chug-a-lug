@@ -1,5 +1,9 @@
 import type { LightboxItem } from '$lib/types';
 declare global {
+  interface ImportMetaEnv {
+    /** Set only by the production update harness to tell two otherwise identical builds apart. */
+    readonly VITE_BUILD_MARK?: string;
+  }
   namespace App {
     interface PageState {
       /** Set when the stop sheet was pushed in this tab, so closing can go back one step. */
@@ -15,9 +19,5 @@ declare global {
       lightbox?: { items: LightboxItem[]; index: number };
     }
   }
-}
-interface ImportMetaEnv {
-  /** Set only by the production update harness to tell two otherwise identical builds apart. */
-  readonly VITE_BUILD_MARK?: string;
 }
 export {};
