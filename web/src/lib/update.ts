@@ -62,7 +62,8 @@ export function watchUpdates(
 	let followed: WorkerLike | null = null;
 
 	const read = () => {
-		if (pending !== 'active' && registration.waiting) pending = 'waiting';
+		// Recomputed, not latched: a first install passes through `waiting` with no `active` worker.
+		if (pending !== 'active') pending = registration.waiting && registration.active ? 'waiting' : 'none';
 	};
 	const follow = () => {
 		const w = registration.installing;
@@ -137,14 +138,21 @@ export function watchUpdates(
 					}
 				}
 				// No time limit: a send begun during the handoff always settles.
-				try {
-					while (o.isBusy()) await sleep(o.pollMs ?? 100);
-				} catch {
-					/* load anyway */
-				}
+				const busy = () => {
+					try {
+						return o.isBusy();
+					} catch {
+						return true; // unknown means busy: never full-load while something may be sending
+					}
+				};
+				while (busy()) await sleep(o.pollMs ?? 100);
 			} finally {
 				const t = target ?? { href, replace: false };
-				o.load(t.href, t.replace);
+				try {
+					o.load(t.href, t.replace);
+				} catch {
+					switching = false; // never rejects, and later taps are not stuck
+				}
 			}
 		},
 		dispose() {

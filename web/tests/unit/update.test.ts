@@ -50,6 +50,7 @@ describe('shouldSwitch', () => {
 
 describe('pending', () => {
 	it('waiting at start counts', () => {
+		reg.active = new FakeWorker();
 		reg.waiting = new FakeWorker();
 		expect(start().pending).toBe('waiting');
 	});
@@ -73,7 +74,11 @@ describe('pending', () => {
 		reg.installing = inst;
 		reg.dispatchEvent(new Event('updatefound'));
 		inst.state = 'installed';
+		reg.waiting = inst;
 		inst.dispatchEvent(new Event('statechange'));
+		expect(w.pending).toBe('none');
+		reg.waiting = null;
+		reg.active = inst;
 		inst.activate();
 		expect(w.pending).toBe('none');
 	});
@@ -96,6 +101,7 @@ describe('pending', () => {
 	});
 	it("the page's own handoff is not unasked", async () => {
 		const worker = new FakeWorker();
+		reg.active = new FakeWorker();
 		reg.waiting = worker;
 		const w = start();
 		const p = w.switchTo('/crew', { isBusy: () => false, load: vi.fn() });
@@ -134,6 +140,7 @@ describe('checking', () => {
 describe('switchTo', () => {
 	const setup = () => {
 		const worker = new FakeWorker();
+		reg.active = new FakeWorker();
 		reg.waiting = worker;
 		const load = vi.fn();
 		return { worker, load, w: start() };
@@ -195,11 +202,45 @@ describe('switchTo', () => {
 		worker.postMessage.mockImplementation(() => {
 			throw new Error('gone');
 		});
-		const p = w.switchTo('/crew', { isBusy: () => false, load });
+		let busy = true;
+		const p = w.switchTo('/crew', { isBusy: () => busy, load });
+		await vi.advanceTimersByTimeAsync(300);
 		expect(w.switching).toBe(true);
+		expect(load).not.toHaveBeenCalled();
+		busy = false;
 		await vi.advanceTimersByTimeAsync(200);
 		await expect(p).resolves.toBeUndefined();
 		expect(load).toHaveBeenCalledWith('/crew', false);
+	});
+	it('a throwing isBusy counts as busy', async () => {
+		const { worker, load, w } = setup();
+		let throwing = true;
+		const p = w.switchTo('/crew', {
+			isBusy: () => {
+				if (throwing) throw new Error('boom');
+				return false;
+			},
+			load
+		});
+		worker.activate();
+		await vi.advanceTimersByTimeAsync(1000);
+		expect(load).not.toHaveBeenCalled();
+		throwing = false;
+		await vi.advanceTimersByTimeAsync(200);
+		await p;
+		expect(load).toHaveBeenCalledWith('/crew', false);
+	});
+	it('a throwing load does not reject and frees switching', async () => {
+		const { worker, w } = setup();
+		const load = vi.fn(() => {
+			throw new Error('nav failed');
+		});
+		const p = w.switchTo('/crew', { isBusy: () => false, load });
+		worker.activate();
+		await vi.advanceTimersByTimeAsync(200);
+		await expect(p).resolves.toBeUndefined();
+		expect(load).toHaveBeenCalledTimes(1);
+		expect(w.switching).toBe(false);
 	});
 	it('active loads without messaging', async () => {
 		const { worker, load, w } = setup();
@@ -213,19 +254,31 @@ describe('switchTo', () => {
 	it('ignores taps while switching', async () => {
 		const { worker, load, w } = setup();
 		expect(w.switching).toBe(false);
-		const p = w.switchTo('/crew', { isBusy: () => false, load });
+		const o = { isBusy: () => false, load };
+		const p = w.switchTo('/crew', o);
 		expect(w.switching).toBe(true);
+		await w.switchTo('/other', o);
 		worker.activate();
 		await vi.advanceTimersByTimeAsync(200);
 		await p;
+		expect(worker.postMessage).toHaveBeenCalledTimes(1);
 		expect(load).toHaveBeenCalledTimes(1);
+		expect(load).toHaveBeenCalledWith('/crew', false);
 	});
 });
 
 describe('dispose', () => {
 	it('stops listening', () => {
+		reg.active = new FakeWorker();
+		const inst = new FakeWorker();
+		inst.state = 'installing';
+		reg.installing = inst;
 		const w = start();
 		w.dispose();
+		inst.state = 'installed';
+		reg.waiting = inst;
+		inst.dispatchEvent(new Event('statechange'));
+		expect(w.pending).toBe('none');
 		reg.waiting = new FakeWorker();
 		reg.dispatchEvent(new Event('updatefound'));
 		container.dispatchEvent(new Event('controllerchange'));
