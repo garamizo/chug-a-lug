@@ -1,6 +1,7 @@
 import PocketBase, { BaseAuthStore, getTokenPayload, type AuthRecord } from 'pocketbase';
 import { writable } from 'svelte/store';
 import { env } from '$env/dynamic/public';
+import { track, trackWrites } from './sends';
 import type { UserRecord } from './types';
 
 export type { UserRecord } from './types';
@@ -37,6 +38,8 @@ class CookieAuthStore extends BaseAuthStore {
 
 export const pb = new PocketBase(env.PUBLIC_PB_URL || 'http://127.0.0.1:8090', new CookieAuthStore());
 pb.autoCancellation(false);
+// A full load (the version switch) waits for every write, so none is cut between its steps.
+trackWrites(pb as unknown as Parameters<typeof trackWrites>[0], track);
 if (env.PUBLIC_SIM === '1') pb.beforeSend = (url, options) => ({ url, options: { ...options, cache: 'no-store' } });
 
 export const auth = writable<{ user: UserRecord | null }>({

@@ -61,8 +61,11 @@ one service worker).
    an unasked `controllerchange` (step 1), skip the messaging and load at once.
 4. **Never mid-send.** A small app-wide registry of sends in flight: callers wrap the promise
    (`track(promise)`), and it stays counted until the promise settles, whether or not its screen is still
-   mounted. Wrapped: ChatBox's send (`onsend`), the whole Live chat upload (`upload()` in
-   `routes/(app)/live/+page.svelte`, from its first `clientClock.ready()`), the stop Comments upload batch.
+   mounted. Every write counts: each non-GET request of the shared PocketBase client (`pb.send` is wrapped
+   once in `$lib/pb`) and of `api()`, so votes, acks, planner writes and the editor's Save hold the switch as
+   chat does. Multi-step sends are also wrapped whole, so the gaps between their steps count: ChatBox's send
+   (`onsend`), the whole Live chat upload (`upload()` in `routes/(app)/live/+page.svelte`, from its first
+   `clientClock.ready()`), the stop Comments upload batch, and the draft planner's `move`.
    The registry also offers "resolve when nothing is sending" for step 3's final wait.
    `ui.tabBusy` (Tab photo taken, sending, or held for Retry; TabHost is never unmounted while signed in) also
    counts. While anything counts, a link tap navigates client-side as today and the next tap tries again.

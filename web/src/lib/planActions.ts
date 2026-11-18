@@ -3,6 +3,7 @@
 // which one it is driving.
 import { goto } from '$app/navigation';
 import { pb } from '$lib/pb';
+import { track } from '$lib/sends';
 import { copy } from '$lib/labels';
 import { titleError } from '$lib/routeTitle';
 import type { Stop } from '$lib/types';
@@ -41,7 +42,9 @@ export function recordActions(itineraryId: string, onerror: (message: string) =>
     async setDwell(stopId, dwellMin) {
       try { await pb.collection('stops').update(stopId, { dwell_min: dwellMin }); } catch (err) { fail(err); }
     },
-    async move(stopId, dir) {
+    // One send from the read to the last write: a full load between the renumbering writes would
+    // leave two stops sharing an order.
+    move: (stopId, dir) => track((async () => {
       try {
         const stops = await pb.collection('stops').getFullList<Stop>({
           filter: pb.filter('itinerary = {:id}', { id: itineraryId }), sort: 'order,created'
@@ -55,7 +58,7 @@ export function recordActions(itineraryId: string, onerror: (message: string) =>
           if (s.order !== idx + 1) await pb.collection('stops').update(s.id, { order: idx + 1 });
         }
       } catch (err) { fail(err); }
-    },
+    })()),
     async remove(stopId) {
       try { await pb.collection('stops').delete(stopId); } catch (err) { fail(err); }
     },

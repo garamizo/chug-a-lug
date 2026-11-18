@@ -1,8 +1,15 @@
 import { env } from '$env/dynamic/public';
 import { pb } from '$lib/pb';
+import { isWrite, track } from '$lib/sends';
 
-/** Calls our SvelteKit /api/* routes with the PocketBase token. Throws Error(message) on failure. */
-export async function api<T>(path: string, init: RequestInit & { json?: unknown } = {}): Promise<T> {
+/** Calls our SvelteKit /api/* routes with the PocketBase token. Throws Error(message) on failure.
+ *  A write counts as a send until it settles (see `$lib/sends`). */
+export function api<T>(path: string, init: RequestInit & { json?: unknown } = {}): Promise<T> {
+  const p = request<T>(path, init);
+  return isWrite(init.method) ? track(p) : p;
+}
+
+async function request<T>(path: string, init: RequestInit & { json?: unknown }): Promise<T> {
   const headers = new Headers(init.headers);
   headers.set('Authorization', pb.authStore.token);
   let body = init.body;

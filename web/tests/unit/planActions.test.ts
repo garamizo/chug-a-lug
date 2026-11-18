@@ -18,6 +18,7 @@ vi.mock('$lib/pb', () => ({
 vi.mock('$app/navigation', () => ({ goto: async (url: string) => { calls.goto.push(url); } }));
 
 const { recordActions } = await import('$lib/planActions');
+const { sending } = await import('$lib/sends');
 
 beforeEach(() => { calls.update = []; calls.remove = []; calls.goto = []; });
 
@@ -30,6 +31,24 @@ describe('recordActions', () => {
   it('swaps two stops by renumbering both', async () => {
     await recordActions('itinerary000001', () => {}).move('b', -1);
     expect(calls.update).toEqual([['b', { order: 1 }], ['a', { order: 2 }]]);
+  });
+
+  it('counts a move as one send, from its read through its last write', async () => {
+    // A full load between the two renumbering writes would leave two stops sharing an order.
+    const pb = await import('$lib/pb');
+    let answer!: () => void;
+    const read = new Promise<void>((r) => { answer = r; });
+    vi.spyOn(pb.pb, 'collection').mockReturnValue({
+      update: async (...args: unknown[]) => { calls.update.push(args); },
+      getFullList: async () => { await read; return [{ id: 'a', order: 1, station_id: 'LAGRANGE' }, { id: 'b', order: 2, station_id: 'LAGRANGE' }]; }
+    } as never);
+    const move = recordActions('itinerary000001', () => {}).move('b', -1);
+    expect(sending()).toBe(true);
+    answer();
+    await move;
+    expect(calls.update).toHaveLength(2);
+    expect(sending()).toBe(false);
+    vi.restoreAllMocks();
   });
 
   it('refuses to swap two stops at the same station but opposite directions', async () => {
