@@ -21,10 +21,10 @@
 
 ## Review Focus
 
-1. **A send outlasts the handoff** (a plan call beyond the spec, which says only "wait until nothing is sending": an unbounded wait would leave a tap doing nothing while a Tab photo is held for Retry). The tap is cancelled, the worker activates, but a photo is still uploading after the idle bound. Expected: the screen still changes (client-side `goto`), nothing is cut off, and the next idle tap full-loads. Pinned in Task 4 (`falls back to an in-app move when still busy`).
-2. **Two quick taps during the handoff.** Expected: one load, to the first tap's screen; no second messaging. Pinned in Task 4 (`ignores taps while switching`) and Task 5's `beforeNavigate` cancels links while switching.
-3. **Worker never reaches `activated`** (old browser, error). Expected: load anyway after ~3 s. Pinned in Task 4 (`loads after the activation timeout`).
-4. **Offline at the tap.** Expected: the full load is answered by the new worker's precached shell. Pinned in Task 5's browser test (offline reload after the switch).
+1. **A send starts during the handoff and is held for Retry** (the Tab photo fails). Expected: the load waits until it is retried or undone, then the tapped screen loads; nothing in memory is lost. The wait has no time limit, as the spec says: once the new worker is active, an in-app move could hit a deleted old bundle and SvelteKit would then full-load on its own, cutting the send. Pinned in Task 4 (`waits for a send started during the handoff, however long`) and Task 5's third cycle.
+2. **Another tap, Back, or a redirect during the handoff.** Expected: further link taps are ignored; a navigation that does complete (Back, `goto`) wins, and the load reloads *that* screen in place (`location.replace`) instead of the earlier tap's, so history stays intact. Pinned in Task 4 (`ignores taps while switching`, `a navigation during the handoff wins`).
+3. **The worker never reaches `activated`, or posting to it throws.** Expected: the page loads anyway after ~3 s (or at once on a throw) and the watcher is not left stuck in `switching`. Pinned in Task 4 (`loads after the activation timeout`, `a throwing worker still loads`).
+4. **Offline at the tap.** Expected: the full load is answered by the new worker's precached shell. Pinned in Task 5's first cycle (offline before the tap).
 5. **`sessionStorage` throws** (private mode). Expected: `Landing` behaves as today. Pinned in Task 3.
 
 ---
@@ -43,9 +43,9 @@ Settles the spec's open mechanism: two builds that differ only in a build mark, 
 - Modify: `.gitignore` (or `web/.gitignore`, wherever `build` is ignored): add `build-next`.
 
 **Interfaces:**
-- Produces: `swapBuild()`; the `<meta name="app-build">` marker; `readMark(page): Promise<string>` helper in `update.spec.ts` returning the meta's content or `''`.
+- Produces: `swapBuild()` and `servedMark(): string` (`'next'` after an odd number of swaps, else `''`) in `swap.ts`, with `restoreBuild()` that swaps back when the count is odd; `readMark(page): Promise<string>` (the meta's content or `''`) and `awaitWaiting(page): Promise<void>` (calls `registration.update()`, polls until `registration.waiting` is set) in `swap.ts`. Playwright gives each test a fresh context (no auth, history or registration) while the server keeps whatever build was swapped in, so tests compare against `servedMark()`, never a literal.
 
-- [ ] **Step 1: Write the harness test** in `update.spec.ts`, `test.describe.serial`, `test.afterAll` swaps back if a swap is outstanding (track a module-level `swapped` flag) so a rerun starts from the plain build:
+- [ ] **Step 1: Write the harness test** in `update.spec.ts`, with `test.afterAll(restoreBuild)` so a rerun starts from the plain build:
 
 ```ts
 test('a deploy installs a waiting worker under a controlled page', async ({ page }) => {
@@ -54,10 +54,10 @@ test('a deploy installs a waiting worker under a controlled page', async ({ page
   await page.evaluate(async () => { await navigator.serviceWorker.ready; });
   await page.reload();
   await expect.poll(() => page.evaluate(() => !!navigator.serviceWorker.controller)).toBe(true);
-  expect(await readMark(page)).toBe('');
+  const before = servedMark();
+  expect(await readMark(page)).toBe(before);
   await swapBuild();
-  await page.evaluate(async () => { await (await navigator.serviceWorker.getRegistration())!.update(); });
-  await expect.poll(() => page.evaluate(async () => !!(await navigator.serviceWorker.getRegistration())?.waiting)).toBe(true);
+  await awaitWaiting(page); // the deploy is found and waits; Task 5 adds what a tap then does
 });
 ```
 
@@ -76,7 +76,7 @@ test('a deploy installs a waiting worker under a controlled page', async ({ page
 **Interfaces:**
 - Produces: `track<T>(p: Promise<T>): Promise<T>` (returns the same settlement), `sending(): boolean`, and for tests `createSends()` returning `{ track, sending }` (the module exports a default instance's bound functions).
 
-ChatBox is the single choke point: CrewChat's text send and Live's `upload()` (passed as CrewChat's `onfiles`, `routes/(app)/live/+page.svelte:141`), Comments' `send` and `files` batch all run through `onsend`/`onfiles`. Wrapping the whole `onfiles` promise covers Live's upload from its first `clientClock.ready()`. The Tab is covered separately by `ui.tabBusy`.
+ChatBox is the single choke point: CrewChat's text send and Live's `upload()` (passed as CrewChat's `onfiles`, `routes/(app)/live/+page.svelte:141`), Comments' `send` and `files` batch all run through `onsend`/`onfiles`. Wrapping the whole `onfiles` promise covers Live's upload from its first `clientClock.ready()`. The Tab is covered separately by `ui.tabBusy`. (Plan call: the spec names three wrap sites; one wrap in ChatBox covers the same promises, and future ChatBox users get it for free.)
 
 - [ ] **Step 1: Failing tests** in `sends.test.ts`, each on `createSends()`:
   - `counts a send until it settles`: deferred promise; `sending()` true after `track`, false after resolve (`await` the tracked promise).
@@ -126,16 +126,19 @@ export interface WorkerLike extends EventTarget { state: string; postMessage(m: 
 export interface RegistrationLike extends EventTarget { waiting: WorkerLike | null; installing: WorkerLike | null; active: WorkerLike | null; update(): Promise<unknown> }
 export interface ContainerLike extends EventTarget {}
 export interface DocLike extends EventTarget { visibilityState: string }
-export interface SwitchOpts { isBusy: () => boolean; load: (href: string) => void; navigateInApp: (href: string) => void;
-  activationMs?: number /* 3000 */; idleMs?: number /* 3000 */; pollMs?: number /* 100 */ }
-export interface UpdateWatcher { readonly pending: Pending; readonly switching: boolean; switchTo(href: string, o: SwitchOpts): Promise<void>; dispose(): void }
+export interface SwitchOpts { isBusy: () => boolean; load: (href: string, replace: boolean) => void;
+  activationMs?: number /* 3000 */; pollMs?: number /* 100 */ }
+export interface UpdateWatcher { readonly pending: Pending; readonly switching: boolean;
+  switchTo(href: string, o: SwitchOpts): Promise<void>; // never rejects
+  supersede(href: string): void; // a navigation completed during the handoff: load this screen in place instead
+  dispose(): void }
 export function watchUpdates(container: ContainerLike, registration: RegistrationLike, doc: DocLike): UpdateWatcher;
 ```
 
 Behaviour the tests pin (spec, Design 1–3):
 - `pending` is `'waiting'` whenever `registration.waiting` is set, re-read at start, on `updatefound`, and on every `statechange` of an installing worker (including one already in `registration.installing` at start). An unasked `controllerchange` sets `'active'`. A `controllerchange` after this page posted `SKIP_WAITING` is not unasked.
 - `doc` `visibilitychange` to `'visible'` calls `registration.update()`; a rejection is swallowed.
-- `switchTo` when `'waiting'`: `switching = true`; post `{ type: 'SKIP_WAITING' }` to `registration.waiting`; wait for its `state === 'activated'` or `activationMs`; then poll `isBusy` every `pollMs` up to `idleMs`; idle → `load(href)`; still busy → `navigateInApp(href)`, `pending` becomes `'active'` if the worker activated (else re-read), `switching = false`. When `'active'`: no message; same idle wait, then `load` or `navigateInApp`.
+- `switchTo` when `'waiting'`: `switching = true`; post `{ type: 'SKIP_WAITING' }` to `registration.waiting`; wait for its `state === 'activated'` or `activationMs`; then poll `isBusy` every `pollMs` with **no time limit** (spec, Design 3: a send that started during the handoff must land; it always settles, and a held Tab Retry ends when retried or undone); then `load(target, replace)`. `target`/`replace` start as `(href, false)`; `supersede(h)` while switching sets them to `(h, true)`. When `'active'`: no message, same idle wait, same load. Any throw (`postMessage`, a missing `waiting`) skips straight to the idle wait and load. `switching` stays true until `load` is called, so later taps are ignored, not lost into a stuck state.
 - `dispose()` removes every listener.
 
 - [ ] **Step 1: Failing tests.** Fakes: `class FakeWorker extends EventTarget { state = 'installed'; postMessage = vi.fn(); activate() { this.state = 'activated'; this.dispatchEvent(new Event('statechange')); } }`, `FakeRegistration` with the four fields and `update = vi.fn(async () => {})`, plain `EventTarget`s for container and doc. `vi.useFakeTimers()` for the timeouts.
@@ -143,10 +146,12 @@ Behaviour the tests pin (spec, Design 1–3):
   - `waiting at start counts`; `updatefound then installed with an active worker counts`; `a first install never counts` (no `active`, worker goes `installing` → `activated`, `waiting` stays null); `an installing worker present at start is followed`.
   - `an unasked controllerchange makes it active`; `the page's own handoff is not unasked` (`switchTo`, then `controllerchange` → `pending` not `'active'` because of it).
   - `checks on return to the front` (`doc.visibilityState = 'visible'`, dispatch → `update` called once); `a failed check is ignored` (`update` rejects; no unhandled rejection).
-  - `hands over and loads`: `switchTo('/crew', …)`; `postMessage` called with `{ type: 'SKIP_WAITING' }`; `activate()`; `load` called with `'/crew'`.
+  - `hands over and loads`: `switchTo('/crew', …)`; `postMessage` called with `{ type: 'SKIP_WAITING' }`; `activate()`; `load` called with `('/crew', false)`.
   - `loads after the activation timeout`: never activate; advance 3000 ms; `load` called.
   - `waits for a send started during the handoff`: `isBusy` true until 500 ms after activation; `load` not called before, called after.
-  - `falls back to an in-app move when still busy`: `isBusy` always true; after activation + 3000 ms, `navigateInApp('/crew')`, `load` never, `pending === 'active'`, `switching === false`.
+  - `waits for a send started during the handoff, however long`: `isBusy` true for 60 s after activation; `load` not called at 59 s, called with `('/crew', false)` after.
+  - `a navigation during the handoff wins`: `switchTo('/crew')`, then `supersede('/route')` before activation; `load` called with `('/route', true)`.
+  - `a throwing worker still loads`: `postMessage` throws; `switchTo` resolves; `load('/crew', false)` called; `switching` true until then.
   - `active loads without messaging`: after an unasked `controllerchange`, `switchTo` → no `postMessage`, `load` called.
   - `ignores taps while switching`: `switching` is true between the call and the load (the layout uses it with `shouldSwitch`).
   - `dispose stops listening`: after `dispose()`, `updatefound`/`visibilitychange` change nothing.
@@ -167,13 +172,15 @@ Behaviour the tests pin (spec, Design 1–3):
 
 Layout changes:
 - In `onMount`: `register('/sw.js').then((r) => { watcher = watchUpdates(navigator.serviceWorker, r, document); })`; return a cleanup that calls `watcher?.dispose()`.
-- A second `beforeNavigate`, registered after the existing Landing one: if `!watcher || type !== 'link'` return; if `watcher.switching` → `cancel()`; else if `shouldSwitch({ pending: watcher.pending, switching: false, type, sameOrigin: to?.url.origin === location.origin, willUnload, busy: sending() || ui.tabBusy })` → `cancel()` and `void watcher.switchTo(to.url.href, { isBusy: () => sending() || ui.tabBusy, load: (href) => { landing.persist(safeSession()); location.assign(href); }, navigateInApp: (href) => void goto(href) })`.
+- A second `beforeNavigate`, registered after the existing Landing one: if `!watcher || type !== 'link'` return; if `watcher.switching` → `cancel()`; else if `shouldSwitch({ pending: watcher.pending, switching: false, type, sameOrigin: to?.url.origin === location.origin, willUnload, busy: sending() || ui.tabBusy })` → `cancel()` and `void watcher.switchTo(to.url.href, { isBusy: () => sending() || ui.tabBusy, load: (href, replace) => { landing.persist(safeSession()); if (replace) location.replace(href); else location.assign(href); } })`.
+- An `afterNavigate` (root layout): `if (watcher?.switching) watcher.supersede(location.href)`. Only non-link navigations can complete while switching (links are cancelled), so this is Back/Forward or a `goto`.
 
-- [ ] **Step 1: Failing browser tests** appended to `update.spec.ts` (serial, after Task 1's test, which leaves a waiting worker with mark `next`). Before each tap set `window.__beforeTap = 1` to tell a full load (gone) from an in-app move (kept).
-  - `the logo tap loads Home fresh on the new version and stays there`: from `/route` (event day in the fixture), click `a.brand`; expect URL `/`, `window.__beforeTap` undefined, `readMark` `next`, registration `waiting` null and `controller` set; wait 2 s, URL still `/` (no event-day redirect to `/live`). `page.goBack()` → `/route`; `page.goForward()` → `/`, still not `/live`. Then `context.setOffline(true)`, reload, `readMark` still `next`, `setOffline(false)`.
-  - `a tap while a message is sending moves in-app, and the next tap loads`: `swapBuild()` back (plain build); `update()`; poll `waiting`. On `/live`, hold the `chat_messages` POST with `context.route` (continue only when a test-held promise resolves); fill `chat-input` with `update-held-<timestamp>`, click `chat-send`; click `tab-route` → URL `/route`, `__beforeTap` still 1. Release the hold; set `__beforeTap = 1` again; click `tab-crew` → URL `/crew`, `__beforeTap` undefined, `readMark` `''`. `page.goto('/live')` → the held message text is visible in the chat.
-  (If Task 1's spike found `context.route` blind under the worker, write only the first test and note the second as manual.)
-- [ ] **Step 2: Run** `npm run test:sim:offline`. Expected: the new tests FAIL (the logo tap stays client-side: `__beforeTap` is still 1).
+- [ ] **Step 1: Failing browser test** in `update.spec.ts`: **one** test, `three deploys, each taken up at a link tap`, `test.setTimeout(180_000)`, because the page, its registration and history must carry across deploys (Playwright gives every test a fresh context). Each cycle: `swapBuild()`, `awaitWaiting(page)`, then the tap. Before each tap set `window.__beforeTap = 1`; a full load clears it, an in-app move keeps it. "New mark" means `servedMark()` after that cycle's swap.
+  - *Cycle 1, offline at the tap, landing:* from `/route` (the fixture is on the event day), `context.setOffline(true)`, click `a.brand` → URL `/`, `__beforeTap` undefined, `readMark` is the new mark, registration `waiting` null and `controller` set; after 2 s still `/` (no event-day redirect to `/live`). `goBack()` → `/route`; `goForward()` → `/`, not `/live`. `setOffline(false)`.
+  - *Cycle 2, a send before the tap:* on `/live`, hold the `chat_messages` POST with `context.route` (the handler signals "held" through a promise the test awaits, then waits for a release promise). Fill `chat-input` with `update-held-<n>`, click `chat-send`, await "held". Click `tab-route` → URL `/route`, `__beforeTap` still 1 (busy: in-app move, worker still waiting). Release; await the POST's response and the `chat_messages` GET that `liveDay.loadFeed()` sends after it (`CrewChat.svelte:52-55`). Set `__beforeTap = 1`; click `tab-crew` → URL `/crew`, `__beforeTap` undefined, new mark. `page.goto('/live')` → the message is visible.
+  - *Cycle 3, a send during a slow handoff:* on `/live`, delay the handoff by patching `ServiceWorker.prototype.postMessage` in the page to forward after 2 s. Hold the `chat_messages` POST as above. Click `tab-crew` (not visited since this document loaded) → URL still `/live`; within the 2 s send `update-during-<n>` and await "held". Wait 4 s → still `/live`, `__beforeTap` 1 (the load waits for the send). Release → URL `/crew`, `__beforeTap` undefined, new mark; `page.goto('/live')` shows the message.
+  `test.afterAll(restoreBuild)`. If Task 1's spike found `context.route` blind under the worker, keep cycle 1 only and list cycles 2–3 under the manual check.
+- [ ] **Step 2: Run** `npm run test:sim:offline`. Expected: FAIL in cycle 1 (the logo tap stays client-side: `__beforeTap` is still 1).
 - [ ] **Step 3: Implement** the layout changes.
 - [ ] **Step 4: Run** `npm run test:sim:offline`: PASS. Full gate green.
 - [ ] **Step 5: Commit** `web/src/routes/+layout.svelte web/tests/sim/update.spec.ts` and any doc touched: `feat(update): a new version takes over at the next link tap`.
