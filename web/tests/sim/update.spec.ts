@@ -1,4 +1,4 @@
-import { expect, test, type BrowserContext, type Page } from '@playwright/test';
+import { expect, test, type BrowserContext, type Page, type Request } from '@playwright/test';
 import { login } from '../e2e/helpers';
 import { awaitWaiting, readMark, restoreBuild, servedMark, swapBuild } from './swap';
 
@@ -25,6 +25,7 @@ const workers = (page: Page) => page.evaluate(async () => {
 });
 
 const CHAT = '**/api/collections/chat_messages/records*';
+const FEED_READS = ['drink_entries', 'media', 'chat_messages', 'reactions'].map((c) => `/api/collections/${c}/records`);
 const isChat = (method: string) => (r: { url(): string; request(): { method(): string } }) =>
   new URL(r.url()).pathname === '/api/collections/chat_messages/records' && r.request().method() === method;
 
@@ -40,6 +41,31 @@ async function holdChatSend(context: BrowserContext) {
     await route.continue();
   });
   return { held, release: async () => { release(); }, done: () => context.unroute(CHAT) };
+}
+
+/**
+ * Resolves once the feed reads begun from now on have all reached the page: a held send counts until
+ * its `loadFeed` (four reads at once) settles. Under the worker a read's page-level request event
+ * only fires when the worker answers it, so starts are counted where the worker issues them and
+ * compared, per collection, with reads finished at the page.
+ */
+function feedSettles(page: Page, context: BrowserContext): Promise<void> {
+  const started = new Map<string, number>(), finished = new Map<string, number>();
+  const feedPath = (r: Request) => {
+    const path = new URL(r.url()).pathname;
+    return r.method() === 'GET' && FEED_READS.includes(path) ? path : null;
+  };
+  const bump = (m: Map<string, number>, k: string) => m.set(k, (m.get(k) ?? 0) + 1);
+  const onStart = (r: Request) => { const p = feedPath(r); if (p && r.serviceWorker()) bump(started, p); };
+  const onDone = (r: Request) => { const p = feedPath(r); if (p) bump(finished, p); };
+  context.on('request', onStart);
+  page.on('requestfinished', onDone); page.on('requestfailed', onDone);
+  return (async () => {
+    await expect.poll(() => FEED_READS.every((p) => (started.get(p) ?? 0) > 0 && (finished.get(p) ?? 0) >= started.get(p)!))
+      .toBe(true);
+    context.off('request', onStart);
+    page.off('requestfinished', onDone); page.off('requestfailed', onDone);
+  })();
 }
 
 test('three deploys, each taken up at a link tap', async ({ page, context }) => {
@@ -86,12 +112,9 @@ test('three deploys, each taken up at a link tap', async ({ page, context }) => 
   await expect(page).toHaveURL(/\/route$/);
   expect(await beforeTap(page)).toBe(1);
   expect(await workers(page)).toEqual({ waiting: true, controller: true });
-  const posted = page.waitForResponse(isChat('POST'));
-  const fed = page.waitForResponse(isChat('GET'));
+  const settled = feedSettles(page, context);
   await before.release();
-  await posted;
-  await fed;
-  await page.waitForTimeout(1000); // the feed's other reads in the same Promise.all, then the send settles
+  await settled;
   await before.done();
   await markTap(page);
   await page.getByTestId('tab-crew').click();
@@ -119,6 +142,7 @@ test('three deploys, each taken up at a link tap', async ({ page, context }) => 
   await page.getByTestId('chat-input').fill(sent);
   await page.getByTestId('chat-send').click();
   await during.held;
+  expect(await workers(page)).toEqual({ waiting: true, controller: true }); // the handoff has not begun
   await page.waitForTimeout(4000);
   await expect(page).toHaveURL(/\/live$/);
   expect(await beforeTap(page)).toBe(1);

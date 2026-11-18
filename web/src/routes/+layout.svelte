@@ -51,15 +51,27 @@
   // like the registration: dev and the e2e run never register a worker, so `watcher` stays null.
   let watcher: UpdateWatcher | null = null;
   let unmounted = false;
+  // This document full-loaded away mid-switch and Back restored it from the back-forward cache: it is
+  // still switching, so every tap would be swallowed. Load it fresh (replace: not the person's reload).
+  const onPageShow = (e: PageTransitionEvent) => {
+    if (e.persisted && watcher?.switching) location.replace(location.href);
+  };
   onMount(() => {
     if (import.meta.env.PROD && 'serviceWorker' in navigator) {
       navigator.serviceWorker.register('/sw.js').then((r) => {
         if (!unmounted) watcher = watchUpdates(navigator.serviceWorker, r, document);
       }).catch(() => {
-        // Online use remains available when the browser declines offline storage.
+        // The browser declined offline storage, or the update watcher could not start: online use
+        // remains available, and versions update as before, when the app is reopened.
       });
+      window.addEventListener('pageshow', onPageShow);
     }
-    return () => { unmounted = true; watcher?.dispose(); watcher = null; };
+    return () => {
+      unmounted = true;
+      window.removeEventListener('pageshow', onPageShow);
+      watcher?.dispose();
+      watcher = null;
+    };
   });
   // Any move inside the app means Home was asked for, not landed on (see (app)/+page.svelte).
   beforeNavigate(({ from }) => landing.noteNavigation(from?.url.pathname ?? null));

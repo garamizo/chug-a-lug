@@ -407,7 +407,9 @@ exercise the real service worker, but do not establish physical-phone offline ac
 
 Run the ordinary gate, then `npm run test:sim` and `npm run test:sim:offline` in `web/`, sequentially.
 The latter builds the production bundle, registers its real service worker, disconnects and reloads
-The Route, then verifies resynchronization and excluded API caches. Browser screenshots are retained
+The Route, then verifies resynchronization and excluded API caches. It also builds a second, marked
+bundle and runs the update test: the two builds are swapped under the production server to stand in
+for deploys, and each new version must take over at the next link tap without losing a send. Browser screenshots are retained
 under `web/test-results/sim/` and `web/test-results/sim-offline/`. Record device/browser/build/source
 and each manual checkpoint using [the rehearsal template](rehearsals/m4-template.md). Automated
 fixtures do not establish real Saturday recording or physical-phone acceptance.
