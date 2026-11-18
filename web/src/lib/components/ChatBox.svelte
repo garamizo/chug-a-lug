@@ -4,6 +4,7 @@
   // Comments that pins it to the page's foot; Crew chat wraps it to keep it atop its thread.
   import { onDestroy, tick } from 'svelte';
   import { copy } from '$lib/labels';
+  import { track } from '$lib/sends';
   import { CHAT_EMOJI, composerMode, draftAfterFailedSend, insertAt } from '$lib/chatBox';
   import IconButton from './IconButton.svelte';
 
@@ -35,12 +36,12 @@
     // on failure, and the text comes back only into an empty box.
     text = '';
     inFlight++;
-    try { await onsend(body); } catch { text = draftAfterFailedSend(text, body); } finally { inFlight--; }
+    try { await track(onsend(body)); } catch { text = draftAfterFailedSend(text, body); } finally { inFlight--; }
   }
   async function pick(list: FileList | null) {
     picking = false;
     const files = Array.from(list ?? []);
-    if (files.length && onfiles) await onfiles(files);
+    if (files.length && onfiles) await track(onfiles(files));
   }
   async function addEmoji(e: string) {
     const start = input?.selectionStart ?? text.length, end = input?.selectionEnd ?? text.length;
