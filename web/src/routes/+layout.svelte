@@ -14,6 +14,8 @@
   import { liveDay } from '$lib/live/day.svelte';
   import { ui } from '$lib/ui.svelte';
   let { children } = $props();
+  // Empty in every real build; the update harness sets it to tell two builds apart.
+  const BUILD_MARK = import.meta.env.VITE_BUILD_MARK ?? '';
 
   // Kept apart from the Bulletin count so a failed alerts read only zeroes its own half of the
   // dot: `unread` below stays live off `liveDay`'s own state either way.
@@ -59,6 +61,7 @@
   <meta name="description" content={copy.appSubtitle} />
   <link rel="manifest" href="/manifest.webmanifest" />
   <link rel="apple-touch-icon" href="/icon-192.png" />
+  {#if BUILD_MARK}<meta name="app-build" content={BUILD_MARK} />{/if}
 </svelte:head>
 
 <header class="top">

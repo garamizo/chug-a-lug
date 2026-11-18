@@ -16,4 +16,8 @@ declare global {
     }
   }
 }
+interface ImportMetaEnv {
+  /** Set only by the production update harness to tell two otherwise identical builds apart. */
+  readonly VITE_BUILD_MARK?: string;
+}
 export {};

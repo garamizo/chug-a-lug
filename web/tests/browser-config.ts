@@ -36,7 +36,7 @@ export function browserConfig(sim = false, production = false) {
   return defineConfig({
     outputDir: sim ? (production ? 'test-results/sim-offline' : 'test-results/sim') : 'test-results/ordinary',
     testDir: sim ? 'tests/sim' : 'tests/e2e',
-    testMatch: sim ? (production ? '**/offline.spec.ts' : '**/{rehearsal,restart}.spec.ts') : '**/*.spec.ts',
+    testMatch: sim ? (production ? '**/{offline,update}.spec.ts' : '**/{rehearsal,restart}.spec.ts') : '**/*.spec.ts',
     globalSetup: sim ? './tests/sim/global-setup.ts' : undefined,
     // Closing Time's night locks a route on the rehearsal's date (archiving the rehearsal's route) and
     // runs the clock past the train home, so it runs once the rehearsal and the restart are done.
