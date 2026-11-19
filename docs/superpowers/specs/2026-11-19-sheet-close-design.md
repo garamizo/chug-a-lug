@@ -11,8 +11,9 @@ everywhere: a round X at the top right, raised so it straddles the sheet's top b
 ## Goals
 
 - One `SheetClose` component: a 40px round X (`IconButton`'s `close` icon) with a solid fill in the
-  sheet's colour and the sheet's border. Its centre sits on the sheet's top border, 16px in from the
-  right edge.
+  sheet's colour and the sheet's border. Its centre sits on the sheet's top border, and its right
+  edge is 12px in from the sheet's right edge. The sheets are full width on a phone, so the whole
+  button stays on screen.
 - `TabSheet`, `StopSheet` and `VenueSheet` all use it.
 - The footer "Close" buttons in `StopSheet` and `VenueSheet` are removed. Their test IDs
   (`sheet-close`, `venue-sheet-close`) and the Tab's `tab-close` move to the X, so existing e2e
@@ -29,13 +30,17 @@ everywhere: a round X at the top right, raised so it straddles the sheet's top b
 - `StopSheet` and `VenueSheet` are native `<dialog>` elements, and the dialog itself scrolls
   (`overflow-y: auto`). A scroll box clips children that overflow its edge. The dialog therefore
   becomes `overflow: visible` (the UA stylesheet sets `overflow: auto` on a modal dialog, so this
-  has to be explicit), and an inner `.body` takes over `max-height`, `overflow-y: auto` and
-  `overscroll-behavior: contain`. The `html:has(dialog.sheet[open])` scroll lock stays.
+  has to be explicit), `padding: 0`, `position: relative` and `max-height: none` (which overrides
+  the UA cap). The inner `.body` owns the padding, `max-height: 88dvh`, `overflow-y: auto` and
+  `overscroll-behavior: contain`. `box-sizing: border-box` is global, so the body's padding counts
+  inside its 88dvh, and the sheet's total height is 88dvh plus its 1px top border. The
+  `html:has(dialog.sheet[open])` scroll lock stays.
 - The inner body needs `border-radius` to match the sheet's top corners, so scrolled content does
   not poke past the rounded corners.
 - StopSheet's swipe handlers (`ontouchstart`/`ontouchend`) stay on the dialog.
-- The sheet's max height (88dvh) leaves at least 12dvh above it, so the raised X is never cut
-  off by the viewport.
+- For StopSheet and VenueSheet, the 88dvh cap leaves at least 12dvh above the sheet, so the raised
+  X is never cut off by the viewport. TabSheet has no height cap and does not scroll (out of scope).
+  Its X is cut off only if the Tab's content fills the screen, which it does not today.
 - The X must not cover StopSheet's `›` next-stop button. With an 8px top padding plus the grab
   handle, the header starts about 27px down, and the X reaches only 20px below the edge.
 
@@ -50,13 +55,22 @@ everywhere: a round X at the top right, raised so it straddles the sheet's top b
 
 ## Trade-off accepted
 
-Close moves from the bottom right (in reach of a right thumb) to the top right. Back, Escape and a
-tap on the scrim still close the sheets. On the Tab, the scrim tap and Escape are unchanged.
+Close moves from the bottom right (in reach of a right thumb) to the top right. Back (the
+`?stop=`/`?venue=` history entry) and Escape still close the stop and venue sheets. They have no
+tap-outside close today, and this change does not add one. The Tab keeps its scrim tap and
+Escape.
 
 ## Tests
 
-- `liveUx.spec.ts`: the right-edge assertion still holds for the X. The `overscroll-behavior`
-  assertion moves to the sheet's inner body (`stop-sheet-body`). A new assertion checks that the X
-  straddles the top edge: its top is above the sheet's top, and its bottom is below it.
-- `layoutSweep.spec.ts`: no new page state. Check that the layout rules do not flag the X for
-  overflowing its container; if they do, exempt it.
+- `liveUx.spec.ts`: the right-edge assertion becomes a range: the gap is between 0 and 40px, so a
+  negative gap fails. The `overscroll-behavior` assertion moves to the inner body
+  (`stop-sheet-body`). A new assertion checks that the X straddles the top edge. Because a bounding
+  box does not prove the part above the edge is visible, the test also hit-tests a point 8px above
+  the sheet's top inside the X (`document.elementFromPoint` resolves into the X). It repeats that
+  hit test after scrolling the body to its end.
+- `planning.spec.ts`: the same straddle and hit test for the venue sheet. The failed-add case keeps
+  its error inside the modal.
+- `TabSheet`: the same hit test above its top edge (in `liveUx`, or wherever the Tab is opened).
+- `layoutSweep.spec.ts`: add a "station picker, venue sheet" state, so the third consumer is
+  checked. The rules have no container-overflow check, so no exemption is planned. Any failure gets
+  investigated.
