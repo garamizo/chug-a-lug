@@ -24,7 +24,7 @@
 ## Review Focus
 
 1. **A tab tap on a wide screen** must still change which side a station tap adds to, although nothing scrolls (so `onscroll` never fires). Pinned in Task 3.
-2. **Vertical scrolling with a finger/wheel over the line** must scroll the page, not get swallowed by the horizontal viewport. Pinned in Task 1.
+2. **Vertical scrolling with a finger/wheel over the line** must scroll the page, not get swallowed by the horizontal viewport. Pinned in Task 1 with a real CDP touch swipe and a separate wheel test.
 3. **Coming back from the add screen after adding a return stop** must land on the right pane, not snap back to the left. Pinned in Task 4.
 4. **A station with stops on both sides**: its dot sits between its two cards in one row, on every screen. Pinned in Task 1.
 5. **The read-only views (`/route`, a crew member's `/plan/[id]`)** have no station dot buttons but still need tabs and dragging. Pinned in Task 1 (`station-dot-*` count 0 in `planning.spec.ts` stays) and Task 3.
@@ -49,6 +49,8 @@
 - Produces (`LineMap.svelte` props): `stations: Station[]; color?: string; selected?: string; panes?: boolean; onpick?: (s: Station) => void; pickLabel?: (s: Station) => string; onside?: (side: Side) => void; cell?: Snippet<[Station, number]>; left?: Snippet<[Station, number]>; right?: Snippet<[Station, number]>`. `section` is removed. Layout is three-column when `left` or `right` is passed, else today's track + `cell`.
 - Produces (`LineMap` export): `focusSide(next: Side, behavior: ScrollBehavior = 'smooth'): void` — calls `onside(next)` **immediately** (so it works when nothing scrolls), then scrolls the viewport to that pane if it overflows.
 - Produces (markup): panes viewport `data-testid="line-viewport"` with `data-focused="left"|"right"`; cells carry classes `cell left` / `cell right`.
+- Produces (`helpers.ts`): `swipe(page: Page, from: { x: number; y: number }, to: { x: number; y: number }): Promise<void>` — a real finger drag through a Chromium CDP session (`Input.dispatchTouchEvent`: `touchStart` at `from`, ~10 `touchMove` steps, `touchEnd`), because Playwright has no swipe and `mouse.wheel` is not a touch gesture.
+- Produces (`helpers.ts`): `settledOn(page: Page, side: Side): Promise<void>` — polls (`expect.poll`) until `line-viewport` has `data-focused=side` **and** its `scrollLeft` is at the matching end (0 for left, `scrollWidth − clientWidth` for right, ±1 px). Every geometry assertion after a side change waits on it first.
 - Produces (`helpers.ts`): `seedDraftRoute(opts: { ownerName: string; eventDate: string; startTime: string; stops: { name: string; station_id: string; station_name: string; direction: 'out' | 'back'; photo?: boolean }[] }): Promise<{ itineraryId: string; stopIds: string[] }>` — creates a draft owned by `ownerName` (superuser, like `seedLockedCrawl`), stops with `order` 1..n in the given order, `dwell_min: 30`, `walk_min: 5`, `kind: 'bar'`; for `photo: true` it first creates a `places` record by multipart (`ref: 'google:e2e-<random>'`, `source: 'google'`, `name`, `photos`: a 1×1 PNG) and sets the stop's `place`.
 
 - [ ] **Step 1: Write `seedDraftRoute` and the failing spec `twoSidedLine.spec.ts`**
@@ -79,6 +81,7 @@ test('going stops sit left of the line and return stops right, in one row per st
 });
 
 test('on a phone the focused side fills the line and the other peeks in', async ({ page }) => {
+  await settledOn(page, 'left');
   const vp = page.getByTestId('line-viewport');
   const box = (await vp.boundingBox())!;
   const going = (await page.getByTestId('stop-row-0').boundingBox())!;
@@ -88,21 +91,38 @@ test('on a phone the focused side fills the line and the other peeks in', async 
   expect(back.x).toBeLessThan(box.x + box.width);              // peeks in
   expect(back.x + back.width).toBeGreaterThan(box.x + box.width); // but is clipped
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(320);
+  await expect(page.getByTestId('station-label-LAGRANGE-left')).toBeVisible();
+  await expect(page.getByTestId('station-label-LAGRANGE-right')).toBeHidden();
 });
 
 test('a tab, a drag or a card on the other side switches sides', async ({ page }) => {
   const vp = page.getByTestId('line-viewport');
   await expect(page.getByTestId('side-left')).toHaveAttribute('aria-selected', 'true');
   await page.getByTestId('side-right').click();
-  await expect(vp).toHaveAttribute('data-focused', 'right');
-  await expect.poll(() => vp.evaluate((el) => el.scrollLeft)).toBeGreaterThan(0);
-  await vp.evaluate((el) => el.scrollTo({ left: 0 }));                       // a drag back
+  await settledOn(page, 'right');
+  const box = (await vp.boundingBox())!;
+  const y = box.y + 60;
+  await swipe(page, { x: box.x + 40, y }, { x: box.x + box.width - 20, y });   // finger drags back to the left side
+  await settledOn(page, 'left');
   await expect(page.getByTestId('side-left')).toHaveAttribute('aria-selected', 'true');
-  await page.getByTestId('stop-link-2').focus();                             // a card on the right
-  await expect(page.getByTestId('side-right')).toHaveAttribute('aria-selected', 'true');
+  await swipe(page, { x: box.x + box.width - 20, y }, { x: box.x + 20, y });   // and over to the right
+  await settledOn(page, 'right');
+  await page.getByTestId('side-left').click();
+  await settledOn(page, 'left');
+  await page.getByTestId('stop-link-2').focus();                               // a card on the right
+  await settledOn(page, 'right');
 });
 
-test('scrolling up and down over the line moves the page', async ({ page }) => {
+test('a vertical finger swipe over the line scrolls the page', async ({ page }) => {
+  const box = (await page.getByTestId('line-viewport').boundingBox())!;
+  const x = box.x + box.width / 2;
+  const before = await page.evaluate(() => window.scrollY);
+  await swipe(page, { x, y: 500 }, { x, y: 150 });
+  await expect.poll(() => page.evaluate(() => window.scrollY)).toBeGreaterThan(before);
+  await expect(page.getByTestId('line-viewport')).toHaveAttribute('data-focused', 'left');
+});
+
+test('a mouse wheel over the line scrolls the page', async ({ page }) => {
   const box = (await page.getByTestId('line-viewport').boundingBox())!;
   await page.mouse.move(box.x + box.width / 2, box.y + 40);
   const before = await page.evaluate(() => window.scrollY);
@@ -130,7 +150,7 @@ Restore the three-column row, `panes` viewport CSS, `onscroll` side detection an
 
 - [ ] **Step 5: Rewire `ItineraryView`**
 
-Bring back `focused = $state<Side>('left')` and `map` (bound `LineMap`) from `703ca91^`. Above the map, a `role="tablist"` with two `role="tab"` buttons (`side-left` → `copy.inbound`, `side-right` → `copy.outbound`), `aria-selected` from `focused`, `onclick={() => map?.focusSide(side)}`. Render one `<LineMap panes … onside={(s) => (focused = s)} onpick={editable ? (s) => { rememberScroll(); actions.add(s.id, focused); } : undefined}>` with `left`/`right` snippets: a 36 px `.rowhead` holding the station label only on the focused side, then `{#each placement.rows[i].left|right as k}{@render card(k)}{/each}`. Delete `sections`, `halves`, the `.dir`/`.turn` markup and CSS. Off-line list unchanged. Remove the now-unused exports from `lineMap.ts`, `copy.turnAround`, and the matching unit-test lines.
+Bring back `focused = $state<Side>('left')` and `map` (bound `LineMap`) from `703ca91^`. Above the map, a `role="tablist"` with two `role="tab"` buttons (`side-left` → `copy.inbound`, `side-right` → `copy.outbound`), `aria-selected` from `focused`, `onclick={() => map?.focusSide(side)}`. Render one `<LineMap panes … onside={(s) => (focused = s)} onpick={editable ? (s) => { rememberScroll(); actions.add(s.id, focused); } : undefined}>` with `left`/`right` snippets: a 36 px `.rowhead` holding the station label **in both cells, always rendered** (`data-testid="station-label-<id>-left|right"`); CSS on the viewport's `data-focused` hides the unfocused side's label with `visibility: hidden` (row height unchanged, and the peek does not show a second name). Then `{#each placement.rows[i].left|right as k}{@render card(k)}{/each}`. Delete `sections`, `halves`, the `.dir`/`.turn` markup and CSS. Off-line list unchanged. Remove the now-unused exports from `lineMap.ts`, `copy.turnAround`, and the matching unit-test lines.
 
 - [ ] **Step 6: Run the new spec and the touched suites**
 
@@ -161,7 +181,7 @@ git commit -m "feat(route): one line, going stops left and return stops right; d
 ```ts
 test('a photographed middle stop fits its pane with room for its name', async ({ page }) => {
   await page.getByTestId('side-right').click();
-  await expect(page.getByTestId('line-viewport')).toHaveAttribute('data-focused', 'right');
+  await settledOn(page, 'right');
   await expect(page.getByTestId('stop-photo-3')).toBeVisible();
   const vp = (await page.getByTestId('line-viewport').boundingBox())!;
   const card = (await page.getByTestId('stop-row-3').boundingBox())!;
@@ -227,6 +247,8 @@ test('a wide screen shows both sides in full and nothing scrolls sideways', asyn
 test('on a wide screen the tab still picks the side a station tap adds to', async ({ page }) => {
   await page.getByTestId('side-right').click();
   await expect(page.getByTestId('side-right')).toHaveAttribute('aria-selected', 'true');
+  await expect(page.getByTestId('station-label-LAGRANGE-left')).toBeVisible();
+  await expect(page.getByTestId('station-label-LAGRANGE-right')).toBeHidden();
   await page.getByTestId('station-dot-LAGRANGE').click();
   await expect(page).toHaveURL(/side=right/);
 });
@@ -247,7 +269,7 @@ Expected: FAIL — the viewport overflows at 1024 px.
 
 - [ ] **Step 3: Add wide mode**
 
-`container-type: inline-size` on the `LineMap` wrapper (a parent of the viewport, so the query sees the available width); in `@container (min-width: 640px)` the `.panes .map` width is `100%`, the row is `1fr track 1fr`, scroll snapping off. In `ItineraryView`, in wide mode the station label shows in the left cell only (right-aligned beside the line) regardless of `focused`; use a CSS rule under the same container query rather than JS width checks.
+`container-type: inline-size` on the `LineMap` wrapper (a parent of the viewport, so the query sees the available width); in `@container (min-width: 640px)` the `.panes .map` width is `100%`, the row is `1fr track 1fr`, scroll snapping off. In `ItineraryView`, in wide mode the left cell's label is visible and the right cell's hidden, whatever `data-focused` says (both nodes exist from Task 1; a CSS rule under the same container query, no JS width checks).
 
 - [ ] **Step 4: Run to see them pass**
 
@@ -281,7 +303,7 @@ test('after adding a return stop the right side is still in focus', async ({ pag
   await page.getByTestId('manual-name').fill('Back At La Grange');
   await page.getByTestId('manual-add').click();
   await expect(page).toHaveURL(/\/edit$/);
-  await expect(page.getByTestId('line-viewport')).toHaveAttribute('data-focused', 'right');
+  await settledOn(page, 'right');
   await expect(page.getByTestId('side-right')).toHaveAttribute('aria-selected', 'true');
 });
 ```
