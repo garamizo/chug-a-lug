@@ -1,5 +1,5 @@
 import { expect, test, type Locator, type Page } from '@playwright/test';
-import { clearRoutes, login, seedLockedCrawl, openTab, tapDrink } from './helpers';
+import { clearRoutes, expectRaisedClose, login, seedLockedCrawl, openTab, swipe, tapDrink } from './helpers';
 import { copy } from '../../src/lib/labels';
 
 const ADMIN = process.env.ADMIN_PASSWORD ?? 'admin-test-password';
@@ -41,14 +41,19 @@ test('the route strip shows where the crew is; a stop, tapped or shared, opens i
   await expect(page.getByTestId('sheet-walk')).toHaveAttribute('href', /travelmode=walking/);
   await expect(page.getByTestId('sheet-call')).toHaveCount(0);
   // The sheet scrolls on its own; Live underneath must not move with it.
-  await expect(page.getByTestId('stop-sheet')).toHaveCSS('overscroll-behavior-y', 'contain');
+  await expect(page.getByTestId('stop-sheet-body')).toHaveCSS('overscroll-behavior-y', 'contain');
   await expect(page.locator('html')).toHaveCSS('overflow-y', 'hidden');
-  // Close sits on the right edge for a one-handed thumb.
-  const sheet = (await page.getByTestId('stop-sheet').boundingBox())!;
-  const close = (await page.getByTestId('sheet-close').boundingBox())!;
-  expect(sheet.x + sheet.width - (close.x + close.width)).toBeLessThan(40);
+  // A swipe that starts inside the sheet's scroller still pages to the next stop.
+  const body = (await page.getByTestId('stop-sheet-body').boundingBox())!;
+  const mid = { y: body.y + body.height / 2 };
+  await swipe(page, { x: body.x + body.width - 40, y: mid.y }, { x: body.x + 40, y: mid.y });
+  await expect(page.getByTestId('sheet-name')).toHaveText('Berwyn Beer Hall');
+  await page.getByTestId('sheet-prev').click();
+  await expect(page.getByTestId('sheet-name')).toHaveText('The Whistle Stop');
   await page.getByTestId('sheet-next').click();
   await expect(page.getByTestId('sheet-name')).toHaveText('Berwyn Beer Hall');
+  // The X straddles the sheet's top edge, at the right, and stays there however far the sheet scrolls.
+  await expectRaisedClose(page, 'stop-sheet', 'sheet-close', 'stop-sheet-body');
   await page.goBack();
   await expect(page.locator('html')).not.toHaveCSS('overflow-y', 'hidden');
   await expect(page.getByTestId('stop-sheet')).toBeHidden();
@@ -70,8 +75,13 @@ test('a photo opened from the sheet sits above it, and back steps out one layer 
   await page.getByTestId('freight-input').setInputFiles({ name: 'bar.gif', mimeType: 'image/gif', buffer: GIF });
   await expect(page.getByTestId('freight-open-0')).toBeVisible();
   await page.getByTestId('route-strip').locator('[aria-current="step"]').click();
+  await expect(page.getByTestId('sheet-close')).toBeVisible();
+  const x = (await page.getByTestId('sheet-close').boundingBox())!;
   await page.getByTestId('stop-sheet').locator('.gallery button').first().click();
   await expect(page.getByTestId('lightbox')).toBeVisible();
+  // The photo covers the sheet's raised X too: it is not left poking out above the viewer.
+  expect(await page.evaluate(({ cx, cy }) => !!document.elementFromPoint(cx, cy)?.closest('[data-testid="sheet-close"]'),
+    { cx: x.x + x.width / 2, cy: x.y + x.height / 2 })).toBe(false);
   await page.getByTestId('lightbox-close').click();          // the viewer's own control must be clickable
   await expect(page.getByTestId('lightbox')).toBeHidden();
   await expect(page.getByTestId('stop-sheet')).toBeVisible();

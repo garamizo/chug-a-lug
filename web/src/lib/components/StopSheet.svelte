@@ -6,6 +6,7 @@
   import { fmtWeekday } from '$lib/time';
   import { closeStop, openLightbox, pageStop, sheetStopId } from '$lib/nav';
   import { hoursFor, safeWebsite, telHref, walkUrl } from '$lib/live/venue';
+  import SheetClose from './SheetClose.svelte';
   import type { LightboxItem, Media, Stop } from '$lib/types';
 
   // `detailsLink: false` hides Edit details where leaving would lose work, and `detailsFrom` tells the
@@ -42,46 +43,50 @@
   ontouchstart={(e) => (startX = e.touches[0].clientX)}
   ontouchend={(e) => { const dx = e.changedTouches[0].clientX - startX; if (Math.abs(dx) > 60) go(dx < 0 ? 1 : -1); }}>
   {#if stop}
-    <div class="grab" aria-hidden="true"></div>
-    <header>
-      <button type="button" class="nav" onclick={() => go(-1)} disabled={index <= 0} aria-label={copy.previousStop} data-testid="sheet-prev">‹</button>
-      <div class="title">
-        <h2 data-testid="sheet-name">{stop.name}</h2>
-        <p>{copy[`kind_${stop.kind ?? 'other'}`]} · {stop.station_name || stop.station_id} · {stop.walk_min} {copy.walkMinutes}</p>
+    <SheetClose label={copy.closeSheet} onclick={closeStop} testid="sheet-close" />
+    <div class="body" data-testid="stop-sheet-body">
+      <div class="grab" aria-hidden="true"></div>
+      <header>
+        <button type="button" class="nav" onclick={() => go(-1)} disabled={index <= 0} aria-label={copy.previousStop} data-testid="sheet-prev">‹</button>
+        <div class="title">
+          <h2 data-testid="sheet-name">{stop.name}</h2>
+          <p>{copy[`kind_${stop.kind ?? 'other'}`]} · {stop.station_name || stop.station_id} · {stop.walk_min} {copy.walkMinutes}</p>
+        </div>
+        <button type="button" class="nav" onclick={() => go(1)} disabled={index >= ordered.length - 1} aria-label={copy.nextStop} data-testid="sheet-next">›</button>
+      </header>
+      {#if stop.confirmed_open}<p class="badge">✓ {copy.confirmedOpenBadge}</p>{/if}
+      <div class="buttons">
+        <a class="big" href={walkUrl(stop)} target="_blank" rel="noopener" data-testid="sheet-walk">🚶 {copy.walkThere}</a>
+        {#if tel}<a class="big" href={tel} data-testid="sheet-call">📞 {copy.callStop}</a>{/if}
       </div>
-      <button type="button" class="nav" onclick={() => go(1)} disabled={index >= ordered.length - 1} aria-label={copy.nextStop} data-testid="sheet-next">›</button>
-    </header>
-    {#if stop.confirmed_open}<p class="badge">✓ {copy.confirmedOpenBadge}</p>{/if}
-    <div class="buttons">
-      <a class="big" href={walkUrl(stop)} target="_blank" rel="noopener" data-testid="sheet-walk">🚶 {copy.walkThere}</a>
-      {#if tel}<a class="big" href={tel} data-testid="sheet-call">📞 {copy.callStop}</a>{/if}
+      {#if gallery.length}
+        <div class="gallery">
+          {#each gallery as item, i (item.full)}
+            <button type="button" onclick={() => openLightbox(gallery, i)}>
+              {#if item.kind === 'image'}<img src={item.url} alt="" loading="lazy" />{:else}<span class="video">▶</span>{/if}
+            </button>
+          {/each}
+        </div>
+      {/if}
+      <section>
+        <h3>{copy.hours}</h3>
+        <p class="today">{hours.line ?? copy.hoursUnknown}</p>
+        {#if hours.rest.length}<details><summary>{copy.otherDays}</summary><ul>{#each hours.rest as line}<li>{line}</li>{/each}</ul></details>{/if}
+      </section>
+      {#if stop.notes}<section><h3>{copy.notes}</h3><p class="notes">{stop.notes}</p></section>{/if}
+      <footer>
+        {#if isAdmin && detailsLink}<a class="edit" href="/plan/{itineraryId}/stops/{stop.id}{detailsFrom ? `?from=${detailsFrom}` : ''}" data-testid="sheet-edit">{copy.editDetails}</a>{/if}
+        {#if website}<a class="site" href={website} target="_blank" rel="noopener" data-testid="sheet-website">{copy.website}</a>{/if}
+      </footer>
     </div>
-    {#if gallery.length}
-      <div class="gallery">
-        {#each gallery as item, i (item.full)}
-          <button type="button" onclick={() => openLightbox(gallery, i)}>
-            {#if item.kind === 'image'}<img src={item.url} alt="" loading="lazy" />{:else}<span class="video">▶</span>{/if}
-          </button>
-        {/each}
-      </div>
-    {/if}
-    <section>
-      <h3>{copy.hours}</h3>
-      <p class="today">{hours.line ?? copy.hoursUnknown}</p>
-      {#if hours.rest.length}<details><summary>{copy.otherDays}</summary><ul>{#each hours.rest as line}<li>{line}</li>{/each}</ul></details>{/if}
-    </section>
-    {#if stop.notes}<section><h3>{copy.notes}</h3><p class="notes">{stop.notes}</p></section>{/if}
-    <footer>
-      {#if isAdmin && detailsLink}<a class="edit" href="/plan/{itineraryId}/stops/{stop.id}{detailsFrom ? `?from=${detailsFrom}` : ''}" data-testid="sheet-edit">{copy.editDetails}</a>{/if}
-      {#if website}<a class="site" href={website} target="_blank" rel="noopener" data-testid="sheet-website">{copy.website}</a>{/if}
-      <button type="button" class="secondary" onclick={closeStop} data-testid="sheet-close">{copy.closeSheet}</button>
-    </footer>
   {/if}
 </dialog>
 
 <style>
-  .sheet { margin: auto 0 0; width: 100%; max-width: 760px; max-height: 88dvh; margin-inline: auto; padding: 8px 20px calc(20px + env(safe-area-inset-bottom));
-    border: 1px solid #3a3a3a; border-bottom: 0; border-radius: 22px 22px 0 0; background: #181818; color: #eee;
+  /* The dialog does not scroll or clip: its close X sits half above the top edge. `.body` scrolls. */
+  .sheet { position: relative; margin: auto 0 0; width: 100%; max-width: 760px; max-height: none; margin-inline: auto; padding: 0;
+    border: 1px solid #3a3a3a; border-bottom: 0; border-radius: 22px 22px 0 0; background: #181818; color: #eee; overflow: visible; }
+  .body { max-height: 88dvh; padding: 8px 20px calc(20px + env(safe-area-inset-bottom)); border-radius: 22px 22px 0 0;
     overflow-y: auto; overscroll-behavior: contain; }
   /* A touch scroll that reaches the sheet's end must not carry on into the screen behind it. */
   :global(html:has(dialog.sheet[open])) { overflow: hidden; }
@@ -105,9 +110,8 @@
   h3 { font-size: 13px; letter-spacing: .09em; text-transform: uppercase; color: #9a9a9a; margin: 18px 0 4px; }
   .today { color: #fff; font-weight: 700; margin: 0; }
   .notes { white-space: pre-wrap; }
-  /* Close and Website sit on the right, under a right thumb; Edit stays out of the way on the left. */
+  /* Website sits on the right, under a right thumb; Edit stays out of the way on the left. */
   footer { display: flex; align-items: center; justify-content: flex-end; gap: 12px; margin-top: 18px; }
   .edit { margin-right: auto; }
   .site { padding: 12px 14px; border: 1px solid #555; border-radius: 10px; text-decoration: none; }
-  footer button { width: auto; margin: 0; }
 </style>

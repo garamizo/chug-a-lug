@@ -303,3 +303,35 @@ export async function settledOn(page: Page, side: 'left' | 'right'): Promise<voi
     return Math.abs(el.scrollLeft - end) <= 1;
   }, side)).toBe(true);
 }
+
+/**
+ * A sheet's close X straddles its top edge: half above the sheet, its right edge just inside the
+ * sheet's, and the half above the edge really is the X (not clipped, not covered). With `bodyId`, the
+ * check repeats after the sheet's scroller has been forced to overflow and scrolled to its end.
+ */
+export async function expectRaisedClose(page: Page, sheetId: string, closeId: string, bodyId?: string): Promise<void> {
+  const check = async () => {
+    const sheet = (await page.getByTestId(sheetId).boundingBox())!;
+    const close = (await page.getByTestId(closeId).boundingBox())!;
+    expect(close.y).toBeLessThan(sheet.y);
+    expect(close.y + close.height).toBeGreaterThan(sheet.y);
+    const gap = sheet.x + sheet.width - (close.x + close.width);
+    expect(gap).toBeGreaterThanOrEqual(0);
+    expect(gap).toBeLessThan(40);
+    const hit = await page.evaluate(({ x, y, id }) => !!document.elementFromPoint(x, y)?.closest(`[data-testid="${id}"]`),
+      { x: close.x + close.width / 2, y: sheet.y - 8, id: closeId });
+    expect(hit, `${closeId} is what sits above ${sheetId}'s top edge`).toBe(true);
+  };
+  await check();
+  if (!bodyId) return;
+  const scrolled = await page.getByTestId(bodyId).evaluate((el) => {
+    const spacer = document.createElement('div');
+    spacer.style.height = '2000px';
+    el.append(spacer);
+    el.scrollTop = el.scrollHeight;
+    return { overflows: el.scrollHeight > el.clientHeight, top: el.scrollTop };
+  });
+  expect(scrolled.overflows).toBe(true);
+  expect(scrolled.top).toBeGreaterThan(0);
+  await check();
+}

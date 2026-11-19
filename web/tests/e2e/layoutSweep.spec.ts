@@ -154,7 +154,15 @@ test('Conductor pages', async ({ page }) => {
   await sweep(page, [
     { name: 'locked-route editor', open: (p) => p.goto(`/plan/${ids.itineraryId}/edit`), ready: (p) => p.getByTestId('save-plan') },
     { name: 'station picker', open: (p) => p.goto(`/plan/${ids.itineraryId}/add`), ready: (p) => p.getByTestId('station-select') },
-    { name: 'crew access', open: (p) => p.goto('/crew/access'), ready: (p) => p.getByTestId('manifest-person') },
+    // The fixture has no nearby venues and the harness has no Places provider, so one is stubbed.
+    { name: 'station picker, venue sheet', open: async (p) => {
+        await p.route('**/api/places/nearby**', (r) => r.fulfill({ json: { station: { id: 'NAPERVILLE', name: 'NAPERVILLE', lat: 0, lon: 0 },
+          venues: [{ source: 'osm', id: 'node/2', name: 'Naperville Wine Bar', kind: 'bar', lat: 41.7811, lon: -88.1467, distanceM: 91 }],
+          fetchedAt: '2026-09-19T00:00:00.000Z' } }));
+        await p.goto(`/plan/${ids.itineraryId}/add?station=NAPERVILLE&side=left`);
+        await p.getByTestId('venue-node-2').click();
+      }, ready: (p) => p.getByTestId('venue-sheet') },
+    { name: 'crew access', open: async (p) => { await p.unroute('**/api/places/nearby**'); await p.goto('/crew/access'); }, ready: (p) => p.getByTestId('manifest-person') },
     { name: 'role window', open: async (p) => { await p.goto('/crew'); await p.getByTestId('crew-name-button').first().click(); }, ready: (p) => p.getByTestId('role-window') },
     { name: 'draft editor', open: async (p) => {
         await p.goto('/plan');

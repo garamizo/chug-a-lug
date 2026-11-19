@@ -5,6 +5,7 @@
   import { api } from '$lib/api';
   import { copy } from '$lib/labels';
   import { hoursFor } from '$lib/live/venue';
+  import SheetClose from './SheetClose.svelte';
   import type { Place, Venue } from '$lib/types';
 
   let { venue, weekday, walkMin, busy, error = '', onadd, onclose }: {
@@ -39,33 +40,37 @@
 <dialog bind:this={dialog} class="sheet" aria-label={copy.venueDetails} data-testid="venue-sheet"
   oncancel={(e) => { e.preventDefault(); onclose(); }}>
   {#if venue}
-    <div class="grab" aria-hidden="true"></div>
-    <header>
-      <h2>{venue.name}</h2>
-      <p>{copy[`kind_${venue.kind}`]}{rated} · {walkMin} {copy.walkMinutes}</p>
-      {#if venue.address}<p>{venue.address}</p>{/if}
-    </header>
-    {#if photos.length}
-      <div class="gallery">
-        {#each photos as url, i (url)}<img src={url} alt="" loading="lazy" data-testid="venue-photo-{i}" />{/each}
-      </div>
-    {/if}
-    <section>
-      <h3>{copy.hours}</h3>
-      <p class="today">{hours.line ?? copy.hoursUnknown}</p>
-    </section>
-    <!-- The page's own error sits behind this modal, so a failed add is shown here too. -->
-    {#if error}<p class="error" role="alert" data-testid="venue-sheet-error">{error}</p>{/if}
-    <footer>
-      <button type="button" class="secondary" onclick={onclose} data-testid="venue-sheet-close">{copy.closeSheet}</button>
-      <button type="button" onclick={onadd} disabled={busy} data-testid="sheet-add">{copy.addThisStop}</button>
-    </footer>
+    <SheetClose label={copy.closeSheet} onclick={onclose} testid="venue-sheet-close" />
+    <div class="body" data-testid="venue-sheet-body">
+      <div class="grab" aria-hidden="true"></div>
+      <header>
+        <h2>{venue.name}</h2>
+        <p>{copy[`kind_${venue.kind}`]}{rated} · {walkMin} {copy.walkMinutes}</p>
+        {#if venue.address}<p>{venue.address}</p>{/if}
+      </header>
+      {#if photos.length}
+        <div class="gallery">
+          {#each photos as url, i (url)}<img src={url} alt="" loading="lazy" data-testid="venue-photo-{i}" />{/each}
+        </div>
+      {/if}
+      <section>
+        <h3>{copy.hours}</h3>
+        <p class="today">{hours.line ?? copy.hoursUnknown}</p>
+      </section>
+      <!-- The page's own error sits behind this modal, so a failed add is shown here too. -->
+      {#if error}<p class="error" role="alert" data-testid="venue-sheet-error">{error}</p>{/if}
+      <footer>
+        <button type="button" onclick={onadd} disabled={busy} data-testid="sheet-add">{copy.addThisStop}</button>
+      </footer>
+    </div>
   {/if}
 </dialog>
 
 <style>
-  .sheet { margin: auto 0 0; width: 100%; max-width: 760px; max-height: 88dvh; margin-inline: auto; padding: 8px 20px calc(20px + env(safe-area-inset-bottom));
-    border: 1px solid #3a3a3a; border-bottom: 0; border-radius: 22px 22px 0 0; background: #181818; color: #eee;
+  /* The dialog does not scroll or clip: its close X sits half above the top edge. `.body` scrolls. */
+  .sheet { position: relative; margin: auto 0 0; width: 100%; max-width: 760px; max-height: none; margin-inline: auto; padding: 0;
+    border: 1px solid #3a3a3a; border-bottom: 0; border-radius: 22px 22px 0 0; background: #181818; color: #eee; overflow: visible; }
+  .body { max-height: 88dvh; padding: 8px 20px calc(20px + env(safe-area-inset-bottom)); border-radius: 22px 22px 0 0;
     overflow-y: auto; overscroll-behavior: contain; }
   /* A touch scroll that reaches the sheet's end must not carry on into the screen behind it. */
   :global(html:has(dialog.sheet[open])) { overflow: hidden; }

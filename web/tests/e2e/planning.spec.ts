@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test';
-import { clearRoutes, login, seedLockedCrawl, openHome } from './helpers';
+import { clearRoutes, expectRaisedClose, login, seedLockedCrawl, openHome } from './helpers';
 import { copy } from '../../src/lib/labels';
 
 // Titles are unique: a Playwright retry must not collide with its own first attempt's draft.
@@ -49,6 +49,7 @@ test('draft with real train times, layover change, card edits, votes, comments, 
   await page.getByTestId('venue-node-2').click();
   await expect(page.getByTestId('venue-sheet')).toBeVisible();
   await expect(page.getByTestId('venue-sheet')).toContainText('Naperville Wine Bar');
+  await expectRaisedClose(page, 'venue-sheet', 'venue-sheet-close', 'venue-sheet-body');
   await page.getByTestId('venue-sheet-close').click();
   await expect(page.getByTestId('venue-sheet')).toBeHidden();
   await expect(page).toHaveURL(/\/add\?station=NAPERVILLE&side=left$/);
