@@ -47,6 +47,8 @@ function failureMessage(err: unknown): string {
   const code = hookCode(err);
   if (code === 'proof_needs_image') return copy.proofNeedsImage;
   if (code === 'proof_needs_stop') return copy.proofNeedsStop;
+  // The Conductor made them a Trainspotter while this app was open: final, never a Retry.
+  if (code === 'trainspotter') return copy.trainspotterNoTab;
   return copy.uploadFailed;
 }
 

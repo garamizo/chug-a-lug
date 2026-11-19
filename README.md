@@ -115,7 +115,7 @@ users see. Bars and restaurants keep their plain names.
 | Planning phase | **Route Planner** | Plain | |
 | Itinerary draft | **Draft** | Plain | |
 | Locked itinerary | **The Route** | Plain | |
-| Approval vote on the final plan | **Highball** | Rail all-clear signal; also the cocktail | |
+| Approval vote on the final plan | **Highball** | Rail all-clear signal; also the cocktail | Reference only: a show of hands for the Conductor, not a gate. Go and No go list who voted; anyone signed in may vote |
 | Like / dislike | **Cheers / Pass** | Bar | |
 | Live phase | **Live** | Plain | |
 | Practice day | **Practice** | Plain | Any day that is not the current route's date; Live runs the route's timetable at today's time |
@@ -124,11 +124,13 @@ users see. Bars and restaurants keep their plain names.
 | Wrap-up phase | **Closing Time** | Bar | The highlight reel that plays when the train home arrives |
 | Admin | **Conductor** | Rail | |
 | Users | **Crew** | Rail | |
+| Trainspotter role | **Trainspotter** | Rail | Signed up, not riding: plans routes, Cheers, Highball and chat; no Tab, no Golden Spikes, not in Closing Time. The 🍻 Tab button shows disabled |
+| Role window | **Role** | Plain | Conductor only, opened from a name on the Crew Board or the Manifest: Crew / Trainspotter / Put off |
 | Sign-in page `/login` | **Sign in** | Plain | "Welcome back"; email and password, with a reset link by email |
 | Sign-up page `/join` | **Sign up** | Plain | Name, email, password, then an emailed code; needs a join link |
 | Join link | **Join link** | Plain | The one link the Conductor shares; it has seats and an end date |
 | Conductor access panel `/crew/access` | **Manifest** | Rail | People, status, last seen, access log |
-| Block / unblock a person | **Put off / Let back on** | Rail | Conductor only |
+| Put-off role / back to Crew | **Put off / Let back on** | Rail | A role, set by the Conductor from the Role window; Let back on = back to Crew. A put-off person can't sign in and is hidden from others' Crew Board, Golden Spikes and Closing Time; what they posted stays |
 | Account page `/account` | **Your ticket** | Rail | Name edit, email, sign out |
 | User roster | **Crew Board** | Rail | |
 | Stop (a bar or restaurant on the route) | **Stop** | Plain | A station is always a Metra station |

@@ -72,6 +72,10 @@ describe('sendProof', () => {
     expect(await fail({ status: 400, response: { message: 'Proof_needs_stop.' } })).toEqual({ status: 'failed', message: copy.proofNeedsStop, retryable: false });
     expect(await fail({ status: 500 })).toEqual({ status: 'failed', message: copy.uploadFailed, retryable: true });
   });
+  it('a trainspotter refusal is final with its own message', async () => {
+    const d = deps({ createMedia: vi.fn(async () => { throw { status: 400, response: { message: 'Trainspotter.' } }; }) });
+    expect(await sendProof(send, d)).toEqual({ status: 'failed', message: copy.trainspotterNoTab, retryable: false });
+  });
   it('retries network and 5xx failures, never a server refusal', async () => {
     const fail = async (e: unknown) => (await sendProof(send, deps({ createMedia: vi.fn(async () => { throw e; }) }))) as { retryable: boolean };
     expect((await fail({ status: 503 })).retryable).toBe(true);

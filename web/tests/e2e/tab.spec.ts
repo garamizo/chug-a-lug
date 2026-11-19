@@ -1,5 +1,5 @@
 import { expect, test, type Page, type Request, type Route } from '@playwright/test';
-import { PB, PROOF_JPEG, clearRoutes, login, openTab, seedLockedCrawl, superuserToken, tapDrink } from './helpers';
+import { PB, PROOF_JPEG, clearRoutes, login, openTab, seedLockedCrawl, sessionFor, setRole, superuserToken, tapDrink } from './helpers';
 import { copy, proofCaption } from '../../src/lib/labels';
 
 const ADMIN = process.env.ADMIN_PASSWORD ?? 'admin-test-password';
@@ -428,4 +428,47 @@ test('the Tab offers five counters, each a camera; the tab bar opens it from any
   await page.goBack();
   await expect(page).toHaveURL(/\/live$/);
   await expect(page.getByTestId('tab-sheet')).toHaveCount(0);
+});
+
+/** A rider (not the Conductor) on Live on the event day, back on the Crew whatever an earlier run left. */
+async function riderDay(page: Page, name: string, role: 'crew' | 'trainspotter') {
+  const id = String((await sessionFor(name)).record.id);
+  await setRole(id, role);
+  await page.route('**/api/metra/**', r => r.fulfill({ json: { mode: 'schedule_only', fetchedAt: null, trips: [], alerts: [] } }));
+  await login(page, name, 'not-the-admin-password');
+  await clearRoutes();
+  await seedLockedCrawl({ ownerName: name, eventDate: DATE, startTime: '12:00', departAt: '2026-12-26T20:34:00Z', arriveAt: '2026-12-26T20:49:00Z' });
+  await page.clock.install({ time: new Date('2026-12-26T19:00:00Z') });
+  await page.goto('/live');
+  return id;
+}
+
+test("a trainspotter's Tab button is disabled", async ({ page }) => {
+  await riderDay(page, 'E2E Tab Trainspotter', 'trainspotter');
+  const button = page.getByTestId('tab-drinks');
+  await expect(button).toBeVisible();
+  await expect(button).toBeDisabled();
+  await expect(button).toHaveAccessibleDescription(copy.trainspotterNoTab);
+  await button.click({ force: true });
+  await expect(page.getByTestId('tab-sheet')).toHaveCount(0);
+});
+
+test("a stale session's drink is refused once, with no Retry", async ({ page }) => {
+  const id = await riderDay(page, 'E2E Tab Stale Spotter', 'crew');
+  await expect(page.getByTestId('tab-drinks')).toBeEnabled();
+  await openTab(page);
+  // The Conductor makes them a Trainspotter while their app is open: it still shows the Tab.
+  await setRole(id, 'trainspotter');
+  await tapDrink(page, 'beer');
+  await expect(page.getByTestId('tab-sheet').getByRole('alert')).toHaveText(copy.trainspotterNoTab);
+  await expect(page.locator('[data-testid^="tab-sending-"]')).toHaveCount(0);
+  await expect(page.getByTestId('tab-retry-close')).toHaveCount(0);
+  await expect(page.getByTestId('tab-retry-toast')).toHaveCount(0);
+  const rows = await (await fetch(`${PB}/api/collections/drink_entries/records?filter=${encodeURIComponent(`user="${id}"`)}`,
+    { headers: { Authorization: await superuserToken() } })).json();
+  expect(rows.totalItems).toBe(0);
+  // Nothing is kept, so the sheet closes as usual and nothing holds Closing Time back.
+  await page.getByTestId('tab-close').click();
+  await expect(page.getByTestId('tab-sheet')).toHaveCount(0);
+  await expect(page.getByTestId('tab-retry-toast')).toHaveCount(0);
 });

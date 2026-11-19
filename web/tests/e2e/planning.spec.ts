@@ -165,6 +165,9 @@ test('draft with real train times, layover change, card edits, votes, comments, 
   await page.getByTestId('open-vote').click();
   await page.getByTestId('vote-go').click();
   await expect(page.getByTestId('tally')).toContainText('E2E Skipper');
+  // The Highball is a show of hands for the Conductor's reference: Go and No go, no row of non-voters.
+  await expect(page.getByTestId('tally').locator('dt')).toHaveText([copy.go, copy.nogo]);
+  await expect(page.locator('section.approval')).toContainText(copy.approvalIntro);
   page.once('dialog', (d) => d.accept());
   await page.getByTestId('lock-route').click();
   await expect(page).toHaveURL(/\/route$/);

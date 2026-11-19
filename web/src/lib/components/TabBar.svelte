@@ -7,11 +7,14 @@
   import { liveDay } from '$lib/live/day.svelte';
   import { drinkCount } from '$lib/live/crew';
   import { ui } from '$lib/ui.svelte';
+  import { roleOf } from '$lib/roles';
   const tabs = [
     { href: '/live', id: 'live', icon: '🎟️', label: labels.livePhase },
     { href: '/route', id: 'route', icon: '🚂', label: labels.lockedItinerary },
     { href: '/crew', id: 'crew', icon: '🏆', label: labels.userRoster }
   ];
+  // Trainspotters keep the button, disabled, so the bar keeps its shape and says why.
+  const noTab = $derived(roleOf($auth.user) === 'trainspotter');
   const total = $derived($auth.user ? drinkCount(liveDay.feed.drinks, $auth.user.id, liveDay.today) : 0);
 </script>
 
@@ -21,9 +24,11 @@
       <span aria-hidden="true">{tab.icon}</span>{tab.label}
     </a>
   {/each}
-  <button type="button" onclick={() => (ui.tabOpen = true)} aria-expanded={ui.tabOpen} data-testid="tab-drinks">
+  <button type="button" onclick={() => (ui.tabOpen = true)} aria-expanded={ui.tabOpen} data-testid="tab-drinks"
+    disabled={noTab} title={noTab ? copy.trainspotterNoTab : undefined} aria-describedby={noTab ? 'tab-drinks-hint' : undefined}>
     <span aria-hidden="true">🍻</span>{copy.tabTitle}{#if total}<b class="count" data-testid="tab-bar-total">{total}</b>{/if}
   </button>
+  {#if noTab}<span id="tab-drinks-hint" class="sr-only">{copy.trainspotterNoTab}</span>{/if}
 </nav>
 
 <style>
@@ -34,6 +39,8 @@
     margin: 0; padding: 6px 2px; border: 0; border-radius: 0; background: transparent; color: #aaa; font-size: 11.5px;
     font-weight: 650; text-decoration: none; width: auto; }
   span { font-size: 22px; line-height: 1; }
+  button:disabled { opacity: .4; }
+  .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
   a[aria-current='page'], button[aria-expanded='true'] { color: #ffb400; }
   .count { position: absolute; top: 5px; left: calc(50% + 8px); min-width: 18px; padding: 1px 5px; border-radius: 999px;
     background: #ffb400; color: #111; font-size: 11px; font-weight: 800; line-height: 16px; }

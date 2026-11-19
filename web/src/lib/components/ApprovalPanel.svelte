@@ -3,21 +3,17 @@
   import { goto } from '$app/navigation';
   import { pb, auth, subscribe } from '$lib/pb';
   import { copy, label } from '$lib/labels';
-  import type { ApprovalVote, Itinerary, UserRecord } from '$lib/types';
+  import type { ApprovalVote, Itinerary } from '$lib/types';
 
   let { itinerary }: { itinerary: Itinerary } = $props();
   let votes = $state<ApprovalVote[]>([]);
-  let users = $state<UserRecord[]>([]);
   let busy = $state(false);
   let error = $state('');
   const filter = $derived(pb.filter('itinerary = {:id}', { id: itinerary.id }));
 
   async function load() {
     try {
-      [votes, users] = await Promise.all([
-        pb.collection('approval_votes').getFullList<ApprovalVote>({ filter, expand: 'user' }),
-        pb.collection('users').getFullList<UserRecord>({ sort: 'name' })
-      ]);
+      votes = await pb.collection('approval_votes').getFullList<ApprovalVote>({ filter, expand: 'user' });
     } catch { /* keep last */ }
   }
   onMount(() => { void load(); return subscribe('approval_votes', filter, load); });
@@ -25,7 +21,6 @@
   const isAdmin = $derived(!!$auth.user?.is_admin);
   const mine = $derived(votes.find((v) => v.user === $auth.user?.id));
   const names = (value: 'go' | 'nogo') => votes.filter((v) => v.value === value).map((v) => v.expand?.user?.name ?? '…');
-  const pending = $derived(users.filter((u) => !votes.some((v) => v.user === u.id)).map((u) => u.name));
   const open = $derived(itinerary.status === 'draft' && itinerary.vote_open);
 
   // `skipReload` for the lock path: it navigates away, and reloading into an unmounted component
@@ -62,7 +57,6 @@
     <dl data-testid="tally">
       <dt>{copy.go}</dt><dd>{names('go').join(', ') || '—'}</dd>
       <dt>{copy.nogo}</dt><dd>{names('nogo').join(', ') || '—'}</dd>
-      <dt>…</dt><dd>{pending.join(', ') || '—'}</dd>
     </dl>
   {/if}
 
