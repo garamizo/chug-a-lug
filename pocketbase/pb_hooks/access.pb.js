@@ -72,8 +72,10 @@ onRecordConfirmPasswordResetRequest((e) => {
   crew.logEvent($app, { event: 'password_set', method: 'password', user: e.record.id, email: e.record.email() }, crew.clientInfo(e))
 }, 'users')
 
-routerAdd('POST', '/api/crawl/users/{id}/put-off', (e) => require(`${__hooks}/access.js`).setBlocked(e, true))
-routerAdd('POST', '/api/crawl/users/{id}/let-back-on', (e) => require(`${__hooks}/access.js`).setBlocked(e, false))
+routerAdd('POST', '/api/crawl/users/{id}/role', (e) => require(`${__hooks}/access.js`).setRole(e))
+// The Manifest's old buttons, until it moves to the role endpoint.
+routerAdd('POST', '/api/crawl/users/{id}/put-off', (e) => require(`${__hooks}/access.js`).setRole(e, 'put_off'))
+routerAdd('POST', '/api/crawl/users/{id}/let-back-on', (e) => require(`${__hooks}/access.js`).setRole(e, 'crew'))
 routerAdd('GET', '/api/crawl/manifest', (e) => require(`${__hooks}/access.js`).manifest(e))
 cronAdd('crew_access_daily', '17 3 * * *', () => require(`${__hooks}/access.js`).daily($app))
 

@@ -3,7 +3,7 @@
   import { ClientResponseError } from 'pocketbase';
   import { accessEventLabels, copy, labels, signInMethodLabels } from '$lib/labels';
   import { fmtDateTime } from '$lib/time';
-  type Person = { id: string; name: string; email: string; is_admin: boolean; blocked: boolean; last_seen: string; created: string };
+  type Person = { id: string; name: string; email: string; is_admin: boolean; role: string; last_seen: string; created: string };
   type Row = { id: string; created: string; event: string; method: string; name: string; email: string; user: string; actor: string; ip: string; country: string; city: string; user_agent: string; detail: string };
   let data = $state<{ people: Person[]; log: Row[] } | null>(null);
   // A failed load and a failed Put off / Let back on are reported apart: neither hides the list.
@@ -31,9 +31,9 @@
       <div class="row" data-testid="manifest-person">
         <strong>{p.name}{#if p.is_admin}<small> · {labels.admin}</small>{/if}</strong>
         <span class="email">{p.email}</span>
-        <small data-testid="person-status">{copy.personStatus}: {p.blocked ? copy.personPutOff : copy.personAboard} · {copy.personSince}: {when(p.created)}</small>
+        <small data-testid="person-status">{copy.personStatus}: {p.role === 'put_off' ? copy.personPutOff : copy.personAboard} · {copy.personSince}: {when(p.created)}</small>
         <small>{copy.lastSeen}: {when(p.last_seen)}</small>
-        {#if !p.is_admin}<button type="button" class="secondary" onclick={() => void block(p.id, !p.blocked)} data-testid="toggle-block">{p.blocked ? copy.letBackOn : copy.putOff}</button>{/if}
+        {#if !p.is_admin}<button type="button" class="secondary" onclick={() => void block(p.id, p.role !== 'put_off')} data-testid="toggle-block">{p.role === 'put_off' ? copy.letBackOn : copy.putOff}</button>{/if}
       </div>
     {/each}
     <h2>{copy.accessLog}</h2>

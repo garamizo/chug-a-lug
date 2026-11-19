@@ -2,7 +2,7 @@
 // and drinks belong to whoever wrote them, and everyone can read all of it.
 import { readFile } from 'node:fs/promises';
 import { beforeAll, describe, expect, it } from 'vitest';
-import { ADMIN_LOGIN_PASSWORD, del, deleteUserByName, get, loginToken, patch, post, superuserToken, truncate, PB } from './setup';
+import { ADMIN_LOGIN_PASSWORD, del, deleteUserByName, get, loginToken, patch, post, setRole, superuserToken, truncate, PB } from './setup';
 
 let conductor = '', crew = '', conductorId = '', crewId = '', itineraryId = '', stopId = '';
 
@@ -323,6 +323,24 @@ describe('proof uploads', () => {
       expect(await exists('media', id)).toBe(false);
     }
     expect(await drinkCount()).toBe(drinks);
+  });
+
+  it('a trainspotter cannot post a proof but can post a plain photo and a chat message', async () => {
+    const spotter = await loginToken('Live Trainspotter');
+    await setRole(spotter.id, 'trainspotter');
+    const drinks = await drinkCount();
+    const id = newId();
+    const sent = await send(spotter.token, { id, user: spotter.id });
+    expect(sent.status).toBe(400);
+    expect(sent.body.message).toBe('Trainspotter.');
+    expect(await exists('media', id)).toBe(false);
+    expect(await exists('drink_entries', id)).toBe(false);
+    expect(await drinkCount()).toBe(drinks);
+    const photo = await send(spotter.token, { user: spotter.id, drinkKind: '' });
+    expect(photo.status).toBe(200);
+    expect(photo.body).toMatchObject({ user: spotter.id, drink_kind: '' });
+    const said = await post('/api/collections/chat_messages/records', { itinerary: itineraryId, user: spotter.id, body: 'Nice engine' }, spotter.token);
+    expect(said.status).toBe(200);
   });
 
   it('a proof for someone else is refused by the media rule', async () => {

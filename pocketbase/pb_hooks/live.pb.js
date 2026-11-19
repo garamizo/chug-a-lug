@@ -9,6 +9,9 @@
 onRecordCreateRequest((e) => {
   const r = e.record
   const proof = !!r.getString('drink_kind')
+  const isCrew = !!e.auth && !e.auth.isSuperuser()
+  // A Trainspotter rides along but keeps no Tab (spec 2026-11-19): photos and chat stay open to them.
+  if (isCrew && proof && require(`${__hooks}/crew.js`).roleOf(e.auth) === 'trainspotter') throw new BadRequestError('trainspotter')
   if (proof) {
     // JPEG, PNG, GIF, WebP and HEIC/HEIF, by their leading bytes.
     const isPhoto = (b) => {
@@ -28,7 +31,6 @@ onRecordCreateRequest((e) => {
     // No file at all is left to the required field, as for any photo.
     if (r.getString('kind') !== 'image' || (file && !isPhoto(head))) throw new BadRequestError('proof_needs_image')
   }
-  const isCrew = !!e.auth && !e.auth.isSuperuser()
   if (isCrew) r.set('user', e.auth.id)
   const current = require(`${__hooks}/current.js`).currentItineraryId($app) || ''
   r.set('itinerary', current)

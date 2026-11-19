@@ -19,6 +19,16 @@ migrate((app) => {
   const event = log.fields.getByName('event')
   event.values = event.values.filter((v) => v !== 'role_changed').concat(['role_changed'])
   app.save(log)
+
+  // One Conductor. onBootstrap runs before migrations, so on the first start after this upgrade
+  // pb_hooks/crew.js ensureConductor finds no role field and skips its reconcile: this copy does it.
+  // Rehearsals (SIM=1) keep their extra admins. Plain SQL and no log row, to stay self-contained.
+  const email = ($os.getenv('CONDUCTOR_EMAIL') || '').trim().toLowerCase()
+  if ($os.getenv('SIM') !== '1' && email) {
+    let conductor = null
+    try { conductor = app.findAuthRecordByEmail('users', email) } catch (_) {}
+    if (conductor) app.db().newQuery('UPDATE users SET is_admin = FALSE WHERE is_admin = TRUE AND id != {:id}').bind({ id: conductor.id }).execute()
+  }
 }, (app) => {
   const users = app.findCollectionByNameOrId('users')
   users.fields.add(new BoolField({ name: 'blocked' }))

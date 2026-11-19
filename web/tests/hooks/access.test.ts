@@ -131,18 +131,60 @@ describe('sign-in and the guards', () => {
 });
 
 describe('put off, manifest and names (spec §2.9–2.11)', () => {
-  it('only a Conductor puts someone off; their token dies; no self put-off', async () => {
+  const setRoleAs = (id: string, role: unknown, token: string) => post(`/api/crawl/users/${id}/role`, { role }, token);
+
+  it('the role endpoint is the Conductor\'s, never on themselves or another admin', async () => {
+    const boss = await loginToken(`Chief ${uid()}`, ADMIN_LOGIN_PASSWORD);
+    const other = await loginToken(`Deputy ${uid()}`, ADMIN_LOGIN_PASSWORD);
+    const rider = await loginToken(`Rider ${uid()}`);
+    expect((await setRoleAs(boss.id, 'put_off', rider.token)).status).toBe(403);
+    expect((await setRoleAs(rider.id, 'trainspotter', rider.token)).status).toBe(403);
+    expect((await setRoleAs(boss.id, 'trainspotter', boss.token)).status).toBe(400);
+    expect((await setRoleAs(other.id, 'put_off', boss.token)).status).toBe(400);
+    expect((await setRoleAs(rider.id, 'conductor', boss.token)).status).toBe(400);
+    expect((await setRoleAs(rider.id, undefined, boss.token)).status).toBe(400);
+    expect((await setRoleAs('nosuchuser0000', 'crew', boss.token)).status).toBe(404);
+    // Nothing above changed anyone or wrote a row.
+    expect((await get('/api/crawl/me', rider.token)).status).toBe(200);
+    expect((await get('/api/crawl/me', other.token)).status).toBe(200);
+    expect(await logRows(`event = "role_changed" && (user = "${rider.id}" || user = "${other.id}" || user = "${boss.id}")`)).toEqual([]);
+  });
+
+  it('putting someone off kills their token; Crew lets them back on', async () => {
     const boss = await loginToken(`Chief ${uid()}`, ADMIN_LOGIN_PASSWORD);
     const rider = await loginToken(`Rider ${uid()}`);
-    expect((await post(`/api/crawl/users/${boss.id}/put-off`, {}, rider.token)).status).toBe(403);
-    expect((await post(`/api/crawl/users/${boss.id}/put-off`, {}, boss.token)).status).toBe(400);
     expect((await get('/api/crawl/me', rider.token)).status).toBe(200);
-    expect((await post(`/api/crawl/users/${rider.id}/put-off`, {}, boss.token)).status).toBe(200);
+    const off = await setRoleAs(rider.id, 'put_off', boss.token);
+    expect(off.status).toBe(200);
+    expect(await off.json()).toEqual({ role: 'put_off' });
     expect((await get('/api/crawl/me', rider.token)).status).toBe(401);
     // A list rule filters rather than rejects (200, zero rows), so prove the token is dead where PocketBase must reject it.
     expect((await fetch(`${PB}/api/collections/users/auth-refresh`, { method: 'POST', headers: { Authorization: rider.token } })).status).toBe(401);
     expect((await (await fetch(`${PB}/api/collections/users/records`, { headers: { Authorization: rider.token } })).json()).items).toEqual([]);
-    expect((await post(`/api/crawl/users/${rider.id}/let-back-on`, {}, boss.token)).status).toBe(200);
+    const on = await setRoleAs(rider.id, 'crew', boss.token);
+    expect(on.status).toBe(200);
+    expect(await on.json()).toEqual({ role: 'crew' });
+    const [putOff] = await logRows(`event = "put_off" && user = "${rider.id}"`);
+    const [backOn] = await logRows(`event = "let_back_on" && user = "${rider.id}"`);
+    expect(putOff).toMatchObject({ actor: boss.id, detail: 'Crew → Put off' });
+    expect(backOn).toMatchObject({ actor: boss.id, detail: 'Put off → Crew' });
+    expect(Date.parse(putOff.created)).toBeLessThanOrEqual(Date.parse(backOn.created));
+    // The same role again changes nothing and logs nothing.
+    expect(await (await setRoleAs(rider.id, 'crew', boss.token)).json()).toEqual({ role: 'crew' });
+    expect((await logRows(`user = "${rider.id}" && (event = "let_back_on" || event = "role_changed")`)).length).toBe(1);
+  });
+
+  it('crew ↔ trainspotter is logged as role_changed with from → to', async () => {
+    const boss = await loginToken(`Chief ${uid()}`, ADMIN_LOGIN_PASSWORD);
+    const rider = await loginToken(`Spotter ${uid()}`);
+    const res = await setRoleAs(rider.id, 'trainspotter', boss.token);
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ role: 'trainspotter' });
+    expect((await get('/api/crawl/me', rider.token)).status).toBe(200);   // a Trainspotter keeps their seat
+    expect((await setRoleAs(rider.id, 'crew', boss.token)).status).toBe(200);
+    const rows = await logRows(`event = "role_changed" && user = "${rider.id}"`);
+    expect(rows.map((r) => r.detail).sort()).toEqual(['Crew → Trainspotter', 'Trainspotter → Crew']);
+    for (const r of rows) expect(r.actor).toBe(boss.id);
   });
 
   it('a put-off person stops receiving realtime events at once', async () => {
@@ -155,7 +197,7 @@ describe('put off, manifest and names (spec §2.9–2.11)', () => {
       const say = async (body: string) => expect((await post('/api/collections/chat_messages/records', { itinerary, user: boss.id, body }, await superuserToken())).status).toBe(200);
       await say('before');
       await waitFor(async () => stream.events.some((ev) => ev.data?.record?.body === 'before'), 5000); // the control: events do arrive
-      expect((await post(`/api/crawl/users/${rider.id}/put-off`, {}, boss.token)).status).toBe(200);
+      expect((await setRoleAs(rider.id, 'put_off', boss.token)).status).toBe(200);
       await say('after');
       await waitFor(async () => control.events.some((ev) => ev.data?.record?.body === 'after'), 5000);
       await new Promise((r) => setTimeout(r, 100));   // grace for a late delivery to the rider
@@ -170,6 +212,16 @@ describe('put off, manifest and names (spec §2.9–2.11)', () => {
     const m = await (await fetch(`${PB}/api/crawl/manifest`, { headers: { Authorization: boss.token } })).json();
     expect(m.people.find((p: { id: string }) => p.id === rider.id).email).toMatch(/@test\.invalid$/);
     expect(Array.isArray(m.log)).toBe(true);
+  });
+
+  it('the manifest carries role', async () => {
+    const boss = await loginToken(`Lister ${uid()}`, ADMIN_LOGIN_PASSWORD);
+    const rider = await loginToken(`Watcher ${uid()}`);
+    await setRole(rider.id, 'trainspotter');
+    const m = await (await fetch(`${PB}/api/crawl/manifest`, { headers: { Authorization: boss.token } })).json();
+    const row = m.people.find((p: { id: string }) => p.id === rider.id);
+    expect(row.role).toBe('trainspotter');
+    expect(row).not.toHaveProperty('blocked');
   });
 
   it('put-off people stay readable so their posts keep a name', async () => {

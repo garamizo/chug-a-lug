@@ -76,6 +76,9 @@ exports.isPutOff = function (record) { return exports.roleOf(record) === 'put_of
 
 // The single Conductor path at serve time; the migration carries an identical copy (it must run
 // with an empty hooks directory). Idempotent: reuse by email, else mint under the first free name.
+// Then one Conductor (spec 2026-11-19 "Server"): outside a rehearsal every other admin is demoted,
+// so a changed CONDUCTOR_EMAIL moves the Conductor rather than adding one. 1759500000_crew_roles
+// carries its own copy of that reconcile for the first start after the upgrade.
 exports.ensureConductor = function (app, raw) {
   const email = exports.normalizeEmail(raw)
   if (!email) return null
@@ -93,11 +96,19 @@ exports.ensureConductor = function (app, raw) {
     c.setEmail(email)
     c.setPassword($security.randomString(40))
   }
-  if (c.getBool('is_admin') && c.verified() && !exports.isPutOff(c) && c.id) return c
-  c.setVerified(true)
-  c.set('is_admin', true)
-  c.set('role', 'crew')
-  app.save(c)
+  if (!(c.id && c.getBool('is_admin') && c.verified() && exports.roleOf(c) === 'crew')) {
+    c.setVerified(true)
+    c.set('is_admin', true)
+    c.set('role', 'crew')
+    app.save(c)
+  }
+  if ($os.getenv('SIM') !== '1') {
+    for (const u of app.findRecordsByFilter('users', 'is_admin = true && id != {:id}', '', 0, 0, { id: c.id })) {
+      // One column by SQL, as signInGuard writes last_seen: nothing else of the row is written back.
+      app.db().newQuery('UPDATE users SET is_admin = FALSE WHERE id = {:id}').bind({ id: u.id }).execute()
+      exports.logEvent(app, { event: 'role_changed', user: u.id, name: u.getString('name'), email: u.email(), detail: 'Conductor → Crew' })
+    }
+  }
   return c
 }
 

@@ -601,3 +601,80 @@ it('crew roles roll back to blocked and apply again', async () => {
     expect(again).toContain('1759500001_zcheck_roles_again');
   } finally { await rm(dir, { recursive: true, force: true }); }
 });
+
+// One Conductor (spec 2026-11-19 "Server"): every start outside a rehearsal clears is_admin on
+// everyone but the CONDUCTOR_EMAIL account. The fixtures sort after 1759500000_crew_roles, so the
+// migration's own copy of the reconcile has already run and only startup can demote `extra`.
+const pocketbase = (dir: string, migrations: string, hooks: string, env: Record<string, string>) =>
+  execFileSync(resolve('../pocketbase/pocketbase'), ['migrate', 'up', '--dir', join(dir, 'data'), '--migrationsDir', migrations, '--hooksDir', hooks],
+    { encoding: 'utf8', timeout: 15000, stdio: 'pipe', env: { ...process.env, CONDUCTOR_EMAIL: 'conductor@test.invalid', ...env } });
+
+it('startup leaves one Conductor outside rehearsals', async () => {
+  const cases = [
+    { label: 'a Conductor in need of repair', sim: '0', conductor: `c.setVerified(false); c.set('is_admin', false);` },
+    { label: 'an already valid Conductor', sim: '0', conductor: '' },
+    { label: 'a Conductor left a Trainspotter', sim: '0', conductor: `c.set('role', 'trainspotter');` },
+    { label: 'a rehearsal', sim: '1', conductor: '' }
+  ];
+  for (const { label, sim, conductor } of cases) {
+    const dir = await mkdtemp(join(tmpdir(), 'chugalug-one-conductor-'));
+    try {
+      const migrations = join(dir, 'migrations'), hooks = join(dir, 'hooks');
+      await mkdir(migrations); await mkdir(hooks);
+      for (const name of await readdir('../pocketbase/pb_migrations')) await copyFile(`../pocketbase/pb_migrations/${name}`, join(migrations, name));
+      await writeFile(join(migrations, '1759600000_zextra_admin.js'), `migrate(app => {
+        const u = new Record(app.findCollectionByNameOrId('users'));
+        u.set('name', 'Extra'); u.set('name_key', 'extra'); u.setEmail('extra@test.invalid'); u.setVerified(true);
+        u.setPassword('legacy-password-only'); u.set('is_admin', true); u.set('role', 'crew'); app.save(u);
+        const c = app.findAuthRecordByEmail('users', 'conductor@test.invalid');
+        ${conductor}
+        app.save(c);
+      }, app => {})`);
+      expect(pocketbase(dir, migrations, hooks, { SIM: '0' }), label).toContain('1759600000_zextra_admin');
+      pocketbase(dir, migrations, resolve('../pocketbase/pb_hooks'), { SIM: sim });   // onBootstrap: ensureConductor
+      await writeFile(join(migrations, '1759600001_zcheck_one_conductor.js'), `migrate(app => {
+        const extra = app.findAuthRecordByEmail('users', 'extra@test.invalid');
+        const c = app.findAuthRecordByEmail('users', 'conductor@test.invalid');
+        if (!c.getBool('is_admin') || !c.verified() || c.getString('role') !== 'crew') throw new Error('Conductor not repaired');
+        const logged = app.findRecordsByFilter('access_log', "event = 'role_changed' && user = {:id}", '', 0, 0, { id: extra.id });
+        if (${sim === '1'}) {
+          if (!extra.getBool('is_admin')) throw new Error('a rehearsal demoted extra');
+          if (logged.length) throw new Error('a rehearsal logged a demotion');
+        } else {
+          if (extra.getBool('is_admin')) throw new Error('extra is still an admin');
+          if (app.findRecordsByFilter('users', 'is_admin = true', '', 0, 0).length !== 1) throw new Error('more than one admin');
+          if (logged.length !== 1 || logged[0].getString('detail') !== 'Conductor → Crew') throw new Error('demotion not logged');
+          if (app.findRecordsByFilter('access_log', "event = 'role_changed' && user = {:id}", '', 0, 0, { id: c.id }).length) throw new Error('the Conductor was logged');
+        }
+      }, app => {})`);
+      expect(pocketbase(dir, migrations, hooks, { SIM: '0' }), label).toContain('1759600001_zcheck_one_conductor');
+    } finally { await rm(dir, { recursive: true, force: true }); }
+  }
+}, 60000);
+
+it('the upgrade start reconciles from the previous schema', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'chugalug-upgrade-conductor-'));
+  try {
+    const migrations = join(dir, 'migrations'), hooks = join(dir, 'hooks');
+    await mkdir(migrations); await mkdir(hooks);
+    for (const name of await readdir('../pocketbase/pb_migrations')) {
+      if (name !== '1759500000_crew_roles.js') await copyFile(`../pocketbase/pb_migrations/${name}`, join(migrations, name));
+    }
+    // The schema before roles: `blocked`, no `role`.
+    await writeFile(join(migrations, '1759400001_zextra_admin.js'), `migrate(app => {
+      const u = new Record(app.findCollectionByNameOrId('users'));
+      u.set('name', 'Extra'); u.set('name_key', 'extra'); u.setEmail('extra@test.invalid'); u.setVerified(true);
+      u.setPassword('legacy-password-only'); u.set('is_admin', true); u.set('blocked', false); app.save(u);
+    }, app => {})`);
+    expect(pocketbase(dir, migrations, hooks, { SIM: '0' })).toContain('1759400001_zextra_admin');
+    await copyFile('../pocketbase/pb_migrations/1759500000_crew_roles.js', join(migrations, '1759500000_crew_roles.js'));
+    await writeFile(join(migrations, '1759500001_zcheck_upgrade.js'), `migrate(app => {
+      const admins = app.findRecordsByFilter('users', 'is_admin = true', '', 0, 0);
+      if (admins.length !== 1 || admins[0].email() !== 'conductor@test.invalid') throw new Error('admins: ' + admins.map(a => a.email()).join());
+    }, app => {})`);
+    // onBootstrap runs first, finds no role field and skips: the migration's own reconcile must do it.
+    const out = pocketbase(dir, migrations, resolve('../pocketbase/pb_hooks'), { SIM: '0' });
+    expect(out).toContain('1759500000_crew_roles');
+    expect(out).toContain('1759500001_zcheck_upgrade');
+  } finally { await rm(dir, { recursive: true, force: true }); }
+});
