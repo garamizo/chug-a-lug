@@ -222,23 +222,25 @@
 {#if stations === null}
   <p>{copy.working}</p>
 {:else if stations.length}
-  <div class="tabs" role="tablist">
-    {#each SIDES as [side, name] (side)}
-      <button type="button" role="tab" class="tab" aria-selected={focused === side} onclick={() => map?.focusSide(side)} data-testid="side-{side}">{name}</button>
-    {/each}
+  <div class="route">
+    <div class="tabs" role="tablist">
+      {#each SIDES as [side, name] (side)}
+        <button type="button" role="tab" class="tab" aria-selected={focused === side} onclick={() => map?.focusSide(side)} data-testid="side-{side}">{name}</button>
+      {/each}
+    </div>
+    <LineMap bind:this={map} {stations} color={lineColor} panes onside={(s) => (focused = s)}
+      onpick={editable ? (s) => { rememberScroll(); actions.add(s.id, focused); } : undefined}
+      pickLabel={(s) => `${copy.addAt} ${stationLabel(s)}`}>
+      {#snippet left(station, i)}
+        <div class="rowhead left">{@render label(station, i, 'left')}</div>
+        {#each placement.rows[i].left as k (sorted[k].id)}{@render card(k)}{/each}
+      {/snippet}
+      {#snippet right(station, i)}
+        <div class="rowhead right">{@render label(station, i, 'right')}</div>
+        {#each placement.rows[i].right as k (sorted[k].id)}{@render card(k)}{/each}
+      {/snippet}
+    </LineMap>
   </div>
-  <LineMap bind:this={map} {stations} color={lineColor} panes onside={(s) => (focused = s)}
-    onpick={editable ? (s) => { rememberScroll(); actions.add(s.id, focused); } : undefined}
-    pickLabel={(s) => `${copy.addAt} ${stationLabel(s)}`}>
-    {#snippet left(station, i)}
-      <div class="rowhead left">{@render label(station, i, 'left')}</div>
-      {#each placement.rows[i].left as k (sorted[k].id)}{@render card(k)}{/each}
-    {/snippet}
-    {#snippet right(station, i)}
-      <div class="rowhead right">{@render label(station, i, 'right')}</div>
-      {#each placement.rows[i].right as k (sorted[k].id)}{@render card(k)}{/each}
-    {/snippet}
-  </LineMap>
   {#if placement.offLine.length}
     <h3>{copy.offLine}</h3>
     <div class="list">{#each placement.offLine as k (sorted[k].id)}{@render card(k)}{/each}</div>
@@ -271,7 +273,9 @@
   .opening .meta { margin: 0; font-size: 12px; color: #888; }
   h2 { font-size: 18px; margin-top: 28px; }
   h3 { font-size: 15px; color: #aaa; margin: 20px 0 8px; }
-  .tabs { display: flex; gap: 6px; margin: 0 0 10px; }
+  /* The tabs stay under the top bar while the line scrolls beneath them (so you always know which
+     way you are looking), and leave with the line: .route is their sticky range. */
+  .tabs { display: flex; gap: 6px; margin: 0; padding: 6px 0 10px; position: sticky; top: var(--top-bar, 0px); z-index: 5; background: #111; }
   .tab { flex: 1; margin: 0; padding: 8px; min-height: 44px; font-size: 14px; font-weight: 600; background: transparent; color: #aaa; border: 1px solid #444; border-radius: 10px; }
   .tab[aria-selected='true'] { background: #2a2a2a; color: #fff; border-color: #777; }
   /* The station name sits at circle height beside the line; cards start below it on both sides.

@@ -14,8 +14,9 @@ Goal: by early December, one locked itinerary that everyone has seen and voted o
   nearest first, when no key is set). A venue near two stations is on both lists, measured from each.
 - The draft is laid out on that line, each station once: going stops (**Aurora → Chicago**) sit left
   of the line and return stops (**Chicago → Aurora**) right of it, in their station's row, each with
-  its train leg underneath. On a phone one side is in focus and the other peeks in; drag, tap a
-  direction tab, or tap a card on the other side to switch. On a wide screen both sides show in full.
+  its train leg underneath. On a phone one side is in focus, the line runs near the screen edge and
+  a strip of the other side peeks in; drag, tap a direction tab, or tap a card on the other side to
+  switch. The direction tabs stay under the top bar while you scroll down the line. On a wide screen both sides show in full.
   Tap a station's circle to add a stop there: the side in focus is the stop's direction (going or
   return), and coming back from adding it keeps that side in focus. The crawl
   is always the going stops top to bottom, then the return stops bottom to top, so a new stop slots in

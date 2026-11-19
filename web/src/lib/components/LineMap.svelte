@@ -3,8 +3,8 @@
   //  - `cell`: the circle on the line, one cell to its right (the station picker).
   //  - `left` + `right`: a cell each side of the line (the route: going stops left, return stops right).
   //
-  // In `panes` mode each side is wider than half the line and the map sits in a horizontally
-  // snapping viewport: one side is in focus, the line stays in view, and about a fifth of the other
+  // In `panes` mode each side is nearly the whole viewport wide and the map sits in a horizontally
+  // snapping viewport: one side is in focus, the line stays in view, and a narrow strip of the other
   // side peeks in. Dragging, focusSide(), or focusing something on the other side shifts it.
   import type { Snippet } from 'svelte';
   import type { Station } from '$lib/types';
@@ -167,7 +167,7 @@
 
 <style>
   /* A size container, so the panes know whether both sides fit (a wide screen) or not (a phone). */
-  .linemap { --track: 36px; --dot-y: 24px; container-type: inline-size; }
+  .linemap { --track: 36px; --peek: 28px; --dot-y: 24px; container-type: inline-size; }
   .row { display: grid; grid-template-columns: var(--track) minmax(0, 1fr); column-gap: 10px; min-height: 48px; }
   .sided .row { grid-template-columns: minmax(0, 1fr) var(--track) minmax(0, 1fr); column-gap: 8px; }
   .track { position: relative; }
@@ -189,12 +189,12 @@
   .pick:hover .dot { background: #ffe9b3; }
   .cell { min-width: 0; padding-bottom: 8px; }
 
-  /* Two panes: each side is (viewport - track) / 1.2 wide, so the focused side, the line and a
-     fifth of the other side fill the viewport exactly. Only sideways overscroll is contained, so a
-     vertical drag or wheel over the line still scrolls the page. */
+  /* Two panes: each side is the viewport less the line and a --peek strip, so the focused side, the
+     line near the edge and a sliver of the other side fill the viewport exactly. Only sideways
+     overscroll is contained, so a vertical drag or wheel over the line still scrolls the page. */
   .panes { overflow-x: auto; overscroll-behavior-x: contain; scroll-snap-type: x mandatory; -webkit-overflow-scrolling: touch; scrollbar-width: none; }
   .panes::-webkit-scrollbar { display: none; }
-  .panes .map { width: calc((100% - var(--track)) / 0.6 + var(--track)); }
+  .panes .map { width: calc(200% - var(--track) - 2 * var(--peek)); }
   .panes .row { column-gap: 0; }
   .panes .cell { padding: 0 8px 8px; }
   .panes .cell.left { scroll-snap-align: start; }

@@ -55,6 +55,33 @@ test.describe('on a phone', () => {
     await expect(page.getByTestId('station-label-LAGRANGE-right')).toBeHidden();
   });
 
+  test('the line sits near the screen edge so the focused cards get the width', async ({ page }) => {
+    const centre = async () => { const d = (await page.getByTestId('station-dot-NAPERVILLE').boundingBox())!; return d.x + d.width / 2; };
+    await settledOn(page, 'left');
+    const vp = (await page.getByTestId('line-viewport').boundingBox())!;
+    expect(vp.x + vp.width - (await centre())).toBeLessThanOrEqual(50);
+    await page.getByTestId('side-right').click();
+    await settledOn(page, 'right');
+    expect((await centre()) - vp.x).toBeLessThanOrEqual(50);
+  });
+
+  test('the direction tabs stay under the top bar while the line scrolls beneath them', async ({ page }) => {
+    const vp = (await page.getByTestId('line-viewport').boundingBox())!;
+    await page.evaluate((y) => window.scrollBy(0, y + 600), vp.y);
+    await expect.poll(() => page.evaluate(() => window.scrollY)).toBeGreaterThan(600);
+    const bar = await page.evaluate(() => document.querySelector('header.top')!.getBoundingClientRect().bottom);
+    for (const side of ['left', 'right'] as const) {
+      const tab = (await page.getByTestId(`side-${side}`).boundingBox())!;
+      expect(tab.y).toBeGreaterThanOrEqual(bar - 1);
+      expect(tab.y).toBeLessThan(bar + 24);
+      // Nothing scrolling under it covers it: a tap there lands on the tab.
+      const hit = await page.evaluate(([x, y]) => document.elementFromPoint(x, y)?.closest('[data-testid^="side-"]')?.getAttribute('data-testid'), [tab.x + tab.width / 2, tab.y + tab.height / 2]);
+      expect(hit).toBe(`side-${side}`);
+    }
+    await page.getByTestId('side-right').click();
+    await settledOn(page, 'right');
+  });
+
   test('a tab, a drag or a card on the other side switches sides', async ({ page }) => {
     const vp = page.getByTestId('line-viewport');
     await expect(page.getByTestId('side-left')).toHaveAttribute('aria-selected', 'true');

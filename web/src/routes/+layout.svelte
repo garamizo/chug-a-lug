@@ -22,6 +22,8 @@
   // Kept apart from the Bulletin count so a failed alerts read only zeroes its own half of the
   // dot: `unread` below stays live off `liveDay`'s own state either way.
   let alertsUnread = $state(0);
+  // The sticky top bar's height, for anything on a page that sticks just under it (--top-bar).
+  let topBar = $state(0);
   // On a practice day a Bulletin interrupts only Live, so the dot leaves it out everywhere else.
   const bulletinUnread = $derived(liveDay.practice && page.url.pathname !== '/live' ? 0
     : liveDay.bulletins.filter((b) => !liveDay.isAcked(b.id)).length);
@@ -111,7 +113,7 @@
   {#if BUILD_MARK}<meta name="app-build" content={BUILD_MARK} />{/if}
 </svelte:head>
 
-<header class="top">
+<header class="top" bind:offsetHeight={topBar}>
   <div class="col bar">
     <a href="/" class="brand"><img src="/logo.svg" alt="" width="40" height="40" /><span>{copy.appTitle}<SimulationStatus /></span></a>
     {#if $auth.user}
@@ -125,7 +127,7 @@
   </div>
 </header>
 <AppMenu open={ui.menuOpen} {unread} onclose={() => (ui.menuOpen = false)} oncompose={() => (liveDay.composing = true)} />
-<main class="col">{@render children()}</main>
+<main class="col" style:--top-bar="{topBar}px">{@render children()}</main>
 <footer class="col credit" data-testid="metra-credit">{copy.notAffiliated}{#if creditDate}{' '}{copy.timetablePublished} {creditDate}.{/if}</footer>
 
 <style>
