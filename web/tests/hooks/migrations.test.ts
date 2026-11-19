@@ -678,3 +678,82 @@ it('the upgrade start reconciles from the previous schema', async () => {
     expect(out).toContain('1759500001_zcheck_upgrade');
   } finally { await rm(dir, { recursive: true, force: true }); }
 });
+
+// The upgrade start does the whole Conductor path itself (find or mint, repair, then demote the rest):
+// onBootstrap skipped it, so a CONDUCTOR_EMAIL changed in the same deploy would otherwise demote
+// everyone and leave no Conductor until the next restart.
+it('the upgrade start moves, mints or repairs the Conductor before demoting', async () => {
+  const cases = [
+    { label: 'an ordinary user named', email: 'ord@test.invalid', sim: '0', check: `
+      if (c.getString('name') !== 'Ord') throw new Error('Ord renamed: ' + c.getString('name'));` },
+    { label: 'no account named', email: 'fresh@test.invalid', sim: '0', check: `
+      if (c.getString('name') !== 'Conductor 2') throw new Error('minted as ' + c.getString('name'));` },
+    { label: 'a put-off account named', email: 'gone@test.invalid', sim: '0', check: '' },
+    { label: 'a rehearsal', email: 'ord@test.invalid', sim: '1', check: '' },
+    { label: 'no CONDUCTOR_EMAIL', email: '', sim: '0', check: '' }
+  ];
+  for (const { label, email, sim, check } of cases) {
+    const dir = await mkdtemp(join(tmpdir(), 'chugalug-upgrade-move-'));
+    try {
+      const migrations = join(dir, 'migrations'), hooks = join(dir, 'hooks');
+      await mkdir(migrations); await mkdir(hooks);
+      for (const name of await readdir('../pocketbase/pb_migrations')) {
+        if (name !== '1759500000_crew_roles.js') await copyFile(`../pocketbase/pb_migrations/${name}`, join(migrations, name));
+      }
+      // The schema before roles: the old Conductor, a second admin, an ordinary rider and a blocked one.
+      await writeFile(join(migrations, '1759400001_zupgrade_people.js'), `migrate(app => {
+        for (const [name, admin, blocked] of [['Extra', true, false], ['Ord', false, false], ['Gone', false, true]]) {
+          const u = new Record(app.findCollectionByNameOrId('users'));
+          u.set('name', name); u.set('name_key', name.toLowerCase()); u.setEmail(name.toLowerCase() + '@test.invalid');
+          u.setPassword('legacy-password-only'); u.set('is_admin', admin); u.set('blocked', blocked); app.save(u);
+        }
+      }, app => {})`);
+      expect(pocketbase(dir, migrations, hooks, { SIM: '0' }), label).toContain('1759400001_zupgrade_people');
+      await copyFile('../pocketbase/pb_migrations/1759500000_crew_roles.js', join(migrations, '1759500000_crew_roles.js'));
+      await writeFile(join(migrations, '1759500001_zcheck_upgrade_move.js'), `migrate(app => {
+        const admins = app.findRecordsByFilter('users', 'is_admin = true', 'email', 0, 0).map(a => a.email()).join();
+        if (${sim === '1' || !email}) {
+          if (admins !== 'conductor@test.invalid,extra@test.invalid') throw new Error('demoted: ' + admins);
+        } else {
+          if (admins !== ${JSON.stringify(email)}) throw new Error('admins: ' + admins);
+          const c = app.findAuthRecordByEmail('users', ${JSON.stringify(email)});
+          if (c.getString('role') !== 'crew' || !c.verified()) throw new Error('Conductor role ' + c.getString('role') + ' verified ' + c.verified());
+          ${check}
+        }
+      }, app => {})`);
+      // onBootstrap runs first, finds no role field and skips: the migration's own copy must do it all.
+      const out = pocketbase(dir, migrations, resolve('../pocketbase/pb_hooks'), { SIM: sim, CONDUCTOR_EMAIL: email });
+      expect(out, label).toContain('1759500000_crew_roles');
+      expect(out, label).toContain('1759500001_zcheck_upgrade_move');
+    } finally { await rm(dir, { recursive: true, force: true }); }
+  }
+}, 90000);
+
+// A users.updateRule the migration cannot recognise must stop the upgrade, not leave `role` writable.
+it('crew roles refuse to run over an updateRule they do not recognise', async () => {
+  for (const direction of ['up', 'down'] as const) {
+    const dir = await mkdtemp(join(tmpdir(), 'chugalug-roles-rule-'));
+    try {
+      const migrations = join(dir, 'migrations'), hooks = join(dir, 'hooks');
+      await mkdir(migrations); await mkdir(hooks);
+      for (const name of await readdir('../pocketbase/pb_migrations')) await copyFile(`../pocketbase/pb_migrations/${name}`, join(migrations, name));
+      const run = (...args: string[]) => execFileSync(resolve('../pocketbase/pocketbase'), ['migrate', ...args, '--dir', join(dir, 'data'),
+        '--migrationsDir', migrations, '--hooksDir', hooks], { encoding: 'utf8', timeout: 15000, input: 'y\n', stdio: 'pipe', env: { ...process.env, CONDUCTOR_EMAIL: 'conductor@test.invalid' } });
+      if (direction === 'up') {
+        // Sorts before crew_roles: an operator's hand-edited rule without the blocked clause.
+        await writeFile(join(migrations, '1759400001_zrule_edited.js'), `migrate(app => {
+          const u = app.findCollectionByNameOrId('users'); u.updateRule = 'id = @request.auth.id && @request.body.is_admin:isset = false'; app.save(u);
+        }, app => {})`);
+        expect(() => run('up'), direction).toThrow(/lacks @request\.body\.blocked:isset = false/);
+      } else {
+        expect(run('up')).toContain('1759500000_crew_roles');
+        // Applied after crew_roles: edit the rule, then roll both back (the edit's down is a no-op).
+        await writeFile(join(migrations, '1759500001_zrule_edited.js'), `migrate(app => {
+          const u = app.findCollectionByNameOrId('users'); u.updateRule = 'id = @request.auth.id'; app.save(u);
+        }, app => {})`);
+        expect(run('up')).toContain('1759500001_zrule_edited');
+        expect(() => run('down', '2'), direction).toThrow(/lacks @request\.body\.role:isset = false/);
+      }
+    } finally { await rm(dir, { recursive: true, force: true }); }
+  }
+}, 60000);
