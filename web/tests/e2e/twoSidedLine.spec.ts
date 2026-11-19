@@ -85,6 +85,29 @@ test.describe('on a phone', () => {
     await expect(page.getByTestId('line-viewport')).toHaveAttribute('data-focused', 'left');
   });
 
+  test('a photographed middle stop fits its pane with room for its name', async ({ page }) => {
+    await page.getByTestId('side-right').click();
+    await settledOn(page, 'right');
+    await expect(page.getByTestId('stop-photo-3')).toBeVisible();
+    const vp = (await page.getByTestId('line-viewport').boundingBox())!;
+    const card = (await page.getByTestId('stop-row-3').boundingBox())!;
+    expect(card.x).toBeGreaterThanOrEqual(vp.x - 1);
+    expect(card.x + card.width).toBeLessThanOrEqual(vp.x + vp.width + 1);
+    const name = (await page.getByTestId('stop-link-3').locator('strong').boundingBox())!;
+    // The room the name has: from where it starts to the head's content edge (the text itself is short).
+    const room = await page.getByTestId('stop-link-3').evaluate((head, nameX) => {
+      const r = head.getBoundingClientRect();
+      return r.right - parseFloat(getComputedStyle(head).paddingRight) - nameX;
+    }, name.x);
+    expect(room).toBeGreaterThanOrEqual(80);
+    for (const id of ['up-3', 'down-3', 'remove-3']) {
+      const b = (await page.getByTestId(id).boundingBox())!;
+      const overlaps = b.x < name.x + name.width && name.x < b.x + b.width && b.y < name.y + name.height && name.y < b.y + b.height;
+      expect(overlaps, id).toBe(false);
+      expect(b.x + b.width).toBeLessThanOrEqual(card.x + card.width + 1);
+    }
+  });
+
   test('a mouse wheel over the line scrolls the page', async ({ page }) => {
     const box = (await page.getByTestId('line-viewport').boundingBox())!;
     await page.mouse.move(box.x + box.width / 2, box.y + 40);

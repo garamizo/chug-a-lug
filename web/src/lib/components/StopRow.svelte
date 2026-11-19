@@ -81,7 +81,7 @@
 </article>
 
 <style>
-  .stop { position: relative; background: #1b1b1b; border: 1px solid #333; border-radius: 12px; padding: 10px 12px; margin-bottom: 10px; text-align: left; font-size: 15px; }
+  .stop { position: relative; container-type: inline-size; background: #1b1b1b; border: 1px solid #333; border-radius: 12px; padding: 10px 12px; margin-bottom: 10px; text-align: left; font-size: 15px; }
   .corner { position: absolute; top: 4px; right: 4px; display: flex; gap: 2px; }
   .head { display: flex; gap: 8px; align-items: center; color: inherit; text-decoration: none; padding-right: 36px; }
   .stop:has(.corner > :global(:nth-child(2))) .head { padding-right: 70px; }
@@ -93,5 +93,11 @@
   .times { display: flex; flex-wrap: wrap; gap: 2px 12px; margin: 6px 0 0; font-size: 14px; color: #ccc; line-height: 1.4; }
   .inline { display: flex; flex-direction: column; gap: 4px; margin: 8px 0 0; font-size: 13px; color: #aaa; }
   .inline select { font: inherit; font-size: 15px; padding: 10px; width: 100%; min-height: 44px; border-radius: 10px; border: 1px solid #555; background: #202020; color: #fff; }
+  /* A narrow card (one side of the line on a phone) puts its buttons on their own row above the
+     name, so the name is not squeezed beside them. */
+  @container (max-width: 259px) {
+    .corner { position: static; justify-content: flex-end; margin: -6px -8px 4px 0; }
+    .stop .head, .stop:has(.corner > :global(:nth-child(2))) .head, .stop:has(.corner > :global(:nth-child(3))) .head { padding-right: 0; }
+  }
   .stop :global(.leg) { margin-top: 8px; padding: 6px 0 2px 10px; font-size: 13px; }
 </style>
