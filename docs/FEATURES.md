@@ -12,11 +12,12 @@ Goal: by early December, one locked itinerary that everyone has seen and voted o
   the bottom. Tap a station to see the best rated bars and restaurants within half a mile of it (Google Places
   Nearby Search, two calls per station — bars, restaurants — cached until a refresh; OpenStreetMap,
   nearest first, when no key is set). A venue near two stations is on both lists, measured from each.
-- The draft is laid out on that line unfolded: every station top to bottom toward Chicago
-  (**Aurora → Chicago**), a **Turn around** divider, then every station again bottom to top on the way
-  back (**Chicago → Aurora**). Each stop sits right of the line in its station's row of the half it is
-  reached in, with its train leg underneath. Tap a station's circle to add
-  a stop there: the half you tap in is the stop's direction (going or return), and the crawl
+- The draft is laid out on that line, each station once: going stops (**Aurora → Chicago**) sit left
+  of the line and return stops (**Chicago → Aurora**) right of it, in their station's row, each with
+  its train leg underneath. On a phone one side is in focus and the other peeks in; drag, tap a
+  direction tab, or tap a card on the other side to switch. On a wide screen both sides show in full.
+  Tap a station's circle to add a stop there: the side in focus is the stop's direction (going or
+  return), and coming back from adding it keeps that side in focus. The crawl
   is always the going stops top to bottom, then the return stops bottom to top, so a new stop slots in
   by station rather than at the end. Stations no train stops at on the crawl date (Metra skips Congress
   Park, Highlands, LaVergne, Stone Ave and West Hinsdale on weekends) are greyed out with no circle to

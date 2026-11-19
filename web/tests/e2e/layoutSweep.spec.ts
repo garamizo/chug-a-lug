@@ -1,5 +1,5 @@
 import { expect, test, type Locator, type Page } from '@playwright/test';
-import { clearRoutes, inviteLink, login, openTab, seedLockedCrawl, tapDrink } from './helpers';
+import { clearRoutes, inviteLink, login, openTab, seedDraftRoute, seedLockedCrawl, settledOn, tapDrink } from './helpers';
 import { expectSaneLayout, type LayoutRule } from './layoutRules';
 import { copy } from '../../src/lib/labels';
 
@@ -130,6 +130,22 @@ test('a route with a run home', async ({ page }) => {
   const ids = await eventDay(page, 'E2E Sweep Home', EVENT_DAY, { id: 'AURORA', name: 'Aurora' });
   await sweep(page, [
     { name: 'route view, run home', open: (p) => p.goto(`/plan/${ids.itineraryId}`), ready: (p) => p.getByTestId('closing-leg') }
+  ]);
+});
+
+test('a draft with stops on both sides', async ({ page }) => {
+  await stubDepartures(page);
+  await login(page, 'E2E Sweep Sides', ADMIN);
+  await clearRoutes();
+  const { itineraryId } = await seedDraftRoute({ ownerName: 'E2E Sweep Sides', eventDate: '2026-12-26', startTime: '12:00', stops: [
+    { name: 'Going Naperville', station_id: 'NAPERVILLE', station_name: 'Naperville', direction: 'out' },
+    { name: 'Back One', station_id: 'NAPERVILLE', station_name: 'Naperville', direction: 'back' },
+    { name: 'Back Two', station_id: 'NAPERVILLE', station_name: 'Naperville', direction: 'back', photo: true },
+    { name: 'Back Three', station_id: 'NAPERVILLE', station_name: 'Naperville', direction: 'back' }
+  ] });
+  await sweep(page, [
+    { name: 'draft editor, going side', open: (p) => p.goto(`/plan/${itineraryId}/edit`), ready: (p) => p.getByTestId('stop-row-0') },
+    { name: 'draft editor, return side', open: async (p) => { await p.getByTestId('side-right').click(); await settledOn(p, 'right'); }, ready: (p) => p.getByTestId('stop-row-2') }
   ]);
 });
 

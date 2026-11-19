@@ -167,4 +167,3 @@ users see. Bars and restaurants keep their plain names.
 | Home card for the current route | **Ticket** | Rail | Gold, with the route's title, date/start time and a day countdown; links to `/route`, or to `/plan` with no route yet |
 | Home and Route Planner list layout | **Station board** | Rail | Split-flap rows: destination, subtitle, status chip |
 | The one message composer | **Chat box** | Plain | Emoji tray, photo/video and camera, send; shared by Live's crew chat and the planner's comments |
-| Midpoint of the unfolded line | **Turn around** | Rail | Divides the going stops (Aurora → Chicago) from the return stops (Chicago → Aurora) |
