@@ -78,17 +78,26 @@
     id && unserved.has(id) ? `${names[id]} ${copy.noServiceLeg} ${fmtWeekday(itinerary.event_date)}. ${copy.noServiceHint}` : undefined;
   const legReason = (i: number): string | undefined => noService([sorted[i], sorted[i + 1]].find((s) => s && unserved.has(s.station_id))?.station_id);
 
-  // Adding a stop leaves and comes back; remember where the page was scrolled so the crawl does
-  // not jump back to the top every time.
+  // Adding a stop leaves and comes back; remember where the page was scrolled, and which side of
+  // the line was in focus, so the crawl does not jump back to the top (or the going side) every time.
   const scrollKey = $derived(`scroll:/plan/${itinerary.id}`);
+  const sideKey = $derived(`side:/plan/${itinerary.id}`);
   function rememberScroll() {
-    try { sessionStorage.setItem(scrollKey, String(window.scrollY)); } catch { /* private mode */ }
+    try { sessionStorage.setItem(scrollKey, String(window.scrollY)); sessionStorage.setItem(sideKey, focused); } catch { /* private mode */ }
   }
   $effect(() => {
     if (stations === null) return;
     let y: string | null = null;
-    try { y = sessionStorage.getItem(scrollKey); if (y !== null) sessionStorage.removeItem(scrollKey); } catch { /* private mode */ }
-    if (y !== null) void tick().then(() => window.scrollTo(0, Number(y)));
+    let side: string | null = null;
+    try {
+      y = sessionStorage.getItem(scrollKey); if (y !== null) sessionStorage.removeItem(scrollKey);
+      side = sessionStorage.getItem(sideKey); if (side !== null) sessionStorage.removeItem(sideKey);
+    } catch { /* private mode */ }
+    if (y === null && side === null) return;
+    void tick().then(() => {
+      if (side === 'left' || side === 'right') map?.focusSide(side, 'instant');
+      if (y !== null) window.scrollTo(0, Number(y));
+    });
   });
   const sameStation = (i: number, j: number) => !!sorted[i] && !!sorted[j] && sorted[i].station_id === sorted[j].station_id && placement.side[i] === placement.side[j];
 

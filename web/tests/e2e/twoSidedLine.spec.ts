@@ -117,6 +117,19 @@ test.describe('on a phone', () => {
     await settledOn(page, 'right');
   });
 
+  test('after adding a return stop the right side is still in focus', async ({ page }) => {
+    await page.getByTestId('side-right').click();
+    await settledOn(page, 'right');
+    await page.getByTestId('station-dot-LAGRANGE').click();
+    await expect(page).toHaveURL(/side=right/);
+    await page.getByTestId('manual-name').fill('Back At La Grange');
+    await page.getByTestId('manual-add').click();
+    await expect(page).toHaveURL(/\/edit$/);
+    await expect(page.getByText('Back At La Grange')).toBeAttached();
+    await settledOn(page, 'right');
+    await expect(page.getByTestId('side-right')).toHaveAttribute('aria-selected', 'true');
+  });
+
   test('a mouse wheel over the line scrolls the page', async ({ page }) => {
     const box = (await page.getByTestId('line-viewport').boundingBox())!;
     await page.mouse.move(box.x + box.width / 2, box.y + 40);
