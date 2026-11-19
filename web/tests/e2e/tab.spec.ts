@@ -453,6 +453,19 @@ test("a trainspotter's Tab button is disabled", async ({ page }) => {
   await expect(page.getByTestId('tab-sheet')).toHaveCount(0);
 });
 
+test("a trainspotter's disabled Tab button carries no count", async ({ page }) => {
+  const id = await riderDay(page, 'E2E Tab Counted Spotter', 'crew');
+  await openTab(page);
+  await tapDrink(page, 'beer');
+  await page.getByTestId('tab-close').click();
+  await expect(page.getByTestId('tab-bar-total')).toHaveText('1');
+  // Made a Trainspotter: the next app open applies the role, and the drink they had stays saved.
+  await setRole(id, 'trainspotter');
+  await page.reload();
+  await expect(page.getByTestId('tab-drinks')).toBeDisabled();
+  await expect(page.getByTestId('tab-bar-total')).toHaveCount(0);
+});
+
 test("a stale session's drink is refused once, with no Retry", async ({ page }) => {
   const id = await riderDay(page, 'E2E Tab Stale Spotter', 'crew');
   await expect(page.getByTestId('tab-drinks')).toBeEnabled();

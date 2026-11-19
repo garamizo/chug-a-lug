@@ -954,6 +954,21 @@ describe('the run home', () => {
       expect(day.reelReady).toBe(true);
     });
 
+    it('celebrations wait for the first roster: before it, a trainspotter would still look like a rider', async () => {
+      const day = closedDay();
+      feedRows({ drink_entries: [drink('spotter', 1), drink('rider', 2)], users: new Error('offline') });
+      await day.loadFeed();
+      // Unknown ids count as riders, so the timeline credits the trainspotter until the roster answers.
+      expect(day.rosterOk).toBe(0);
+      expect(day.spikeEvents.find((e) => e.kind === 'pathfinder')?.user).toBe('spotter');
+      expect(day.celebrationSpikes).toEqual([]);
+      feedRows({ drink_entries: [drink('spotter', 1), drink('rider', 2)], users: roster });
+      await day.loadFeed();
+      expect(day.rosterOk).toBeGreaterThan(0);
+      expect(day.celebrationSpikes).toEqual(day.spikeEvents);
+      expect(day.celebrationSpikes.find((e) => e.kind === 'pathfinder')?.user).toBe('rider');
+    });
+
     it('a failed roster read keeps the last roster', async () => {
       const day = closedDay();
       feedRows({ users: roster });

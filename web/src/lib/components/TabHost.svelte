@@ -18,7 +18,7 @@
   import TabRow from './TabRow.svelte';
   import TabSheet from './TabSheet.svelte';
   import { ui } from '$lib/ui.svelte';
-  import { roleOf } from '$lib/roles';
+  import { noTab } from '$lib/roles';
 
   let { shown }: { shown: boolean } = $props();
 
@@ -29,8 +29,7 @@
   // A screen without the tab bar (the reel, or the clock leaving the event day) has no sheet either.
   $effect(() => { if (!shown) ui.tabOpen = false; });
   // Trainspotters don't run a Tab: its sheet never opens for them.
-  const noTab = $derived(roleOf($auth.user) === 'trainspotter');
-  $effect(() => { if (noTab) ui.tabOpen = false; });
+  $effect(() => { if (noTab($auth.user)) ui.tabOpen = false; });
 
   let error = $state('');
   // Once the sheet is closed the error floats over the screen: briefly, as the failed Undo or Retry
@@ -230,10 +229,12 @@
 {/snippet}
 <input bind:this={camera} type="file" accept="image/*" capture="environment" hidden onchange={picked} oncancel={() => { tapped = null; picking = false; }} data-testid="tab-camera" />
 {#if shown}
-  {#if ui.tabOpen && liveDay.hasRoute && !noTab}
+  {#if ui.tabOpen && liveDay.hasRoute && !noTab($auth.user)}
     <TabSheet onclose={() => (ui.tabOpen = false)}>
       <!-- Counts read saved rows only. Undo my last one stays hidden while a photo is sending, so it is
-           never mistaken for undoing that tap: the drink it would remove is an older one. -->
+           never mistaken for undoing that tap: the drink it would remove is an older one.
+           `entries` is riderFeed (the crew count leaves trainspotters out); `total` and the saved-id
+           check read the whole feed, because they are this person's own rows, whatever their role. -->
       <TabRow entries={liveDay.riderFeed.drinks} stopId={tabStop?.id ?? null} userId={me} total={dayTotal} {clinking}
         sending={sending.map((s) => s.kind)} showUndoLast={!toast && !sending.length}
         ontap={tap} onundo={(entry) => void undoDrink(entry)} />

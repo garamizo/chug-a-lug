@@ -9,6 +9,11 @@ export function roleOf(u: { role?: string | null } | null | undefined): Role {
   return role === 'trainspotter' || role === 'put_off' ? role : 'crew';
 }
 
+/** Trainspotters keep no Tab: the bar shows its button disabled and the sheet never opens. */
+export function noTab(u: { role?: string | null } | null | undefined): boolean {
+  return roleOf(u) === 'trainspotter';
+}
+
 /**
  * Whether a user id is a rider, by the roster. Unknown ids count as riders: a stale roster fails open
  * rather than silently emptying the night.

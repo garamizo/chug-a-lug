@@ -7,14 +7,12 @@
   import { liveDay } from '$lib/live/day.svelte';
   import { drinkCount } from '$lib/live/crew';
   import { ui } from '$lib/ui.svelte';
-  import { roleOf } from '$lib/roles';
+  import { noTab } from '$lib/roles';
   const tabs = [
     { href: '/live', id: 'live', icon: '🎟️', label: labels.livePhase },
     { href: '/route', id: 'route', icon: '🚂', label: labels.lockedItinerary },
     { href: '/crew', id: 'crew', icon: '🏆', label: labels.userRoster }
   ];
-  // Trainspotters keep the button, disabled, so the bar keeps its shape and says why.
-  const noTab = $derived(roleOf($auth.user) === 'trainspotter');
   const total = $derived($auth.user ? drinkCount(liveDay.feed.drinks, $auth.user.id, liveDay.today) : 0);
 </script>
 
@@ -25,10 +23,11 @@
     </a>
   {/each}
   <button type="button" onclick={() => (ui.tabOpen = true)} aria-expanded={ui.tabOpen} data-testid="tab-drinks"
-    disabled={noTab} title={noTab ? copy.trainspotterNoTab : undefined} aria-describedby={noTab ? 'tab-drinks-hint' : undefined}>
-    <span aria-hidden="true">🍻</span>{copy.tabTitle}{#if total}<b class="count" data-testid="tab-bar-total">{total}</b>{/if}
+    disabled={noTab($auth.user)} aria-describedby={noTab($auth.user) ? 'tab-drinks-hint' : undefined}>
+    <span aria-hidden="true">🍻</span>{copy.tabTitle}{#if total && !noTab($auth.user)}<b class="count" data-testid="tab-bar-total">{total}</b>{/if}
   </button>
-  {#if noTab}<span id="tab-drinks-hint" class="sr-only">{copy.trainspotterNoTab}</span>{/if}
+  <!-- Trainspotters keep the button, disabled and without a count, so the bar keeps its shape and says why. -->
+  {#if noTab($auth.user)}<span id="tab-drinks-hint" class="sr-only">{copy.trainspotterNoTab}</span>{/if}
 </nav>
 
 <style>

@@ -122,6 +122,13 @@ export class LiveDay {
     drinks: this.riderFeed.drinks, media: this.riderFeed.media, messages: this.riderFeed.messages, stops: this.stops, date: this.today, closedAt: this.closedAt
   }));
   /**
+   * The spikes a phone may celebrate: none before the first roster read is accepted. Until then unknown
+   * ids count as riders, so a trainspotter could be celebrated (and the real winner's card marked seen).
+   */
+  get celebrationSpikes(): SpikeEvent[] {
+    return this.rosterOk > 0 ? this.spikeEvents : [];
+  }
+  /**
    * The night a Closing Time reel belongs to: the route, the server's Chicago day and the simulation run.
    * Null without a route, or before a rehearsal's clock is known.
    */

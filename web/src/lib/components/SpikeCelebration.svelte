@@ -38,10 +38,11 @@
     turn++;
   }
 
-  // Re-run on the timeline, the scope, quiet and the clock (the window); nothing else.
+  // Re-run on the timeline, the scope, quiet and the clock (the window); nothing else. Nothing is
+  // queued before the first roster read (`celebrationSpikes`), so a trainspotter is never celebrated.
   $effect(() => {
     void turn;
-    const head = queue.next(liveDay.spikeEvents, scope, quiet);
+    const head = queue.next(liveDay.celebrationSpikes, scope, quiet);
     const at = scope;
     untrack(() => {
       if (head === showing) return;

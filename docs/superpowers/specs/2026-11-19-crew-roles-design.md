@@ -111,10 +111,13 @@ only:
 - **Unknown user ids count as riders** (a user missing from a loaded roster): failing open means a
   stale roster never silently empties the night.
 - **Closing Time waits for the roster.** `reelReady` additionally requires a roster read accepted in
-  the same qualifying read as the feed (`closingRead`), so the reel snapshot is never built from a
-  feed with no roster. Without it the reel stays not-ready (it retries with the feed's normal
-  reload), rather than opening with unfiltered rows. A reel already playing keeps its snapshot; a
-  role change shows the next time the reel is built.
+  the qualifying read (`closingRead`) or any later one (`rosterOk >= closingRead`), so the reel
+  snapshot is never built from a feed with no roster. Without it the reel stays not-ready (it retries
+  with the feed's normal reload), rather than opening with unfiltered rows. A reel already playing
+  keeps its snapshot; a role change shows the next time the reel is built.
+- **Celebrations wait for the roster too.** A phone queues no Golden Spike celebration before its
+  first roster read is accepted (`rosterOk > 0`): until then unknown ids count as riders, so a
+  trainspotter could be celebrated and the real winner's card marked seen.
 - Chat itself is not filtered: trainspotters and put-off people's old messages and photos stay in
   Crew chat and the Roundhouse with their authors' names. Only the reel and the aggregates skip them.
 - Reactions (Cheers) are not filtered: a trainspotter's Cheers still counts toward what the reel

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { riderFilter, ridersOnly, roleOf } from '$lib/roles';
+import { noTab, riderFilter, ridersOnly, roleOf } from '$lib/roles';
 
 describe('roles', () => {
   it('reads a missing or empty role as Crew', () => {
@@ -25,5 +25,10 @@ describe('roles', () => {
     const isRider = riderFilter([{ id: 'ts', role: 'trainspotter' }]);
     const rows = [{ id: '1', user: 'c' }, { id: '2', user: 'ts' }, { id: '3', user: 'z' }, { id: '4', user: 'c' }];
     expect(ridersOnly(rows, isRider).map((r) => r.id)).toEqual(['1', '3', '4']);
+  });
+
+  it('keeps the Tab from trainspotters only', () => {
+    expect(noTab({ role: 'trainspotter' })).toBe(true);
+    for (const u of [{ role: 'crew' }, { role: '' }, { role: 'put_off' }, null, undefined]) expect(noTab(u)).toBe(false);
   });
 });
