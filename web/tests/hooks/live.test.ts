@@ -4,6 +4,7 @@ import { readFile } from 'node:fs/promises';
 import { beforeAll, describe, expect, it } from 'vitest';
 import { ADMIN_LOGIN_PASSWORD, del, deleteUserByName, get, loginToken, patch, post, setRole, superuserToken, truncate, PB } from './setup';
 
+const uid = () => Math.floor(Math.random() * 1e6);
 let conductor = '', crew = '', conductorId = '', crewId = '', itineraryId = '', stopId = '';
 
 beforeAll(async () => {
@@ -326,7 +327,7 @@ describe('proof uploads', () => {
   });
 
   it('a trainspotter cannot post a proof but can post a plain photo and a chat message', async () => {
-    const spotter = await loginToken('Live Trainspotter');
+    const spotter = await loginToken(`Live Trainspotter ${uid()}`);
     await setRole(spotter.id, 'trainspotter');
     const drinks = await drinkCount();
     const id = newId();
@@ -341,6 +342,37 @@ describe('proof uploads', () => {
     expect(photo.body).toMatchObject({ user: spotter.id, drink_kind: '' });
     const said = await post('/api/collections/chat_messages/records', { itinerary: itineraryId, user: spotter.id, body: 'Nice engine' }, spotter.token);
     expect(said.status).toBe(200);
+  });
+
+  it('a token minted before the role changed cannot post a proof', async () => {
+    // Trainspotters keep their sessions, so the token issued while they were Crew still works.
+    const rider = await loginToken(`Live Turned ${uid()}`);
+    await setRole(rider.id, 'trainspotter');
+    const id = newId();
+    const sent = await send(rider.token, { id, user: rider.id });
+    expect(sent.status).toBe(400);
+    expect(sent.body.message).toBe('Trainspotter.');
+    expect(await exists('media', id)).toBe(false);
+    expect(await exists('drink_entries', id)).toBe(false);
+  });
+
+  it('the proof transaction re-reads the role: no drink for a trainspotter or a put-off person, whoever uploads', async () => {
+    // A superuser upload skips the request hook's role check (it is not the uploader's own), so only
+    // the fresh read inside the transaction can refuse it: the same read that closes the race
+    // between the request's auth load and the save.
+    const su = await superuserToken();
+    for (const [role, message] of [['trainspotter', 'Trainspotter.'], ['put_off', 'Put_off.']] as const) {
+      const who = await loginToken(`Live Fresh ${role === 'put_off' ? 'Gone' : 'Spotter'} ${uid()}`);
+      await setRole(who.id, role);
+      const drinks = await drinkCount();
+      const id = newId();
+      const sent = await send(su, { id, user: who.id });
+      expect(sent.status, role).toBe(400);
+      expect(sent.body.message, role).toBe(message);
+      expect(await exists('media', id), role).toBe(false);
+      expect(await exists('drink_entries', id), role).toBe(false);
+      expect(await drinkCount(), role).toBe(drinks);
+    }
   });
 
   it('a proof for someone else is refused by the media rule', async () => {

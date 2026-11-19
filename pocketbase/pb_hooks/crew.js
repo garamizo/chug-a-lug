@@ -105,8 +105,11 @@ exports.ensureConductor = function (app, raw) {
   if ($os.getenv('SIM') !== '1') {
     for (const u of app.findRecordsByFilter('users', 'is_admin = true && id != {:id}', '', 0, 0, { id: c.id })) {
       // One column by SQL, as signInGuard writes last_seen: nothing else of the row is written back.
-      app.db().newQuery('UPDATE users SET is_admin = FALSE WHERE id = {:id}').bind({ id: u.id }).execute()
-      exports.logEvent(app, { event: 'role_changed', user: u.id, name: u.getString('name'), email: u.email(), detail: 'Conductor → Crew' })
+      // The demotion and its log row commit together (role_changed is not a throttled denial).
+      app.runInTransaction((tx) => {
+        tx.db().newQuery('UPDATE users SET is_admin = FALSE WHERE id = {:id}').bind({ id: u.id }).execute()
+        exports.logEvent(tx, { event: 'role_changed', user: u.id, name: u.getString('name'), email: u.email(), detail: 'Conductor → Crew' })
+      })
     }
   }
   return c

@@ -58,6 +58,8 @@ onRecordCreateRequest((e) => {
 // A proof's drink is written with it or not at all: one transaction around the photo's save chain
 // and the drink's (see action_order.pb.js, which numbers the drink inside the same transaction).
 // The drink takes the photo's id, so a resent photo is refused as a duplicate and never counts twice.
+// The uploader's role is read again inside the transaction: the request hook judged the session the
+// request loaded, and a role change committed since must not leave a trainspotter with a drink.
 onRecordCreate((e) => {
   const kind = e.record.getString('drink_kind')
   if (!kind) return e.next()
@@ -67,6 +69,10 @@ onRecordCreate((e) => {
       e.app = tx
       e.next()
       const m = e.record
+      let owner = null
+      try { owner = tx.findRecordById('users', m.getString('user')) } catch (_) {}
+      const role = owner ? require(`${__hooks}/crew.js`).roleOf(owner) : 'crew'
+      if (role === 'trainspotter' || role === 'put_off') throw new BadRequestError(role)
       const drink = new Record(tx.findCollectionByNameOrId('drink_entries'))
       drink.set('id', m.id)
       drink.set('user', m.getString('user'))

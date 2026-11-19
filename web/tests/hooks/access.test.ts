@@ -143,6 +143,8 @@ describe('put off, manifest and names (spec §2.9–2.11)', () => {
     expect((await setRoleAs(other.id, 'put_off', boss.token)).status).toBe(400);
     expect((await setRoleAs(rider.id, 'conductor', boss.token)).status).toBe(400);
     expect((await setRoleAs(rider.id, undefined, boss.token)).status).toBe(400);
+    // An array would pass a key lookup (['put_off'] coerces to 'put_off'): only a string is a role.
+    expect((await setRoleAs(rider.id, ['put_off'], boss.token)).status).toBe(400);
     expect((await setRoleAs('nosuchuser0000', 'crew', boss.token)).status).toBe(404);
     // The Manifest's old put-off / let-back-on routes are gone: the role endpoint is the only way.
     for (const old of ['put-off', 'let-back-on']) expect((await post(`/api/crawl/users/${rider.id}/${old}`, {}, boss.token)).status, old).toBe(404);

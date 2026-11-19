@@ -12,7 +12,7 @@ exports.setRole = function (e) {
   const id = e.request.pathValue('id')
   if (id === e.auth.id) return e.json(400, { message: "You can't change your own role." })
   const role = (e.requestInfo().body || {}).role
-  if (!Object.prototype.hasOwnProperty.call(ROLE_LABELS, role)) return e.json(400, { message: 'Pick Crew, Trainspotter or Put off.' })
+  if (typeof role !== 'string' || !Object.prototype.hasOwnProperty.call(ROLE_LABELS, role)) return e.json(400, { message: 'Pick Crew, Trainspotter or Put off.' })
   // Refetched inside the transaction: a concurrent sign-in or role change cannot be written back stale.
   let u = null, from = null, refusal = null
   $app.runInTransaction((tx) => {
