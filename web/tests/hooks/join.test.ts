@@ -240,7 +240,7 @@ describe('join link sign-up (spec §4.2)', () => {
     expect(await seatsLeft()).toBe(4);
     expect((await verify(ip, s, wrong(code))).status).toBe(400);
     const boss = await loginToken(`Joiner Boss ${uid()}`, ADMIN_LOGIN_PASSWORD);
-    expect((await post(`/api/crawl/users/${first.record.id}/put-off`, {}, boss.token)).status).toBe(200);
+    expect((await post(`/api/crawl/users/${first.record.id}/role`, { role: 'put_off' }, boss.token)).status).toBe(200);
     expect((await verify(ip, s, code)).status).toBe(403);
   });
 

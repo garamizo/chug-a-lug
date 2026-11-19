@@ -103,7 +103,7 @@ describe('sign-in and the guards', () => {
       const save = (i: number) => fetch(`${PB}/api/collections/users/records/${rider.id}`, { method: 'PATCH',
         headers: { Authorization: rider.token, 'content-type': 'application/json' }, body: JSON.stringify({ share_position: i % 2 === 0 }) });
       const early = Array.from({ length: 12 }, (_, i) => save(i));
-      const off = post(`/api/crawl/users/${rider.id}/put-off`, {}, boss.token);
+      const off = post(`/api/crawl/users/${rider.id}/role`, { role: 'put_off' }, boss.token);
       const late = Array.from({ length: 12 }, (_, i) => save(i));
       expect((await off).status).toBe(200);
       await Promise.all([...early, ...late]);
@@ -144,6 +144,8 @@ describe('put off, manifest and names (spec §2.9–2.11)', () => {
     expect((await setRoleAs(rider.id, 'conductor', boss.token)).status).toBe(400);
     expect((await setRoleAs(rider.id, undefined, boss.token)).status).toBe(400);
     expect((await setRoleAs('nosuchuser0000', 'crew', boss.token)).status).toBe(404);
+    // The Manifest's old put-off / let-back-on routes are gone: the role endpoint is the only way.
+    for (const old of ['put-off', 'let-back-on']) expect((await post(`/api/crawl/users/${rider.id}/${old}`, {}, boss.token)).status, old).toBe(404);
     // Nothing above changed anyone or wrote a row.
     expect((await get('/api/crawl/me', rider.token)).status).toBe(200);
     expect((await get('/api/crawl/me', other.token)).status).toBe(200);

@@ -1,5 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { expect, type Page } from '@playwright/test';
+import type { Role } from '../../src/lib/roles';
 
 export const PB = process.env.PB_URL ?? 'http://127.0.0.1:18093';
 const SU_EMAIL = process.env.PB_ADMIN_EMAIL ?? 'tests@chugalug.invalid';
@@ -13,6 +14,13 @@ function exactly(text: string): RegExp {
 const ADMIN = process.env.ADMIN_PASSWORD ?? 'admin-test-password';
 const BASE = 'http://127.0.0.1:15173';
 const COOKIE = process.env.PUBLIC_SIM === '1' ? 'pb_auth_rehearsal' : 'pb_auth';
+
+/** Sets a user's role as superuser, the admin UI's path: no access-log row, no Conductor check. */
+export async function setRole(id: string, role: Role): Promise<void> {
+  const res = await fetch(`${PB}/api/collections/users/records/${id}`, {
+    method: 'PATCH', headers: { 'content-type': 'application/json', Authorization: await superuserToken() }, body: JSON.stringify({ role }) });
+  if (!res.ok) throw new Error(`Set role failed: ${res.status} ${await res.text()}`);
+}
 
 /** Superuser find-or-create plus impersonation: a real session without the sign-in UI. */
 export async function sessionFor(name: string, admin = false): Promise<{ token: string; record: Record<string, unknown> }> {

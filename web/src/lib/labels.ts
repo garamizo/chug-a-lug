@@ -12,6 +12,8 @@ export const labels = {
   wrapUpPhase: 'Closing Time',
   admin: 'Conductor',
   users: 'Crew',
+  trainspotter: 'Trainspotter',
+  roleWindow: 'Role',
   userRoster: 'Crew Board',
   stop: 'Stop',
   dwell: 'Layover',
@@ -50,8 +52,17 @@ export function label(key: LabelKey): string {
 
 // UI copy lives alongside the glossary so it can be changed in one place.
 export const copy = {
-  putOff: 'Put off',
-  letBackOn: 'Let back on',
+  roleCrew: 'Crew',
+  roleTrainspotter: 'Trainspotter',
+  rolePutOff: 'Put off',
+  roleCrewHint: 'Rides along: runs a Tab and wins Golden Spikes',
+  roleTrainspotterHint: 'Plans routes and follows along; no Tab, no Golden Spikes',
+  rolePutOffHint: "Can't sign in; hidden from the Crew Board. What they posted stays.",
+  rolePutOffConfirm: 'Put them off? They are signed out everywhere at once.',
+  roleSave: 'Save',
+  trainspottersHeading: 'Trainspotters',
+  putOffHeading: 'Put off',
+  changeRole: 'Change role',
   lastSeen: 'Last seen',
   never: 'never',
   accessLog: 'Access log',
@@ -59,8 +70,6 @@ export const copy = {
   /** "· by <Conductor>" after an access-log entry. */
   byWhom: 'by',
   personStatus: 'Status',
-  personAboard: 'Aboard',
-  personPutOff: 'Put off',
   personSince: 'Aboard since',
   yourName: 'Your name',
   conductorOnly: 'Only the Conductor can see this.',
@@ -558,6 +567,7 @@ export const accessEventLabels: Record<string, string> = {
   turnstile_failed: 'Failed the human check',
   put_off: 'Put off',
   let_back_on: 'Let back on',
+  role_changed: 'Changed role',
   name_changed: 'Changed name',
   password_reset_sent: 'Password link sent',
   password_set: 'Set a password'

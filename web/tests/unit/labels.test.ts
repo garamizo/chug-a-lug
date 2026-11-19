@@ -62,6 +62,18 @@ describe('labels', () => {
       for (const v of stored) expect(map[v], `${field}=${v}`).toBeTruthy();
     }
   });
+  it('names the roles, the role window and the role_changed event', () => {
+    expect(labels).toMatchObject({ trainspotter: 'Trainspotter', roleWindow: 'Role' });
+    expect(copy).toMatchObject({
+      roleCrew: 'Crew', roleTrainspotter: 'Trainspotter', rolePutOff: 'Put off',
+      roleTrainspotterHint: 'Plans routes and follows along; no Tab, no Golden Spikes',
+      rolePutOffHint: "Can't sign in; hidden from the Crew Board. What they posted stays.",
+      trainspottersHeading: 'Trainspotters', putOffHeading: 'Put off'
+    });
+    for (const k of ['roleCrewHint', 'rolePutOffConfirm', 'roleSave', 'changeRole']) expect((copy as Record<string, string>)[k], k).toBeTruthy();
+    for (const k of ['putOff', 'letBackOn', 'personAboard', 'personPutOff']) expect(copy, k).not.toHaveProperty(k);
+    expect(accessEventLabels.role_changed).toBeTruthy();
+  });
   it('names the sign-in method and events the password migration adds', () => {
     const migration = readFileSync('../pocketbase/pb_migrations/1759000000_password_sign_in.js', 'utf8');
     const added = (field: string) => JSON.parse(new RegExp(`ADDED_${field.toUpperCase()} = (\\[[^\\]]*\\])`).exec(migration)![1].replace(/'/g, '"')) as string[];

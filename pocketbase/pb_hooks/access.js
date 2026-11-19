@@ -5,14 +5,13 @@ const isConductor = (e) => !!e.auth && e.auth.collection().name === 'users' && e
 // Role labels for the access log's `from → to` detail (spec 2026-11-19 "Data").
 const ROLE_LABELS = { crew: 'Crew', trainspotter: 'Trainspotter', put_off: 'Put off' }
 
-// POST /api/crawl/users/{id}/role, body { role }. `fixed` is the role of the old put-off and
-// let-back-on routes, which ignore the body (removed once the Manifest stops calling them).
-exports.setRole = function (e, fixed) {
+// POST /api/crawl/users/{id}/role, body { role }.
+exports.setRole = function (e) {
   const crew = require(`${__hooks}/crew.js`)
   if (!isConductor(e)) return e.json(403, { message: 'Only the Conductor can do that.' })
   const id = e.request.pathValue('id')
   if (id === e.auth.id) return e.json(400, { message: "You can't change your own role." })
-  const role = fixed || (e.requestInfo().body || {}).role
+  const role = (e.requestInfo().body || {}).role
   if (!Object.prototype.hasOwnProperty.call(ROLE_LABELS, role)) return e.json(400, { message: 'Pick Crew, Trainspotter or Put off.' })
   // Refetched inside the transaction: a concurrent sign-in or role change cannot be written back stale.
   let u = null, from = null, refusal = null

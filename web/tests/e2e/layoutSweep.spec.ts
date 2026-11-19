@@ -155,6 +155,7 @@ test('Conductor pages', async ({ page }) => {
     { name: 'locked-route editor', open: (p) => p.goto(`/plan/${ids.itineraryId}/edit`), ready: (p) => p.getByTestId('save-plan') },
     { name: 'station picker', open: (p) => p.goto(`/plan/${ids.itineraryId}/add`), ready: (p) => p.getByTestId('station-select') },
     { name: 'crew access', open: (p) => p.goto('/crew/access'), ready: (p) => p.getByTestId('manifest-person') },
+    { name: 'role window', open: async (p) => { await p.goto('/crew'); await p.getByTestId('crew-name-button').first().click(); }, ready: (p) => p.getByTestId('role-window') },
     { name: 'draft editor', open: async (p) => {
         await p.goto('/plan');
         await p.getByTestId('draft-title').fill(`Sweep Draft ${Date.now()}`);
