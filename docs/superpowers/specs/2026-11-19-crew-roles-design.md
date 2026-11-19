@@ -34,7 +34,7 @@ else: a put-off person still shows on the Crew Board and still counts for Spikes
 
 - **A. One `role` field on `users`, phones filter by role (chosen).** The server enforces the two
   hard rules (Put off cannot sign in; Trainspotter cannot log a drink). Board, Spikes, reel,
-  milestones and the Highball roster filter by role on the phone, which is where they are computed
+  and milestones filter by role on the phone, which is where they are computed
   today. Authors keep their names on old posts because user records stay readable.
 - B. Hide put-off users at the server (users list/view rule). Stricter, but every `expand: 'user'`
   of their comments, photos and messages would come back empty and render as "Crew" — against
@@ -157,9 +157,12 @@ only:
 
 **Highball (`ApprovalPanel`)**
 
-- Trainspotters may vote. "Waiting on" lists riders who have not voted; trainspotters and put-off
-  people are never waited on. The panel subscribes to `users` as well as `approval_votes`, so a role
-  change made elsewhere updates an open panel.
+- Votes are **for the Conductor's reference only**; nobody is expected to vote (user decision). The
+  tally's third row (`…`, everyone who has not voted, today `pending` in `ApprovalPanel.svelte`) is
+  **removed**, and with it the panel's `users` read. Go / No go names stay. Anyone signed in may
+  vote, Trainspotters included; put-off people cannot sign in, and their past votes stay listed.
+- `approvalIntro` loses "When the crew says go": e.g. "The Conductor opens the vote and locks the
+  route. Votes are a show of hands, not a gate." (exact copy in `labels.ts`).
 
 ### Labels and docs
 
@@ -189,7 +192,7 @@ Tests first, per repo convention.
   sign-in / refresh / reset refused as today; self role change through the records API refused;
   trainspotter proof photo refused, plain photo and chat allowed; `ensureConductor` with `role`.
 - Unit: `roleOf` (empty → crew); `ridersOnly` (unknown ids kept); Spikes / reel / milestones fed
-  filtered rows exclude a trainspotter and a put-off person; Highball pending list; `reelReady` false until the roster arrives, and a
+  filtered rows exclude a trainspotter and a put-off person; `reelReady` false until the roster arrives, and a
   roster read failure keeping the feed.
 - e2e: saving from the Manifest refreshes its status and log; Conductor opens the role window from the Crew Board and makes someone a Trainspotter (they
   move under the heading) and Put off (gone for others, dimmed for the Conductor); a trainspotter's
