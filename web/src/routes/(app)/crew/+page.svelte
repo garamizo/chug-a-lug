@@ -140,8 +140,9 @@
   </section>
 {/if}
 
+<!-- Keyed by person: a window retargeted to someone else starts from their role, not the last choice. -->
 {#if editing}
-  <RoleWindow person={editing} onclose={() => (editing = null)} onsaved={() => reloadNow?.()} />
+  {#key editing.id}<RoleWindow person={editing} onclose={() => (editing = null)} onsaved={() => reloadNow?.()} />{/key}
 {/if}
 
 <style>

@@ -128,6 +128,38 @@ test('the Conductor makes someone a Trainspotter from the Crew Board', async ({ 
   await expect(spotted.getByTestId('spike-laurel')).toHaveCount(0);
 });
 
+test('the role window is a modal: Cancel and Escape save nothing, and each person opens on their own role', async ({ page }) => {
+  const rider = await sessionFor('E2E Cancel Rider');
+  const spotter = await sessionFor('E2E Cancel Spotter');
+  await setRole(String(rider.record.id), 'crew');
+  await setRole(String(spotter.record.id), 'trainspotter');
+  await openBoard(page, 'E2E Cancel Conductor');
+  const window = page.getByTestId('role-window');
+  const riderRow = page.getByTestId('crew-row').filter({ hasText: 'E2E Cancel Rider' });
+  await riderRow.getByTestId('crew-name-button').click();
+  await expect(page.getByTestId('role-option-crew')).toBeChecked();
+  // Focus moved into the window.
+  await expect(window.locator(':focus')).toHaveCount(1);
+  await page.getByTestId('role-option-trainspotter').check();
+  await page.getByTestId('role-cancel').click();
+  await expect(window).toHaveCount(0);
+  const saved = await (await fetch(`${PB}/api/collections/users/records/${rider.record.id}`, { headers: { Authorization: await superuserToken() } })).json();
+  expect(saved.role).toBe('crew');
+  await expect(page.getByTestId('crew-trainspotters').getByTestId('crew-row').filter({ hasText: 'E2E Cancel Rider' })).toHaveCount(0);
+
+  // Another person opens on their own role, not on the choice just cancelled.
+  await page.getByTestId('crew-trainspotters').getByTestId('crew-row').filter({ hasText: 'E2E Cancel Spotter' }).getByTestId('crew-name-button').click();
+  await expect(window).toContainText('E2E Cancel Spotter');
+  await expect(page.getByTestId('role-option-trainspotter')).toBeChecked();
+  await page.getByTestId('role-option-put_off').check();
+  await page.keyboard.press('Escape');
+  await expect(window).toHaveCount(0);
+
+  await riderRow.getByTestId('crew-name-button').click();
+  await expect(window).toContainText('E2E Cancel Rider');
+  await expect(page.getByTestId('role-option-crew')).toBeChecked();
+});
+
 test('a put-off person is gone for the crew and dimmed for the Conductor', async ({ page, browser }) => {
   await sessionFor('E2E Putoff Rider');
   await openBoard(page, 'E2E Putoff Conductor');

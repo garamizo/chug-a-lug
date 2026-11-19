@@ -60,6 +60,7 @@ export const copy = {
   rolePutOffHint: "Can't sign in; hidden from the Crew Board. What they posted stays.",
   rolePutOffConfirm: 'Put them off? They are signed out everywhere at once.',
   roleSave: 'Save',
+  roleCancel: 'Cancel',
   trainspottersHeading: 'Trainspotters',
   putOffHeading: 'Put off',
   changeRole: 'Change role',

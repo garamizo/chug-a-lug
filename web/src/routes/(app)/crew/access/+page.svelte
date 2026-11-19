@@ -36,7 +36,8 @@
     <select bind:value={filter} data-testid="log-filter"><option value="">{copy.allEvents}</option>{#each [...new Set(data.log.map((r) => r.event))] as ev (ev)}<option value={ev}>{shown(accessEventLabels, ev)}</option>{/each}</select>
     {#each rows as r (r.id)}<div class="row log" data-testid="log-row"><small>{when(r.created)} · {shown(accessEventLabels, r.event)}{#if r.method} ({shown(signInMethodLabels, r.method)}){/if} · {r.name || r.user || r.email} · {r.ip} {r.country} {r.city}{#if r.actor} · {copy.byWhom} {r.actor}{/if}{#if r.detail} · {r.detail}{/if}</small></div>{/each}
   {/if}
-  {#if editing}<RoleWindow person={editing} onclose={() => (editing = null)} onsaved={() => void load()} />{/if}
+  <!-- Keyed by person: a window retargeted to someone else starts from their role, not the last choice. -->
+  {#if editing}{#key editing.id}<RoleWindow person={editing} onclose={() => (editing = null)} onsaved={() => void load()} />{/key}{/if}
 {/if}
 <style>
   .row { padding: 10px 0; border-bottom: 1px solid #2a2a2a; display: grid; gap: 4px; }
