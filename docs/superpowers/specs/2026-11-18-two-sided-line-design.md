@@ -29,7 +29,9 @@ scroll is half as long, and it looks better.
 
 - No change to stop data, `direction`, crawl ordering, `placeStops`, `insertionIndex`, planning,
   legs or permissions.
-- No change to the add screen (`/plan/[id]/add`); it keeps its own direction toggle.
+- No change to the add screen (`/plan/[id]/add`); it keeps its own direction toggle, and its station
+  picker (`Schematic.svelte`, which renders `LineMap` with the single `cell` snippet) keeps working
+  unchanged.
 - No new visual language: same cards (`StopRow`), legs, colours and header.
 
 ## Anti-goals
@@ -49,11 +51,21 @@ scroll is half as long, and it looks better.
 
 ## Design
 
-- `LineMap.svelte`: back to three columns per row (`left` cell, track, `right` cell) with `left` and
-  `right` snippets, a `panes` mode, `focusSide(side)`, and an `onside` callback, as in `703ca91^`.
+- `LineMap.svelte` has two layouts, chosen by which snippets the caller passes:
+  - **`cell`** (today's, kept for `Schematic`): track, then one cell to its right.
+  - **`left` + `right`** (restored from `703ca91^`): left cell, track, right cell, with a `panes`
+    mode, `focusSide(side)` and an `onside` callback.
   The `section` prop and the `-back-` test ids go away: `map-row-<id>` and `station-dot-<id>`, one per
   station. In `panes` mode on a wide viewport (media/container query), the panes fit side by side
   without overflow and no snapping applies.
+- **Pane width on a phone:** each pane is `(column − track) / 1.2`, so the focused pane, the line
+  and a fifth of the other pane fill the column (as in `703ca91^`). Minimum supported viewport:
+  320 px, where a pane is about 220 px and a card inside it about 204 px.
+- **Cards in a narrow pane:** `StopRow` today reserves up to 104 px right of the name for its
+  corner buttons (up, down, delete), so a photographed middle stop needs about 218 px before any
+  name text. `StopRow` becomes a size container: below about 260 px of card width, the corner
+  buttons sit in their own row above the head instead of beside it, and the head drops its
+  right padding. At full width (wide screen, or `/route`'s off-line list) the card is unchanged.
 - `ItineraryView.svelte`: one `LineMap` with `panes`; direction tabs above it (`side-left`,
   `side-right`) that reflect and set the focused side; each cell renders its stop cards
   (`placement.rows[i].left` / `.right`). The station name shows on the focused side on a phone, and
@@ -77,10 +89,21 @@ scroll is half as long, and it looks better.
   `side-right`, assert return stops in `map-row-<id>` with `data-side="right"`; the cheers-above-line
   check uses the line map's box.
 - `rehearsal.spec.ts`: the station dot id loses the outbound/return comment.
-- Layout sweep: the existing route view entries cover the line at phone width; add one for the
-  right pane in focus.
+- New e2e `twoSidedLine.spec.ts` at 320 px, on a draft with going and return stops (one return stop
+  a photographed middle stop at a shared station, so all three corner buttons show), editable:
+  - the focused pane's cards lie inside the line viewport's box; the other pane is clipped (peeks);
+  - the station dot of a station with stops on both sides sits between the two cards in its row;
+  - tab `side-right` switches focus (viewport `scrollLeft` moves, `aria-selected` follows);
+    scrolling the viewport by script updates the tab; focusing a card on the other side switches;
+  - a wheel/vertical scroll over the line scrolls the page (no scroll trap);
+  - tapping a dot with the right pane focused opens the add screen with `side=right`, and coming
+    back restores the right pane and the scroll position;
+  - at 1024 px both panes are fully visible and the viewport does not scroll horizontally.
+- Layout sweep: supplementary only (it scrolls each control into view, so it cannot prove the
+  peek). Its route fixture (`seedLockedCrawl`) has only going stops; add a return stop to that
+  fixture, or a new sweep entry on a route that has one, so the right pane is not empty.
 
 ## Left to the builder
 
-- The exact breakpoint for "both sides visible" and where station names sit in that mode.
+- The exact wide-screen breakpoint, the exact card-width threshold, and "both sides visible" and where station names sit in that mode.
 - Whether the tabs hide on a wide screen or stay as the "adding to" marker (default: stay).
