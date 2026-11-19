@@ -4,7 +4,7 @@
 routerAdd('GET', '/api/crawl/me', (e) => {
   const u = e.auth
   if (!u || u.collection().name !== 'users') return e.json(401, { message: 'Sign in first.' })
-  if (u.getBool('blocked')) return e.json(403, { message: 'Your seat was taken away. Ask the Conductor.' })
+  if (require(`${__hooks}/crew.js`).isPutOff(u)) return e.json(403, { message: 'Your seat was taken away. Ask the Conductor.' })
   const seen = u.getDateTime('last_seen')
   if (seen.isZero() || Date.now() / 1000 - seen.unix() > 600) {
     $app.db().newQuery('UPDATE users SET last_seen = {:t} WHERE id = {:id}').bind({ t: new Date().toISOString().replace('T', ' '), id: u.id }).execute()

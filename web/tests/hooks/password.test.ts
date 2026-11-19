@@ -9,7 +9,7 @@ const su = async () => ({ Authorization: await superuserToken(), 'content-type':
 const signIn = (identity: string, password: string) => postFrom(randomIp(), '/api/collections/users/auth-with-password', { identity, password });
 const requestReset = (email: string) => post('/api/collections/users/request-password-reset', { email });
 const confirm = (token: string, password: string) => post('/api/collections/users/confirm-password-reset', { token, password, passwordConfirm: password });
-const block = async (id: string) => fetch(`${PB}/api/collections/users/records/${id}`, { method: 'PATCH', headers: await su(), body: JSON.stringify({ blocked: true }) });
+const block = async (id: string) => fetch(`${PB}/api/collections/users/records/${id}`, { method: 'PATCH', headers: await su(), body: JSON.stringify({ role: 'put_off' }) });
 async function logRows(filter: string) {
   const q = new URLSearchParams({ filter, sort: '-created' });
   return (await (await fetch(`${PB}/api/collections/access_log/records?${q}`, { headers: await su() })).json()).items as any[];
@@ -132,7 +132,7 @@ describe('password reset (spec §3.2)', () => {
     const { token } = await resetLinkFor(m.email);
     const [confirmed] = await Promise.all([confirm(token, 'race-pass-one-1'), block(m.id)]);
     const user = await (await fetch(`${PB}/api/collections/users/records/${m.id}`, { headers: await su() })).json();
-    expect(user.blocked).toBe(true);
+    expect(user.role).toBe('put_off');
     expect((await get('/api/crawl/me', m.token)).status).toBe(401);
     // 403 if the confirmation landed first (the new password is set, the guard refuses the seat);
     // 400 if the put-off did (the link was refused, so the new password never existed).

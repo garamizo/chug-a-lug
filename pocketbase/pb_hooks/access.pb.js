@@ -13,7 +13,7 @@ onRecordAuthRequest((e) => {
 }, 'users')
 
 onRecordAuthRefreshRequest((e) => {
-  if (e.record.getBool('blocked')) return e.json(403, { message: 'Your seat was taken away. Ask the Conductor.' })
+  if (require(`${__hooks}/crew.js`).isPutOff(e.record)) return e.json(403, { message: 'Your seat was taken away. Ask the Conductor.' })
   const seen = e.record.getDateTime('last_seen')
   if (seen.isZero() || Date.now() / 1000 - seen.unix() > 600) {
     $app.db().newQuery('UPDATE users SET last_seen = {:t} WHERE id = {:id}').bind({ t: new Date().toISOString().replace('T', ' '), id: e.record.id }).execute()
@@ -37,13 +37,13 @@ onRecordAuthWithPasswordRequest((e) => {
 // Runs only for an address with a seat, after PocketBase's two-minute cooldown. A put-off seat, or
 // a fourth link in an hour, gets the same empty 204 as a sent link, and no mail.
 onRecordRequestPasswordResetRequest((e) => {
-  if (e.record.getBool('blocked')) return e.noContent(204)
+  if (require(`${__hooks}/crew.js`).isPutOff(e.record)) return e.noContent(204)
   if (!require(`${__hooks}/limits.js`).consume('reset:' + e.record.email().toLowerCase(), 3, 3600)) return e.noContent(204)
   e.next()
 }, 'users')
 
 onMailerRecordPasswordResetSend((e) => {
-  if (e.record.getBool('blocked')) return
+  if (require(`${__hooks}/crew.js`).isPutOff(e.record)) return
   e.next()
   require(`${__hooks}/crew.js`).logEvent($app, { event: 'password_reset_sent', method: 'password', user: e.record.id, email: e.record.email() })
 }, 'users')
@@ -60,7 +60,7 @@ onRecordConfirmPasswordResetRequest((e) => {
       e.app = tx
       const fresh = tx.findRecordById('users', e.record.id)
       if (fresh.tokenKey() !== e.record.tokenKey()) { refusal = [400, 'That link expired or was already used.']; return }
-      if (fresh.getBool('blocked')) { refusal = [403, 'Your seat was taken away. Ask the Conductor.']; return }
+      if (require(`${__hooks}/crew.js`).isPutOff(fresh)) { refusal = [403, 'Your seat was taken away. Ask the Conductor.']; return }
       // A reset changes the password and nothing else: every other field comes from the fresh row,
       // preferences included (share_position, home_station, left_early).
       for (const k of e.record.collection().fields.fieldNames()) if (k !== 'password' && k !== 'tokenKey') e.record.setRaw(k, fresh.getRaw(k))
@@ -79,7 +79,7 @@ cronAdd('crew_access_daily', '17 3 * * *', () => require(`${__hooks}/access.js`)
 
 // Names (spec §2.11): normalised and kept unique for every editor, the admin UI included.
 // PocketBase loads the record before this hook runs, so the save happens in a transaction against a
-// fresh read: every field the request does not name is taken from that read. A put-off (blocked,
+// fresh read: every field the request does not name is taken from that read. A put-off (role,
 // token key) or a rename committed meanwhile is therefore never written back stale (Codex C1).
 onRecordUpdateRequest((e) => {
   const body = e.requestInfo().body
@@ -92,8 +92,8 @@ onRecordUpdateRequest((e) => {
     app.runInTransaction((tx) => {
       e.app = tx
       const fresh = tx.findRecordById('users', e.record.id)
-      if (byCrew && fresh.getBool('blocked')) { refusal = [403, 'Your seat was taken away. Ask the Conductor.']; return }
-      for (const k of ['blocked', 'is_admin', 'email', 'emailVisibility', 'verified', 'last_seen']) if (!named(k)) e.record.set(k, fresh.get(k))
+      if (byCrew && require(`${__hooks}/crew.js`).isPutOff(fresh)) { refusal = [403, 'Your seat was taken away. Ask the Conductor.']; return }
+      for (const k of ['role', 'is_admin', 'email', 'emailVisibility', 'verified', 'last_seen']) if (!named(k)) e.record.set(k, fresh.get(k))
       // A password this request sets (a superuser in the admin UI) stands; otherwise the stored hash
       // does, so an edit loaded before a reset never writes the old password back (password spec §3.2).
       if (!named('password')) e.record.setRaw('password', fresh.getRaw('password'))
@@ -126,8 +126,9 @@ onRecordUpdateRequest((e) => {
 onRecordRequestEmailChangeRequest((e) => e.json(403, { message: 'Ask the Conductor to change your email.' }), 'users')
 onRecordConfirmEmailChangeRequest((e) => e.json(403, { message: 'Ask the Conductor to change your email.' }), 'users')
 
-// Blocking by any route (the admin UI included) ends every session.
+// Putting someone off by any route (the admin UI included) ends every session.
 onRecordUpdate((e) => {
-  if (e.record.getBool('blocked') && !e.record.original().getBool('blocked')) e.record.refreshTokenKey()
+  const crew = require(`${__hooks}/crew.js`)
+  if (crew.isPutOff(e.record) && !crew.isPutOff(e.record.original())) e.record.refreshTokenKey()
   e.next()
 }, 'users')

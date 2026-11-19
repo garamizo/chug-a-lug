@@ -66,6 +66,14 @@ exports.sendMail = function (app, m) {
   app.newMailClient().send(message)
 }
 
+// A user's role (spec 2026-11-19 "Data"): empty reads as crew, so sign-ups and fixtures need not set it.
+exports.roleOf = function (record) {
+  const r = record.getString('role')
+  return r === 'trainspotter' || r === 'put_off' ? r : 'crew'
+}
+
+exports.isPutOff = function (record) { return exports.roleOf(record) === 'put_off' }
+
 // The single Conductor path at serve time; the migration carries an identical copy (it must run
 // with an empty hooks directory). Idempotent: reuse by email, else mint under the first free name.
 exports.ensureConductor = function (app, raw) {
@@ -85,21 +93,21 @@ exports.ensureConductor = function (app, raw) {
     c.setEmail(email)
     c.setPassword($security.randomString(40))
   }
-  if (c.getBool('is_admin') && c.verified() && !c.getBool('blocked') && c.id) return c
+  if (c.getBool('is_admin') && c.verified() && !exports.isPutOff(c) && c.id) return c
   c.setVerified(true)
   c.set('is_admin', true)
-  c.set('blocked', false)
+  c.set('role', 'crew')
   app.save(c)
   return c
 }
 
 // Every way a session is issued passes here (spec §2.8).
 exports.signInGuard = function (app, record, method, info) {
-  if (record.getBool('blocked')) {
-    exports.logEvent(app, { event: 'sign_in_refused', method, user: record.id, email: record.email(), detail: 'blocked' }, info)
+  if (exports.isPutOff(record)) {
+    exports.logEvent(app, { event: 'sign_in_refused', method, user: record.id, email: record.email(), detail: 'put_off' }, info)
     return { status: 403, message: 'Your seat was taken away. Ask the Conductor.' }
   }
-  // One column by SQL: saving the loaded record could write back a stale blocked flag or token key.
+  // One column by SQL: saving the loaded record could write back a stale role or token key.
   app.db().newQuery('UPDATE users SET last_seen = {:t} WHERE id = {:id}').bind({ t: new Date().toISOString().replace('T', ' '), id: record.id }).execute()
   exports.logEvent(app, { event: 'signed_in', method, user: record.id, name: record.getString('name'), email: record.email() }, info)
   return null

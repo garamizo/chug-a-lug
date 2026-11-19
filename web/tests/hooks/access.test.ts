@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it } from 'vitest';
-import { ADMIN_LOGIN_PASSWORD, PB, clearMails, get, loginToken, mails, post, postFrom, randomIp, superuserToken, mailBarrier, waitFor } from './setup';
+import { ADMIN_LOGIN_PASSWORD, PB, clearMails, get, loginToken, mails, post, postFrom, randomIp, setRole, superuserToken, mailBarrier, waitFor } from './setup';
 
 const emailOf = (key: string) => `${Buffer.from(key).toString('hex')}@test.invalid`;
 const su = async () => ({ Authorization: await superuserToken(), 'content-type': 'application/json' });
@@ -62,16 +62,16 @@ describe('sign-in and the guards', () => {
     expect(methods.oauth2.providers).toEqual([]);
   });
 
-  it('a blocked member cannot sign in or refresh, and a refresh never logs a sign-in', async () => {
+  it('a put-off member cannot sign in or refresh, and a refresh never logs a sign-in', async () => {
     // A real password session: impersonation tokens (loginToken) are not refreshable at all.
-    const name = `Blocked ${Math.floor(Math.random() * 1e6)}`;
+    const name = `Putoff ${Math.floor(Math.random() * 1e6)}`;
     const { id } = await loginToken(name);
     const email = emailOf(name.toLowerCase());
     const { token } = await (await signIn(email)).json();
     expect((await post('/api/collections/users/auth-refresh', {}, token)).status).toBe(200);
     expect((await logRows(`user = "${id}" && event = "signed_in"`)).length).toBe(1); // the sign-in only
-    await fetch(`${PB}/api/collections/users/records/${id}`, { method: 'PATCH', headers: await su(), body: JSON.stringify({ blocked: true }) });
-    expect((await post('/api/collections/users/auth-refresh', {}, token)).status).toBe(401); // blocking now ends the session
+    await setRole(id, 'put_off');
+    expect((await post('/api/collections/users/auth-refresh', {}, token)).status).toBe(401); // putting off now ends the session
     expect((await signIn(email)).status).toBe(403);
   });
 
@@ -80,10 +80,10 @@ describe('sign-in and the guards', () => {
     const { id } = await loginToken(name);
     const email = emailOf(name.toLowerCase());
     await fetch(`${PB}/api/collections/users/records/${id}`, { method: 'PATCH', headers: await su(),
-      body: JSON.stringify({ password: 'recovery-password-1', passwordConfirm: 'recovery-password-1', blocked: true }) });
+      body: JSON.stringify({ password: 'recovery-password-1', passwordConfirm: 'recovery-password-1', role: 'put_off' }) });
     // Refusals are logged once per IP per 15 minutes, so this test brings its own address.
     expect((await postFrom(randomIp(), '/api/collections/users/auth-with-password', { identity: email, password: 'recovery-password-1' })).status).toBe(403);
-    expect((await logRows(`user = "${id}" && event = "sign_in_refused" && method = "password"`)).length).toBe(1);
+    expect((await logRows(`user = "${id}" && event = "sign_in_refused" && method = "password" && detail = "put_off"`)).length).toBe(1);
   });
 
   it('crew cannot change their own email through PocketBase\'s email-change flow', async () => {
@@ -108,7 +108,7 @@ describe('sign-in and the guards', () => {
       expect((await off).status).toBe(200);
       await Promise.all([...early, ...late]);
       const row = await (await fetch(`${PB}/api/collections/users/records/${rider.id}`, { headers: await su() })).json();
-      expect(row.blocked, `round ${round}`).toBe(true);
+      expect(row.role, `round ${round}`).toBe('put_off');
       expect((await get('/api/crawl/me', rider.token)).status, `round ${round}`).toBe(401);
       expect((await post('/api/collections/users/auth-refresh', {}, rider.token)).status, `round ${round}`).toBe(401);
     }
@@ -123,7 +123,7 @@ describe('sign-in and the guards', () => {
 
   it('users cannot change their own privileges, email or bookkeeping', async () => {
     const { id, token } = await loginToken(`Self ${Math.floor(Math.random() * 1e6)}`);
-    for (const body of [{ is_admin: true }, { blocked: true }, { email: 'x@test.invalid' }, { last_seen: '2020-01-01 00:00:00.000Z' }, { name_key: 'x' }]) {
+    for (const body of [{ is_admin: true }, { role: 'crew' }, { role: 'trainspotter' }, { email: 'x@test.invalid' }, { last_seen: '2020-01-01 00:00:00.000Z' }, { name_key: 'x' }]) {
       const res = await fetch(`${PB}/api/collections/users/records/${id}`, { method: 'PATCH', headers: { Authorization: token, 'content-type': 'application/json' }, body: JSON.stringify(body) });
       expect(res.status, JSON.stringify(body)).toBe(404);
     }
@@ -172,6 +172,16 @@ describe('put off, manifest and names (spec §2.9–2.11)', () => {
     expect(Array.isArray(m.log)).toBe(true);
   });
 
+  it('put-off people stay readable so their posts keep a name', async () => {
+    const gone = await loginToken(`Gone ${uid()}`);
+    const reader = await loginToken(`Reader ${uid()}`);
+    await setRole(gone.id, 'put_off');
+    const q = new URLSearchParams({ filter: `id = "${gone.id}"` });
+    const rows = (await (await fetch(`${PB}/api/collections/users/records?${q}`, { headers: { Authorization: reader.token } })).json()).items;
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({ id: gone.id, name: expect.stringMatching(/^Gone \d+$/), role: 'put_off' });
+  });
+
   it('a name change is normalised, unique and logged', async () => {
     const n = uid();
     const a = await loginToken(`Alpha ${n}`);
@@ -193,7 +203,7 @@ describe('put off, manifest and names (spec §2.9–2.11)', () => {
     expect((await logRows(`event = "name_changed" && user = "${a.id}"`)).length).toBe(1);
   });
 
-  it('a superuser rename is saved and logged without an actor; a superuser block ends sessions', async () => {
+  it('a superuser rename is saved and logged without an actor; a superuser put-off ends sessions', async () => {
     const n = uid();
     const u = await loginToken(`Sued ${n}`);
     const patch = async (body: object) => fetch(`${PB}/api/collections/users/records/${u.id}`, { method: 'PATCH', headers: await su(), body: JSON.stringify(body) });
@@ -205,7 +215,7 @@ describe('put off, manifest and names (spec §2.9–2.11)', () => {
     expect(rows[0].detail).toContain('by superuser');
     expect(rows[0].detail).toContain(`was Sued ${n}`);
     expect((await get('/api/crawl/me', u.token)).status).toBe(200);
-    expect((await patch({ blocked: true })).status).toBe(200);
+    expect((await patch({ role: 'put_off' })).status).toBe(200);
     expect((await get('/api/crawl/me', u.token)).status).toBe(401);
   });
 });

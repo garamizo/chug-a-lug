@@ -1,5 +1,6 @@
 // Conductor-only access controls (spec §2.9–2.10).
-const isConductor = (e) => !!e.auth && e.auth.collection().name === 'users' && e.auth.getBool('is_admin') && !e.auth.getBool('blocked')
+const isConductor = (e) => !!e.auth && e.auth.collection().name === 'users' && e.auth.getBool('is_admin') &&
+  !require(`${__hooks}/crew.js`).isPutOff(e.auth)
 
 exports.setBlocked = function (e, blocked) {
   const crew = require(`${__hooks}/crew.js`)
@@ -10,7 +11,7 @@ exports.setBlocked = function (e, blocked) {
   let u = null
   $app.runInTransaction((tx) => {
     try { u = tx.findRecordById('users', id) } catch (_) { return }
-    u.set('blocked', blocked)
+    u.set('role', blocked ? 'put_off' : 'crew')
     if (blocked) u.refreshTokenKey() // every token dies once saved; realtime auth drops too
     tx.save(u)
   })
@@ -20,13 +21,14 @@ exports.setBlocked = function (e, blocked) {
 }
 
 exports.manifest = function (e) {
+  const crew = require(`${__hooks}/crew.js`)
   if (!isConductor(e)) return e.json(403, { message: 'Only the Conductor can do that.' })
   const users = $app.findRecordsByFilter('users', "id != ''", 'name', 0, 0)
   const names = {}
   for (const u of users) names[u.id] = u.getString('name')
   const s = (r, k) => r.getString(k)
   return e.json(200, {
-    people: users.map((u) => ({ id: u.id, name: s(u, 'name'), email: u.email(), is_admin: u.getBool('is_admin'), blocked: u.getBool('blocked'),
+    people: users.map((u) => ({ id: u.id, name: s(u, 'name'), email: u.email(), is_admin: u.getBool('is_admin'), blocked: crew.isPutOff(u),
       last_seen: s(u, 'last_seen'), created: s(u, 'created') })),
     log: $app.findRecordsByFilter('access_log', "id != ''", '-created', 200, 0).map((r) => ({ id: r.id, created: s(r, 'created'), event: s(r, 'event'),
       method: s(r, 'method'), name: s(r, 'name'), email: s(r, 'email'), user: names[s(r, 'user')] || '', actor: names[s(r, 'actor')] || '',

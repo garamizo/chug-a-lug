@@ -23,6 +23,6 @@ onBootstrap((e) => {
 
   let users = null
   try { users = $app.findCollectionByNameOrId('users') } catch (_) { return }
-  if (!users.fields.getByName('blocked')) return
+  if (!users.fields.getByName('role')) return
   require(`${__hooks}/crew.js`).ensureConductor($app, env('CONDUCTOR_EMAIL'))
 })

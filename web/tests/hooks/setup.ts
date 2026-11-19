@@ -66,6 +66,13 @@ export async function loginToken(name: string, password: string = CREW_PASSWORD)
   return { token: (await impersonate.json()).token, id: user.id };
 }
 
+/** Sets a user's role as superuser (the records API refuses it to the user themselves). */
+export async function setRole(id: string, role: 'crew' | 'trainspotter' | 'put_off'): Promise<void> {
+  const res = await fetch(`${PB}/api/collections/users/records/${id}`, {
+    method: 'PATCH', headers: { 'content-type': 'application/json', Authorization: await superuserToken() }, body: JSON.stringify({ role }) });
+  if (!res.ok) throw new Error(`Set role failed: ${res.status} ${await res.text()}`);
+}
+
 export function get(path: string, token?: string) {
   return fetch(`${PB}${path}`, { headers: token ? { Authorization: token } : {} });
 }

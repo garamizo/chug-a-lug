@@ -2,7 +2,7 @@ import type { RecordModel } from 'pocketbase';
 
 export type UserRecord = RecordModel & {
   name: string; name_key: string; is_admin: boolean; share_position: boolean; home_station: string; left_early: boolean;
-  email?: string; blocked: boolean; last_seen: string;
+  email?: string; role?: string; last_seen: string;
 };
 
 export type ItineraryStatus = 'draft' | 'locked' | 'archived';
