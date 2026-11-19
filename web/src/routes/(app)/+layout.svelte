@@ -55,6 +55,8 @@
     ? { itinerary: liveDay.itinerary.id, date: liveDay.today, runId: clientClock.runId ?? null, user: userId } : null);
   // /live already shows the full ticket; the compact banner is for every *other* screen.
   const showBanner = $derived(!!here?.stop && !onLive && !quiet && !presenting);
+  // How much the banner adds under the top bar: a page's own sticky parts stick below both (--sticky-top).
+  let bannerHeight = $state(0);
   // Re-ask for trains the instant the leg we are counting down changes — a Conductor's correction
   // or a saved route change must not wait out the 30 s poll, since the whole app now reads this
   // same board. `here` is a fresh object every time anything about the route reloads (a save
@@ -106,7 +108,7 @@
   {#if showBanner}
     {@const b = liveDay.boarding}
     {@const h = liveDay.rideHome}
-    <a class="banner" href="/live" data-testid="banner">
+    <a class="banner" href="/live" data-testid="banner" bind:offsetHeight={bannerHeight}>
       <DepartureBoard compact
         station={b ? b.fromName : here?.stop?.station_name || here?.stop?.station_id || ''}
         stopName={here?.stop?.name ?? ''}
@@ -120,7 +122,7 @@
     <PinnedBulletin bulletin={liveDay.pinnedBulletin} onack={() => void ack(liveDay.pinnedBulletin!.id)} />
   {/if}
   {#if error}<p role="alert">{error}</p>{/if}
-  {@render children()}
+  <div class="page" style:--sticky-top="calc(var(--top-bar, 0px) + {showBanner ? bannerHeight : 0}px)">{@render children()}</div>
   <!-- The Tab opens from the tab bar, so a practice day's Live, Route and Crew Board need it too; the planner stays practice-free. -->
   {#if tabBar}<TabBar />{/if}
   <!-- Mounted with the session, not the bar: a drink still sending finishes wherever its person went. -->
@@ -134,5 +136,7 @@
 {/if}
 
 <style>
-  .banner { display: block; position: sticky; top: 64px; z-index: 9; text-decoration: none; color: inherit; }
+  .banner { display: block; position: sticky; top: var(--top-bar, 64px); z-index: 9; text-decoration: none; color: inherit; }
+  /* Only carries --sticky-top to the page: no box, so the page's sticky parts keep their own ranges. */
+  .page { display: contents; }
 </style>

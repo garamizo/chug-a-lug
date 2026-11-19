@@ -1,10 +1,30 @@
-import { test, expect } from '@playwright/test';
-import { clearRoutes, login, seedDraftRoute, settledOn, swipe } from './helpers';
+import { test, expect, type Page } from '@playwright/test';
+import { clearRoutes, login, seedDraftRoute, seedLockedCrawl, settledOn, swipe } from './helpers';
 
 // The route planner's line: going stops left of it, return stops right of it, one row per station.
 const ADMIN = process.env.ADMIN_PASSWORD ?? 'admin-test-password';
 const OWNER = 'E2E Two Sides';
 let ids: { itineraryId: string; stopIds: string[] };
+
+/** Scrolls well into the line and checks both direction tabs sit just under everything pinned above
+ * them (the top bar, and the event day's departure banner), uncovered, and still switch sides. */
+async function expectTabsStayOnTop(page: Page) {
+  const vp = (await page.getByTestId('line-viewport').boundingBox())!;
+  await page.evaluate((y) => window.scrollBy(0, y + 600), vp.y);
+  await expect.poll(() => page.evaluate(() => window.scrollY)).toBeGreaterThan(600);
+  const above = await page.evaluate(() => Math.max(...['header.top', '[data-testid="banner"]']
+    .map((q) => document.querySelector(q)?.getBoundingClientRect().bottom ?? 0)));
+  for (const side of ['left', 'right'] as const) {
+    const tab = (await page.getByTestId(`side-${side}`).boundingBox())!;
+    expect(tab.y).toBeGreaterThanOrEqual(above - 1);
+    expect(tab.y).toBeLessThan(above + 24);
+    // Nothing scrolling under it or pinned over it covers it: a tap there lands on the tab.
+    const hit = await page.evaluate(([x, y]) => document.elementFromPoint(x, y)?.closest('[data-testid^="side-"]')?.getAttribute('data-testid'), [tab.x + tab.width / 2, tab.y + tab.height / 2]);
+    expect(hit).toBe(`side-${side}`);
+  }
+  await page.getByTestId('side-right').click();
+  await settledOn(page, 'right');
+}
 
 test.beforeEach(async ({ page }) => {
   await page.route('**/api/places/nearby**', (r) => r.fulfill({ json: { venues: [] } }));
@@ -66,20 +86,7 @@ test.describe('on a phone', () => {
   });
 
   test('the direction tabs stay under the top bar while the line scrolls beneath them', async ({ page }) => {
-    const vp = (await page.getByTestId('line-viewport').boundingBox())!;
-    await page.evaluate((y) => window.scrollBy(0, y + 600), vp.y);
-    await expect.poll(() => page.evaluate(() => window.scrollY)).toBeGreaterThan(600);
-    const bar = await page.evaluate(() => document.querySelector('header.top')!.getBoundingClientRect().bottom);
-    for (const side of ['left', 'right'] as const) {
-      const tab = (await page.getByTestId(`side-${side}`).boundingBox())!;
-      expect(tab.y).toBeGreaterThanOrEqual(bar - 1);
-      expect(tab.y).toBeLessThan(bar + 24);
-      // Nothing scrolling under it covers it: a tap there lands on the tab.
-      const hit = await page.evaluate(([x, y]) => document.elementFromPoint(x, y)?.closest('[data-testid^="side-"]')?.getAttribute('data-testid'), [tab.x + tab.width / 2, tab.y + tab.height / 2]);
-      expect(hit).toBe(`side-${side}`);
-    }
-    await page.getByTestId('side-right').click();
-    await settledOn(page, 'right');
+    await expectTabsStayOnTop(page);
   });
 
   test('a tab, a drag or a card on the other side switches sides', async ({ page }) => {
@@ -240,4 +247,20 @@ test('the ride in under the going side reads left to right like the cards', asyn
   const card = (await page.getByTestId('stop-row-0').boundingBox())!;
   const text = await meta.evaluate((el) => { const r = document.createRange(); r.selectNodeContents(el); return r.getBoundingClientRect().x; });
   expect(Math.abs(text - card.x)).toBeLessThanOrEqual(4);
+});
+
+test.describe('on the event day', () => {
+  test.use({ viewport: { width: 320, height: 640 } });
+  test('the direction tabs stay under the departure banner too', async ({ page }) => {
+    // Live departures only: the line reads its stations from the real /api/metra/stations.
+    await page.route(/\/api\/metra\/(next|status|alerts)/, (r) => r.fulfill({ json: { mode: 'schedule_only', fetchedAt: null, trips: [], alerts: [] } }));
+    await clearRoutes();
+    await seedLockedCrawl({ ownerName: OWNER, eventDate: '2026-12-26', startTime: '12:00',
+      departAt: '2026-12-26T20:34:00Z', arriveAt: '2026-12-26T20:49:00Z' });
+    await page.clock.install({ time: new Date('2026-12-26T19:00:00Z') });
+    await page.goto('/route');
+    await expect(page.getByTestId('banner')).toBeVisible();
+    await expect(page.getByTestId('line-viewport')).toBeVisible();
+    await expectTabsStayOnTop(page);
+  });
 });

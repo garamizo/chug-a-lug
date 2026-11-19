@@ -110,15 +110,11 @@ export async function layoutViolations(page: Page, skip: LayoutRule[] = []): Pro
       const r = el.getBoundingClientRect();
       const x = Math.min(Math.max(r.left + r.width / 2, 0), vw - 1), y = Math.min(Math.max(r.top + r.height / 2, 0), vh - 1);
       if (r.width === 0 || r.height === 0) continue; // already reported as small-target
-      // A control on a snapping pane that only peeks in (the route line's other side): the snap pulls
-      // scrollIntoView back, so it is behind a swipe, not covered. A sweep state with that pane in
-      // focus checks it.
-      let snapper = el.parentElement;
-      while (snapper && !(getComputedStyle(snapper).scrollSnapType !== 'none' && snapper.scrollWidth > snapper.clientWidth)) snapper = snapper.parentElement;
-      if (snapper) {
-        const b = snapper.getBoundingClientRect();
-        if (r.left < b.left - 1 || r.right > b.right + 1) continue;
-      }
+      // A control on the route line's side that only peeks in: the snap pulls scrollIntoView back, so
+      // it is behind a swipe, not covered. The sweep state with that side in focus checks it; a
+      // control clipped on the focused side is still reported.
+      const side = el.closest('.cell.left, .cell.right'), focused = el.closest<HTMLElement>('[data-focused]')?.dataset.focused;
+      if (side && focused && !side.classList.contains(focused)) continue;
       const hit = document.elementFromPoint(x, y);
       const ok = !!hit && (hit === el || el.contains(hit) || (hit instanceof HTMLLabelElement && hit.control === el));
       if (!ok) out.push(['covered', `${describe(el)} is under ${hit ? describe(hit) : 'nothing'}`]);
