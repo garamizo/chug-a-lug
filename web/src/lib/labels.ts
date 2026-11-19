@@ -420,7 +420,6 @@ export const copy = {
   stationCUS: 'Union Station',
   inbound: 'Aurora → Chicago',
   outbound: 'Chicago → Aurora',
-  turnAround: 'Turn around',
   offLine: 'Off the BNSF line',
   direction: 'Direction',
   routeMovedOn: 'The Route changed while you were editing. Reload and make the change again.',

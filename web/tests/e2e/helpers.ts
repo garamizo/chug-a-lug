@@ -236,3 +236,61 @@ export async function inviteLink(seats = 3): Promise<string> {
   const u = new URL((await res.json()).url);
   return u.pathname + u.hash;
 }
+
+type DraftStop = { name: string; station_id: string; station_name: string; direction: 'out' | 'back'; photo?: boolean };
+const PNG = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==', 'base64');
+
+/** A draft owned by `ownerName` with these stops in this crawl order; `photo` gives the stop a place with a picture. */
+export async function seedDraftRoute(opts: { ownerName: string; eventDate: string; startTime: string; stops: DraftStop[] }): Promise<{ itineraryId: string; stopIds: string[] }> {
+  const token = await superuserToken();
+  const users = await fetch(`${PB}/api/collections/users/records?filter=${encodeURIComponent(`name_key="${opts.ownerName.toLowerCase()}"`)}`, { headers: { Authorization: token } });
+  const owner = (await users.json()).items[0];
+  if (!owner) throw new Error(`No user named ${opts.ownerName}; log in first so the identity exists.`);
+  const draft = await create('itineraries', {
+    title: `E2E Draft ${Math.random().toString(36).slice(2, 8)}`, event_date: opts.eventDate,
+    start_time: opts.startTime, vote_open: false, created_by: owner.id
+  }, token);
+  const stopIds: string[] = [];
+  for (const [i, s] of opts.stops.entries()) {
+    let place: string | undefined;
+    if (s.photo) {
+      const form = new FormData();
+      form.append('ref', `google:e2e-${Math.random().toString(36).slice(2, 10)}`);
+      form.append('source', 'google');
+      form.append('name', s.name);
+      form.append('photos', new Blob([PNG], { type: 'image/png' }), 'photo.png');
+      const res = await fetch(`${PB}/api/collections/places/records`, { method: 'POST', headers: { Authorization: token }, body: form });
+      if (!res.ok) throw new Error(`Create place failed: ${res.status} ${await res.text()}`);
+      place = (await res.json()).id;
+    }
+    const stop = await create('stops', {
+      itinerary: draft.id, order: i + 1, name: s.name, kind: 'bar', station_id: s.station_id, station_name: s.station_name,
+      dwell_min: 30, walk_min: 5, direction: s.direction, ...(place ? { place } : {})
+    }, token);
+    stopIds.push(stop.id);
+  }
+  return { itineraryId: draft.id, stopIds };
+}
+
+/** A real finger drag (Chromium touch events): Playwright has no swipe, and a wheel is not a touch. */
+export async function swipe(page: Page, from: { x: number; y: number }, to: { x: number; y: number }): Promise<void> {
+  const cdp = await page.context().newCDPSession(page);
+  const steps = 10;
+  await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: from.x, y: from.y }] });
+  for (let i = 1; i <= steps; i++) {
+    const x = from.x + ((to.x - from.x) * i) / steps, y = from.y + ((to.y - from.y) * i) / steps;
+    await cdp.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ x, y }] });
+  }
+  await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+  await cdp.detach();
+}
+
+/** Waits until the line's panes viewport is focused on `side` and has finished scrolling there. */
+export async function settledOn(page: Page, side: 'left' | 'right'): Promise<void> {
+  const vp = page.getByTestId('line-viewport');
+  await expect(vp).toHaveAttribute('data-focused', side);
+  await expect.poll(() => vp.evaluate((el, s) => {
+    const end = s === 'left' ? 0 : el.scrollWidth - el.clientWidth;
+    return Math.abs(el.scrollLeft - end) <= 1;
+  }, side)).toBe(true);
+}

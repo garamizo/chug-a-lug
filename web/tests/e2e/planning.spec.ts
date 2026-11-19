@@ -71,26 +71,26 @@ test('draft with real train times, layover change, card edits, votes, comments, 
   await expect(page.getByTestId('leg-0')).toContainText('BNSF');
   await expect(page.getByTestId('leg-0')).toContainText('2:05 PM');
   await expect(page.getByTestId('stop-row-1')).toContainText('2:32 PM');
-  // Both are going stops, each in its station's row of the outbound half.
+  // Both are going stops, left of the line in their station's row.
   await expect(page.getByTestId('map-row-NAPERVILLE').getByTestId('stop-row-0')).toHaveAttribute('data-side', 'left');
   await expect(page.getByTestId('map-row-LAGRANGE').getByTestId('stop-row-1')).toHaveAttribute('data-side', 'left');
 
-  // A circle tapped on the way-back half makes a return stop, slotted after the going stops.
-  await expect(page.getByTestId('section-back')).toBeVisible();
-  await page.getByTestId('station-dot-back-NAPERVILLE').click();
+  // A circle tapped with the return side in focus makes a return stop, slotted after the going stops.
+  await page.getByTestId('side-right').click();
+  await page.getByTestId('station-dot-NAPERVILLE').click();
   await expect(page).toHaveURL(/side=right$/);
   await expect(page.getByTestId('dir-back')).toHaveAttribute('aria-checked', 'true');
   await page.getByTestId('venue-node-2').click();
   await page.getByTestId('sheet-add').click();
-  await expect(page.getByTestId('map-row-back-NAPERVILLE').getByTestId('stop-row-2')).toHaveAttribute('data-side', 'right');
-  await expect(page.getByTestId('map-row-NAPERVILLE').getByTestId('stop-row-2')).toHaveCount(0);
+  await expect(page.getByTestId('map-row-NAPERVILLE').getByTestId('stop-row-2')).toHaveAttribute('data-side', 'right');
+  await expect(page.getByTestId('map-row-NAPERVILLE').locator('.cell.left').getByTestId('stop-row-2')).toHaveCount(0);
   await expect(page.getByTestId('stop-row-1')).toContainText('Test Tavern');
   // And a going stop added afterwards still lands among the going stops, before the return ones.
   await page.goto(`${draftUrl}/add?station=LAGRANGE&side=left`);
   await page.getByTestId('venue-p1').click();
   await page.getByTestId('sheet-add').click();
   await expect(page.getByTestId('map-row-LAGRANGE').getByTestId('stop-row-2')).toHaveAttribute('data-side', 'left');
-  await expect(page.getByTestId('map-row-back-NAPERVILLE').getByTestId('stop-row-3')).toHaveAttribute('data-side', 'right');
+  await expect(page.getByTestId('map-row-NAPERVILLE').getByTestId('stop-row-3')).toHaveAttribute('data-side', 'right');
   page.once('dialog', (d) => d.accept());
   await page.getByTestId('remove-2').click();
   await expect(page.getByTestId('stop-row-3')).toHaveCount(0);
@@ -142,7 +142,6 @@ test('draft with real train times, layover change, card edits, votes, comments, 
   await expect(page.locator('header.it')).toContainText('by E2E Skipper');
   await expect(page.locator('header.it')).toContainText('stops');
   await expect(page.getByTestId('station-dot-LAGRANGE')).toHaveCount(0);
-  await expect(page.getByTestId('station-dot-back-LAGRANGE')).toHaveCount(0);
   await expect(page.getByTestId('dwell-0')).toHaveCount(0);
   await expect(page.getByTestId('stop-row-0')).toContainText('1 h 56 min layover');
   await page.getByTestId('vote-up').click();
@@ -174,7 +173,6 @@ test('draft with real train times, layover change, card edits, votes, comments, 
   await expect(page.getByTestId('leg-0')).toContainText('2:05 PM');
   await expect(page.getByTestId('locked-on')).toBeVisible();
   await expect(page.getByTestId('station-dot-LAGRANGE')).toHaveCount(0);
-  await expect(page.getByTestId('station-dot-back-LAGRANGE')).toHaveCount(0);
   await expect(page.getByTestId('remove-0')).toHaveCount(0);
   await expect(page.getByTestId('dwell-0')).toHaveCount(0);
 });
@@ -297,9 +295,9 @@ test('another crew member can read and cheer a draft but not change it, even by 
   await other.goto(draftUrl);
   await expect(other.getByTestId('vote-up')).toBeVisible();
   // The cheers pills sit under the route's header, above the line map.
-  await expect(other.getByTestId('section-out')).toBeVisible();
+  await expect(other.getByTestId('line-viewport')).toBeVisible();
   const pills = await other.getByTestId('vote-up').boundingBox();
-  const line = await other.getByTestId('section-out').boundingBox();
+  const line = await other.getByTestId('line-viewport').boundingBox();
   expect(pills!.y).toBeLessThan(line!.y);
   await expect(other.getByTestId('edit-draft')).toHaveCount(0);
   await expect(other.getByTestId('delete-route')).toHaveCount(0);

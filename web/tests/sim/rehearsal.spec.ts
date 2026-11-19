@@ -105,7 +105,7 @@ test('three sessions rehearse clock, replay, route edits, Tab, Freight and recon
     page.on('dialog', dialog => dialog.accept());
     await page.getByTestId('remove-1').click();
     // The real staged venue picker, using its manual option and isolated disabled Places source.
-    // The outbound line's dot; the return leg's carries the same accessible name.
+    // The line's one dot per station; the focused side is the going side.
     await page.getByTestId('station-dot-LAGRANGE').click();
     await page.getByTestId('manual-name').fill('Rehearsal Added Venue');
     await page.getByTestId('manual-add').click();

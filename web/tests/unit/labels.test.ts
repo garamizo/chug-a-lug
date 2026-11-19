@@ -45,7 +45,7 @@ describe('labels', () => {
     }
   });
   it('has copy for the new board, chat box and delete flows', () => {
-    for (const k of ['ticketKicker', 'chipBoarding', 'chipCurrent', 'deleteRoute', 'deleteLockedConfirm', 'emojiTray', 'attachMedia', 'turnAround', 'statFinish']) {
+    for (const k of ['ticketKicker', 'chipBoarding', 'chipCurrent', 'deleteRoute', 'deleteLockedConfirm', 'emojiTray', 'attachMedia', 'statFinish']) {
       expect((copy as Record<string, string>)[k], k).toBeTruthy();
     }
   });
