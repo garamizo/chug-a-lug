@@ -36,7 +36,7 @@
 - Test: `web/tests/e2e/helpers.ts`, `liveUx.spec.ts` (~L44-49), `planning.spec.ts` (~L50), `chat.spec.ts`, `layoutSweep.spec.ts`
 
 **Interfaces:**
-- Produces: `SheetClose` props `{ label: string; onclick: () => void; testid: string }`. The parent must be a positioned box (`position: relative` on the dialog, or the Tab's `position: fixed`).
+- Produces: `SheetClose` props `{ label: string; onclick: () => void; testid: string }`. The parent must be a positioned box (the modal dialog's UA `position: fixed`, or the Tab's `position: fixed`).
 
 - [ ] **Step 1: Write the failing tests**
 
@@ -67,7 +67,7 @@ Expected: the new assertions FAIL (the X is inside the sheet and `stop-sheet-bod
 - `SheetClose.svelte`: a `div.x` holder (`position: absolute; top: -20px; right: 12px; z-index: 2`) holding `<IconButton icon="close" size={40} …>`. Use `.x :global(button)` to set `background: #181818; border-color: #3a3a3a; box-shadow: 0 2px 8px #0008`. Keep one style for all three sheets (the Tab's `#1b1b1b`/`#444` differ by too little to matter).
 - `TabSheet`: replace the `.close` div with `<SheetClose label={copy.closeTab} onclick={onclose} testid="tab-close" />` and drop the `.close` rule.
 - `StopSheet`/`VenueSheet`: inside `{#if stop}`/`{#if venue}`, put `<SheetClose …>` first, then wrap the rest in `<div class="body" data-testid="stop-sheet-body">` (`venue-sheet-body`).
-  - `.sheet` becomes `overflow: visible; position: relative; padding: 0; max-height: none`. It keeps its width, margins, border, radius, background, animation and backdrop.
+  - `.sheet` becomes `overflow: visible; padding: 0; max-height: none` (no `position`: see spec). It keeps its width, margins, border, radius, background, animation and backdrop.
   - `.body` gets the old padding (`8px 20px calc(20px + env(safe-area-inset-bottom))`), `max-height: 88dvh`, `overflow-y: auto`, `overscroll-behavior: contain` and `border-radius: 22px 22px 0 0`.
   - Delete the footer Close buttons. Update StopSheet's footer comment: Website sits on the right, Edit on the left. VenueSheet's footer keeps Add stop.
 

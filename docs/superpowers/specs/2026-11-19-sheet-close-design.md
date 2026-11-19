@@ -30,8 +30,10 @@ everywhere: a round X at the top right, raised so it straddles the sheet's top b
 - `StopSheet` and `VenueSheet` are native `<dialog>` elements, and the dialog itself scrolls
   (`overflow-y: auto`). A scroll box clips children that overflow its edge. The dialog therefore
   becomes `overflow: visible` (the UA stylesheet sets `overflow: auto` on a modal dialog, so this
-  has to be explicit), `padding: 0`, `position: relative` and `max-height: none` (which overrides
-  the UA cap). The inner `.body` owns the padding, `max-height: 88dvh`, `overflow-y: auto` and
+  has to be explicit), `padding: 0` and `max-height: none` (which overrides the UA cap). It keeps the
+  UA's `position: fixed`, which already anchors the absolute X; `position: relative` must not be
+  set, because on a top-layer dialog it computes to `absolute` and pins the sheet to the top of the
+  document, so a sheet opened from a scrolled page lands mid-screen (found in final review). The inner `.body` owns the padding, `max-height: 88dvh`, `overflow-y: auto` and
   `overscroll-behavior: contain`. `box-sizing: border-box` is global, so the body's padding counts
   inside its 88dvh, and the sheet's total height is 88dvh plus its 1px top border. The
   `html:has(dialog.sheet[open])` scroll lock stays.

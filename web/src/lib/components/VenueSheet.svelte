@@ -67,8 +67,10 @@
 </dialog>
 
 <style>
-  /* The dialog does not scroll or clip: its close X sits half above the top edge. `.body` scrolls. */
-  .sheet { position: relative; margin: auto 0 0; width: 100%; max-width: 760px; max-height: none; margin-inline: auto; padding: 0;
+  /* The dialog does not scroll or clip: its close X sits half above the top edge. `.body` scrolls.
+     No `position` here: the UA's `position: fixed` already anchors the X, and `relative` on a top-layer
+     dialog computes to `absolute`, pinning the sheet to the top of the document instead of the screen. */
+  .sheet { margin: auto 0 0; width: 100%; max-width: 760px; max-height: none; margin-inline: auto; padding: 0;
     border: 1px solid #3a3a3a; border-bottom: 0; border-radius: 22px 22px 0 0; background: #181818; color: #eee; overflow: visible; }
   .body { max-height: 88dvh; padding: 8px 20px calc(20px + env(safe-area-inset-bottom)); border-radius: 22px 22px 0 0;
     overflow-y: auto; overscroll-behavior: contain; }

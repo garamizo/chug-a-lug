@@ -1,5 +1,5 @@
 import { readFileSync } from 'node:fs';
-import { expect, type Page } from '@playwright/test';
+import { expect, type Locator, type Page } from '@playwright/test';
 import type { Role } from '../../src/lib/roles';
 
 export const PB = process.env.PB_URL ?? 'http://127.0.0.1:18093';
@@ -309,6 +309,31 @@ export async function settledOn(page: Page, side: 'left' | 'right'): Promise<voi
  * sheet's, and the half above the edge really is the X (not clipped, not covered). With `bodyId`, the
  * check repeats after the sheet's scroller has been forced to overflow and scrolled to its end.
  */
+/**
+ * Opens a sheet by tapping `target` from a page scrolled well down: the sheet still hugs the bottom of
+ * the viewport. A spacer makes even a short page scroll. The dialog must stay `position: fixed`:
+ * `relative` on a top-layer dialog computes to `absolute`, anchoring it to the document, not the screen.
+ * (Opening a sheet currently resets the page to the top, which would hide that, so it is checked directly.)
+ */
+export async function openSheetFromScrolledPage(page: Page, target: Locator, sheetId: string): Promise<void> {
+  await page.evaluate(() => {
+    const spacer = document.createElement('div');
+    spacer.id = 'e2e-scroll-spacer';
+    spacer.style.height = '3000px';
+    document.body.append(spacer);
+  });
+  await target.evaluate((el) => el.scrollIntoView({ block: 'start' }));
+  expect(await page.evaluate(() => window.scrollY)).toBeGreaterThan(0);
+  await target.click();
+  await expect(page.getByTestId(sheetId)).toBeVisible();
+  await page.evaluate(() => Promise.all(document.getAnimations().map((a) => a.finished.catch(() => undefined))));
+  const sheet = (await page.getByTestId(sheetId).boundingBox())!;
+  const viewport = page.viewportSize()!;
+  expect(Math.abs(sheet.y + sheet.height - viewport.height)).toBeLessThan(2);
+  await expect(page.getByTestId(sheetId)).toHaveCSS('position', 'fixed');
+  await page.evaluate(() => document.getElementById('e2e-scroll-spacer')?.remove());
+}
+
 export async function expectRaisedClose(page: Page, sheetId: string, closeId: string, bodyId?: string): Promise<void> {
   const check = async () => {
     const sheet = (await page.getByTestId(sheetId).boundingBox())!;
@@ -324,14 +349,20 @@ export async function expectRaisedClose(page: Page, sheetId: string, closeId: st
   };
   await check();
   if (!bodyId) return;
-  const scrolled = await page.getByTestId(bodyId).evaluate((el) => {
+  const body = page.getByTestId(bodyId);
+  await body.evaluate((el) => {
     const spacer = document.createElement('div');
     spacer.style.height = '2000px';
     el.append(spacer);
+  });
+  const pinned = (await page.getByTestId(closeId).boundingBox())!;
+  const scrolled = await body.evaluate((el) => {
     el.scrollTop = el.scrollHeight;
     return { overflows: el.scrollHeight > el.clientHeight, top: el.scrollTop };
   });
   expect(scrolled.overflows).toBe(true);
   expect(scrolled.top).toBeGreaterThan(0);
+  // Scrolling the body does not carry the X with it.
+  expect(await page.getByTestId(closeId).boundingBox()).toEqual(pinned);
   await check();
 }

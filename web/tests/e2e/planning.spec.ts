@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test';
-import { clearRoutes, expectRaisedClose, login, seedLockedCrawl, openHome } from './helpers';
+import { clearRoutes, expectRaisedClose, login, openSheetFromScrolledPage, seedLockedCrawl, openHome } from './helpers';
 import { copy } from '../../src/lib/labels';
 
 // Titles are unique: a Playwright retry must not collide with its own first attempt's draft.
@@ -46,8 +46,8 @@ test('draft with real train times, layover change, card edits, votes, comments, 
   await expect(page).toHaveURL(/\/add\?station=NAPERVILLE&side=left$/);
   await expect(page.getByTestId('dir-out')).toHaveAttribute('aria-checked', 'true');
   // Tapping a venue opens its sheet; closing it stays on the picker, and Add stop adds it.
-  await page.getByTestId('venue-node-2').click();
-  await expect(page.getByTestId('venue-sheet')).toBeVisible();
+  // Opened from a scrolled list, the sheet still sits on the bottom of the screen.
+  await openSheetFromScrolledPage(page, page.getByTestId('venue-node-2'), 'venue-sheet');
   await expect(page.getByTestId('venue-sheet')).toContainText('Naperville Wine Bar');
   await expectRaisedClose(page, 'venue-sheet', 'venue-sheet-close', 'venue-sheet-body');
   await page.getByTestId('venue-sheet-close').click();

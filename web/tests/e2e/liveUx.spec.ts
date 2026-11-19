@@ -1,5 +1,5 @@
 import { expect, test, type Locator, type Page } from '@playwright/test';
-import { clearRoutes, expectRaisedClose, login, seedLockedCrawl, openTab, swipe, tapDrink } from './helpers';
+import { clearRoutes, expectRaisedClose, login, openSheetFromScrolledPage, seedLockedCrawl, openTab, swipe, tapDrink } from './helpers';
 import { copy } from '../../src/lib/labels';
 
 const ADMIN = process.env.ADMIN_PASSWORD ?? 'admin-test-password';
@@ -60,8 +60,8 @@ test('the route strip shows where the crew is; a stop, tapped or shared, opens i
   await expect(page).toHaveURL(/\/live$/);
   await expect(page.getByTestId('departure-board')).toBeVisible();
 
-  // The strip opens any stop, and a shared stop link opens the sheet; closing it stays on Live.
-  await page.getByTestId('strip-stop-1').click();
+  // The strip opens any stop, even from a scrolled Live, and a shared stop link opens the sheet; closing it stays on Live.
+  await openSheetFromScrolledPage(page, page.getByTestId('strip-stop-1'), 'stop-sheet');
   await expect(page.getByTestId('sheet-name')).toHaveText('Berwyn Beer Hall');
   await page.goto(`/live?stop=${ids.secondStopId}`);
   await expect(page.getByTestId('sheet-name')).toHaveText('Berwyn Beer Hall');
