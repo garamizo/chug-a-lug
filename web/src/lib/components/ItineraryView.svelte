@@ -231,11 +231,11 @@
     onpick={editable ? (s) => { rememberScroll(); actions.add(s.id, focused); } : undefined}
     pickLabel={(s) => `${copy.addAt} ${stationLabel(s)}`}>
     {#snippet left(station, i)}
-      <div class="rowhead">{@render label(station, i, 'left')}</div>
+      <div class="rowhead left">{@render label(station, i, 'left')}</div>
       {#each placement.rows[i].left as k (sorted[k].id)}{@render card(k)}{/each}
     {/snippet}
     {#snippet right(station, i)}
-      <div class="rowhead">{@render label(station, i, 'right')}</div>
+      <div class="rowhead right">{@render label(station, i, 'right')}</div>
       {#each placement.rows[i].right as k (sorted[k].id)}{@render card(k)}{/each}
     {/snippet}
   </LineMap>
@@ -277,6 +277,8 @@
   /* The station name sits at circle height beside the line; cards start below it on both sides.
      Both names are always there (the row keeps its height); only the focused side's shows. */
   .rowhead { height: 36px; }
+  /* The going side's name hugs the line; everything under it reads left to right. */
+  .rowhead.left { text-align: right; }
   .name { display: inline-block; padding: 14px 6px 0; font-size: 13px; color: #888; line-height: 1.3; white-space: nowrap; }
   :global([data-focused='left']) .name.right, :global([data-focused='right']) .name.left { visibility: hidden; }
   /* Both sides in full (LineMap's wide container): the name sits once, left of the line. */

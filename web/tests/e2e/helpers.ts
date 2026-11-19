@@ -241,14 +241,15 @@ type DraftStop = { name: string; station_id: string; station_name: string; direc
 const PNG = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==', 'base64');
 
 /** A draft owned by `ownerName` with these stops in this crawl order; `photo` gives the stop a place with a picture. */
-export async function seedDraftRoute(opts: { ownerName: string; eventDate: string; startTime: string; stops: DraftStop[] }): Promise<{ itineraryId: string; stopIds: string[] }> {
+export async function seedDraftRoute(opts: { ownerName: string; eventDate: string; startTime: string; stops: DraftStop[]; startStation?: { id: string; name: string } }): Promise<{ itineraryId: string; stopIds: string[] }> {
   const token = await superuserToken();
   const users = await fetch(`${PB}/api/collections/users/records?filter=${encodeURIComponent(`name_key="${opts.ownerName.toLowerCase()}"`)}`, { headers: { Authorization: token } });
   const owner = (await users.json()).items[0];
   if (!owner) throw new Error(`No user named ${opts.ownerName}; log in first so the identity exists.`);
   const draft = await create('itineraries', {
     title: `E2E Draft ${Math.random().toString(36).slice(2, 8)}`, event_date: opts.eventDate,
-    start_time: opts.startTime, vote_open: false, created_by: owner.id
+    start_time: opts.startTime, vote_open: false, created_by: owner.id,
+    ...(opts.startStation ? { start_station: opts.startStation.id, start_station_name: opts.startStation.name } : {})
   }, token);
   const stopIds: string[] = [];
   for (const [i, s] of opts.stops.entries()) {

@@ -130,6 +130,41 @@ test.describe('on a phone', () => {
     await expect(page.getByTestId('side-right')).toHaveAttribute('aria-selected', 'true');
   });
 
+  test('tapping a card that peeks in switches to its side instead of opening it', async ({ page }) => {
+    await settledOn(page, 'left');
+    const url = page.url();
+    // Bring the card's row to mid-screen by scrolling the page only (scrollIntoView would also slide the panes).
+    const row = (await page.getByTestId('stop-link-2').boundingBox())!;
+    await page.evaluate((y) => window.scrollBy(0, y - 300), row.y);
+    const vp = (await page.getByTestId('line-viewport').boundingBox())!;
+    const link = (await page.getByTestId('stop-link-2').boundingBox())!;
+    // The visible sliver of the return card, right of the line.
+    await page.touchscreen.tap(Math.min(link.x + 12, vp.x + vp.width - 4), link.y + link.height / 2);
+    await settledOn(page, 'right');
+    expect(page.url()).toBe(url);
+  });
+
+  test('a drag that interrupts a tab switch leaves the side it lands on', async ({ page }) => {
+    // The tab starts a smooth scroll right; one frame later the pane is pulled back to the left,
+    // as a finger would, before the smooth scroll lands.
+    await page.getByTestId('line-viewport').evaluate((el) => {
+      (document.querySelector('[data-testid="side-right"]') as HTMLButtonElement).click();
+      requestAnimationFrame(() => el.scrollTo({ left: 0, behavior: 'instant' }));
+    });
+    await page.waitForTimeout(1200);
+    await settledOn(page, 'left');
+    await expect(page.getByTestId('side-left')).toHaveAttribute('aria-selected', 'true');
+  });
+
+  test('turning a wide screen into a phone keeps the chosen side on screen', async ({ page }) => {
+    await page.setViewportSize({ width: 1024, height: 800 });
+    await page.getByTestId('side-right').click();
+    await expect(page.getByTestId('side-right')).toHaveAttribute('aria-selected', 'true');
+    await page.setViewportSize({ width: 320, height: 640 });
+    await settledOn(page, 'right');
+    await expect(page.getByTestId('station-label-NAPERVILLE-right')).toBeVisible();
+  });
+
   test('a mouse wheel over the line scrolls the page', async ({ page }) => {
     const box = (await page.getByTestId('line-viewport').boundingBox())!;
     await page.mouse.move(box.x + box.width / 2, box.y + 40);
@@ -165,4 +200,17 @@ test.describe('on a wide screen', () => {
     await page.getByTestId('station-dot-LAGRANGE').click();
     await expect(page).toHaveURL(/side=right/);
   });
+});
+
+test('the ride in under the going side reads left to right like the cards', async ({ page }) => {
+  await clearRoutes();
+  const route = await seedDraftRoute({ ownerName: OWNER, eventDate: '2026-12-26', startTime: '12:00', startStation: { id: 'AURORA', name: 'Aurora' }, stops: [
+    { name: 'Going Naperville', station_id: 'NAPERVILLE', station_name: 'Naperville', direction: 'out' }
+  ] });
+  await page.goto(`/plan/${route.itineraryId}/edit`);
+  const meta = page.getByTestId('opening-leg').locator('.meta');
+  await expect(meta).toBeVisible();
+  const card = (await page.getByTestId('stop-row-0').boundingBox())!;
+  const text = await meta.evaluate((el) => { const r = document.createRange(); r.selectNodeContents(el); return r.getBoundingClientRect().x; });
+  expect(Math.abs(text - card.x)).toBeLessThanOrEqual(4);
 });

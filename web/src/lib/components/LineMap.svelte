@@ -28,6 +28,9 @@
   let pendingTimer: ReturnType<typeof setTimeout> | undefined;
 
   const endOf = (el: HTMLElement, s: Side) => (s === 'left' ? 0 : el.scrollWidth - el.clientWidth);
+  const scrollable = (el: HTMLElement) => el.scrollWidth > el.clientWidth;
+  /** The side the viewport actually shows. Both fit (a wide screen): whatever was chosen stands. */
+  const shown = (el: HTMLElement): Side | null => (scrollable(el) ? (el.scrollLeft < (el.scrollWidth - el.clientWidth) / 2 ? 'left' : 'right') : null);
 
   function settle(next: Side) {
     if (next === side) return;
@@ -39,11 +42,72 @@
   export function focusSide(next: Side, behavior: ScrollBehavior = 'smooth') {
     settle(next);
     const el = viewport;
-    if (!el || el.scrollWidth <= el.clientWidth || Math.abs(el.scrollLeft - endOf(el, next)) <= 1) return;
+    if (!el || !scrollable(el) || Math.abs(el.scrollLeft - endOf(el, next)) <= 1) return;
     pending = next;
     clearTimeout(pendingTimer);
-    pendingTimer = setTimeout(() => (pending = null), 1000);
+    // A smooth scroll something cut short never lands: after a moment, believe the position.
+    pendingTimer = setTimeout(() => { pending = null; reconcile(); }, 1000);
     el.scrollTo({ left: endOf(el, next), behavior });
+  }
+
+  function reconcile() {
+    const s = viewport && shown(viewport);
+    if (s) settle(s);
+  }
+  // A finger or wheel overrides a scroll this component started.
+  function userInput() {
+    if (pending) { pending = null; clearTimeout(pendingTimer); }
+  }
+
+  // A wide screen turned into a phone (rotation, a narrower window): the panes appear with the
+  // going side showing, so bring the chosen side back on screen.
+  $effect(() => {
+    const el = viewport;
+    if (!el || !panes) return;
+    const ro = new ResizeObserver(() => {
+      if (scrollable(el) && !pending && Math.abs(el.scrollLeft - endOf(el, side)) > 1) {
+        pending = side;
+        el.scrollTo({ left: endOf(el, side), behavior: 'instant' });
+        pending = null;
+      }
+    });
+    ro.observe(el);
+    return () => ro.disconnect();
+  });
+
+  // A tap on the side that only peeks in switches to it; it must not open the card under the finger.
+  // The side is read at pointerdown because the tap's focus (focusin below) switches before click.
+  let downSide: Side | null = null;
+  function onpointerdown() {
+    userInput();
+    downSide = viewport && scrollable(viewport) ? side : null;
+  }
+  // These only watch the viewport's input (they are not controls of their own), so they are plain
+  // listeners: passive where they never cancel, capture for the click they may swallow.
+  $effect(() => {
+    const el = viewport;
+    if (!el) return;
+    el.addEventListener('pointerdown', onpointerdown, { passive: true });
+    el.addEventListener('touchstart', userInput, { passive: true });
+    el.addEventListener('wheel', userInput, { passive: true });
+    el.addEventListener('click', onclickcapture, { capture: true });
+    return () => {
+      el.removeEventListener('pointerdown', onpointerdown);
+      el.removeEventListener('touchstart', userInput);
+      el.removeEventListener('wheel', userInput);
+      el.removeEventListener('click', onclickcapture, { capture: true });
+    };
+  });
+  function onclickcapture(event: MouseEvent) {
+    const was = downSide;
+    downSide = null;
+    if (!panes || !was) return;
+    const c = (event.target as HTMLElement).closest('.cell');
+    const cellSide: Side | null = c?.classList.contains('left') ? 'left' : c?.classList.contains('right') ? 'right' : null;
+    if (!cellSide || cellSide === was) return;
+    event.preventDefault();
+    event.stopPropagation();
+    focusSide(cellSide);
   }
 
   // Focusing (or tapping) anything on the other side brings that side in.
@@ -59,7 +123,7 @@
       if (Math.abs(el.scrollLeft - endOf(el, pending)) <= 1) { pending = null; clearTimeout(pendingTimer); }
       return;
     }
-    settle(el.scrollLeft < (el.scrollWidth - el.clientWidth) / 2 ? 'left' : 'right');
+    reconcile();
   }
 </script>
 
@@ -124,7 +188,6 @@
   .plus.on::before, .plus.on::after { background: #fff; }
   .pick:hover .dot { background: #ffe9b3; }
   .cell { min-width: 0; padding-bottom: 8px; }
-  .cell.left { text-align: right; }
 
   /* Two panes: each side is (viewport - track) / 1.2 wide, so the focused side, the line and a
      fifth of the other side fill the viewport exactly. Only sideways overscroll is contained, so a
