@@ -270,6 +270,11 @@
   .rowhead { height: 36px; }
   .name { display: inline-block; padding: 14px 6px 0; font-size: 13px; color: #888; line-height: 1.3; white-space: nowrap; }
   :global([data-focused='left']) .name.right, :global([data-focused='right']) .name.left { visibility: hidden; }
+  /* Both sides in full (LineMap's wide container): the name sits once, left of the line. */
+  @container (min-width: 640px) {
+    :global([data-focused]) .name.left { visibility: visible; }
+    :global([data-focused]) .name.right { visibility: hidden; }
+  }
   .name.terminal { font-size: 15px; font-weight: 800; color: #eee; }
   .name.off { color: #666; }
   .name small { font-size: 11px; }

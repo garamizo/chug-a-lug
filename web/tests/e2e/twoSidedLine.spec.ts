@@ -108,11 +108,48 @@ test.describe('on a phone', () => {
     }
   });
 
+  test('a read-only route still has both tabs and no station buttons', async ({ page }) => {
+    await page.goto(`/plan/${ids.itineraryId}`);
+    await expect(page.getByTestId('stop-row-4')).toBeAttached();
+    await expect(page.getByTestId('side-right')).toBeVisible();
+    await expect(page.locator('[data-testid^="station-dot-"]')).toHaveCount(0);
+    await page.getByTestId('side-right').click();
+    await settledOn(page, 'right');
+  });
+
   test('a mouse wheel over the line scrolls the page', async ({ page }) => {
     const box = (await page.getByTestId('line-viewport').boundingBox())!;
     await page.mouse.move(box.x + box.width / 2, box.y + 40);
     const before = await page.evaluate(() => window.scrollY);
     await page.mouse.wheel(0, 400);
     await expect.poll(() => page.evaluate(() => window.scrollY)).toBeGreaterThan(before);
+  });
+});
+
+test.describe('on a wide screen', () => {
+  test.use({ viewport: { width: 1024, height: 800 } });
+  test.beforeEach(async ({ page }) => {
+    await page.goto(`/plan/${ids.itineraryId}/edit`);
+    await expect(page.getByTestId('stop-row-4')).toBeAttached();
+  });
+
+  test('a wide screen shows both sides in full and nothing scrolls sideways', async ({ page }) => {
+    const vp = page.getByTestId('line-viewport');
+    expect(await vp.evaluate((el) => el.scrollWidth - el.clientWidth)).toBeLessThanOrEqual(0);
+    const box = (await vp.boundingBox())!;
+    for (const i of [0, 2]) {
+      const c = (await page.getByTestId(`stop-row-${i}`).boundingBox())!;
+      expect(c.x).toBeGreaterThanOrEqual(box.x - 1);
+      expect(c.x + c.width).toBeLessThanOrEqual(box.x + box.width + 1);
+    }
+  });
+
+  test('on a wide screen the tab still picks the side a station tap adds to', async ({ page }) => {
+    await page.getByTestId('side-right').click();
+    await expect(page.getByTestId('side-right')).toHaveAttribute('aria-selected', 'true');
+    await expect(page.getByTestId('station-label-LAGRANGE-left')).toBeVisible();
+    await expect(page.getByTestId('station-label-LAGRANGE-right')).toBeHidden();
+    await page.getByTestId('station-dot-LAGRANGE').click();
+    await expect(page).toHaveURL(/side=right/);
   });
 });

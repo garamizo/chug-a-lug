@@ -102,7 +102,8 @@
 </div>
 
 <style>
-  .linemap { --track: 36px; --dot-y: 24px; }
+  /* A size container, so the panes know whether both sides fit (a wide screen) or not (a phone). */
+  .linemap { --track: 36px; --dot-y: 24px; container-type: inline-size; }
   .row { display: grid; grid-template-columns: var(--track) minmax(0, 1fr); column-gap: 10px; min-height: 48px; }
   .sided .row { grid-template-columns: minmax(0, 1fr) var(--track) minmax(0, 1fr); column-gap: 8px; }
   .track { position: relative; }
@@ -135,4 +136,9 @@
   .panes .cell { padding: 0 8px 8px; }
   .panes .cell.left { scroll-snap-align: start; }
   .panes .cell.right { scroll-snap-align: end; }
+  /* Room for both sides in full: no panes to drag between. */
+  @container (min-width: 640px) {
+    .panes { scroll-snap-type: none; }
+    .panes .map { width: auto; }
+  }
 </style>
