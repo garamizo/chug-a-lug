@@ -26,7 +26,8 @@
     uploadError?: string;
   } = $props();
   let sendError = $state(''), shown = $state(40);
-  const marks = $derived(milestones(liveDay.feed.drinks, liveDay.feed.media, liveDay.stops, liveDay.today));
+  // Milestones count riders only; the thread itself shows everyone.
+  const marks = $derived(milestones(liveDay.riderFeed.drinks, liveDay.riderFeed.media, liveDay.stops, liveDay.today));
   const golden = $derived(spikeEntries(liveDay.spikeEvents));
   const all = $derived(chatEntries(liveDay.feed.drinks, liveDay.bulletins, { messages: liveDay.feed.messages, media: liveDay.feed.media, milestones: [...marks, ...golden] }));
   // Newest first, under the chat box: what just happened is the first thing anyone reads.

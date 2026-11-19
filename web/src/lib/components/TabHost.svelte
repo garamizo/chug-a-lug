@@ -230,7 +230,7 @@
     <TabSheet onclose={() => (ui.tabOpen = false)}>
       <!-- Counts read saved rows only. Undo my last one stays hidden while a photo is sending, so it is
            never mistaken for undoing that tap: the drink it would remove is an older one. -->
-      <TabRow entries={liveDay.feed.drinks} stopId={tabStop?.id ?? null} userId={me} total={dayTotal} {clinking}
+      <TabRow entries={liveDay.riderFeed.drinks} stopId={tabStop?.id ?? null} userId={me} total={dayTotal} {clinking}
         sending={sending.map((s) => s.kind)} showUndoLast={!toast && !sending.length}
         ontap={tap} onundo={(entry) => void undoDrink(entry)} />
       {#if error}<p role="alert">{error}</p>{/if}

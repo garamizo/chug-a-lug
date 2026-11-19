@@ -19,6 +19,9 @@ vi.mock('$lib/pb', () => ({
 vi.mock('$lib/live/route', () => ({ resolveCurrentRoute: mocks.resolve }));
 vi.mock('$lib/live/feed', () => ({ fetchStatus: async () => ({ mode: 'schedule_only' }), fetchDay: mocks.fetchDay, fetchNext: mocks.fetchNext, fetchAlerts: mocks.fetchAlerts }));
 const { LiveDay } = await import('$lib/live/day.svelte');
+const { milestones } = await import('$lib/live/milestones');
+const { tally } = await import('$lib/live/tab');
+const { reactionSummary } = await import('$lib/live/chat');
 const { clientClock } = await import('$lib/sim/clock.svelte');
 
 beforeEach(() => {
@@ -121,14 +124,12 @@ describe('live feed', () => {
     const day = new LiveDay();
     day.itinerary = { id: 'it', event_date: '2026-12-26', start_time: '12:00' } as Itinerary;
     const rows: Record<string, unknown[]> = {
-      drinks: [{ id: 'd1', stop: 'a' }, { id: 'd2', stop: 'b' }],
+      drink_entries: [{ id: 'd1', stop: 'a' }, { id: 'd2', stop: 'b' }],
       media: [{ id: 'm1', stop: 'a', created: '1' }, { id: 'm2', stop: 'a', created: '2' }],
-      messages: [{ id: 'c1' }], reactions: [{ id: 'r1' }]
+      chat_messages: [{ id: 'c1' }], reactions: [{ id: 'r1' }], users: [{ id: 'u1', name: 'Ann', role: '' }]
     };
-    const order = ['drinks', 'media', 'messages', 'reactions'];
-    let call = 0;
     const opts: unknown[] = [];
-    mocks.getFullList.mockImplementation(async (o: unknown) => { opts.push(o); return rows[order[call++]]; });
+    mocks.getFullList.mockImplementation(async (o: unknown) => { opts.push(o); return rows[mocks.fullLists.at(-1)!]; });
     Object.defineProperty(day, 'here', { get: () => ({ stop: { id: 'a' } }) });
     await day.loadFeed();
     expect(mocks.filter.mock.calls.map(c => c[0])).toEqual(expect.arrayContaining([
@@ -137,8 +138,12 @@ describe('live feed', () => {
       '(itinerary = {:id} || stop.itinerary = {:id}) && at >= {:start} && at < {:end}'
     ]));
     // A stale Workbox NetworkFirst read must never undo a confirmed Tab tap or clear feedError.
-    expect(opts).toHaveLength(4);
+    // The roster is read in the same round: who counts as a rider.
+    expect([...mocks.fullLists].sort()).toEqual(['chat_messages', 'drink_entries', 'media', 'reactions', 'users']);
+    expect(opts).toHaveLength(5);
     for (const o of opts) expect(o).toMatchObject({ cache: 'no-store' });
+    expect(opts[mocks.fullLists.indexOf('users')]).toMatchObject({ fields: 'id,name,role,is_admin' });
+    expect(day.roster.map((u) => u.id)).toEqual(['u1']);
     expect(day.feed.messages).toHaveLength(1);
     expect(day.drinks.map(d => d.id)).toEqual(['d1']);
     expect(day.media.map(m => m.id)).toEqual(['m2', 'm1']);
@@ -689,12 +694,12 @@ describe('the run home', () => {
 
   describe('reelReady: the reel is built from a read that started after Closing Time', () => {
     const at = (day: ReturnType<typeof homeDay>, iso: string) => { day.realNow = new Date(iso); day.syncPlan(); return day; };
-    /** Holds each `loadFeed` (four lists asked together) until the test lets it answer or fail. */
+    /** Holds each `loadFeed` (four lists and the roster asked together) until the test lets it answer or fail. */
     function heldReads() {
       const reads: { ok: () => void; fail: () => void; promise: Promise<unknown[]> }[] = [];
       let calls = 0;
       mocks.getFullList.mockImplementation(() => {
-        const n = Math.floor(calls++ / 4);
+        const n = Math.floor(calls++ / 5);
         while (reads.length <= n) {
           let ok!: () => void, fail!: () => void;
           const promise = new Promise<unknown[]>((resolve, reject) => { ok = () => resolve([]); fail = () => reject(new Error('offline')); });
@@ -876,6 +881,120 @@ describe('the run home', () => {
         expect(day.closedAt).toBe(trainSeg.arr);
         expect(day.reelReady).toBe(true);
       } finally { stop(); }
+    });
+  });
+
+  describe('riders: only Crew count in Spikes, milestones, the reel and the Tab', () => {
+    const at = (day: ReturnType<typeof homeDay>, iso: string) => { day.realNow = new Date(iso); day.syncPlan(); return day; };
+    const settle = () => vi.advanceTimersByTimeAsync(0);
+    const roster = [
+      { id: 'rider', name: 'Rider', role: 'crew', is_admin: false },
+      { id: 'spotter', name: 'Spotter', role: 'trainspotter', is_admin: false },
+      { id: 'gone', name: 'Gone', role: 'put_off', is_admin: false }
+    ];
+    const names: Record<string, string> = { rider: 'Rider', spotter: 'Spotter', gone: 'Gone' };
+    let n = 0;
+    const drink = (user: string, minute: number, kind = 'beer') => ({
+      id: `d${++n}`, user, kind, stop: 'a', at: `2026-12-26T20:${String(minute).padStart(2, '0')}:00Z`, created: '', action_order: n,
+      expand: { user: { name: names[user] } }
+    });
+    const photo = (id: string, user: string, minute: number) => ({
+      id, user, kind: 'image', stop: 'a', file: `${id}.jpg`, at: `2026-12-26T20:${String(minute).padStart(2, '0')}:00Z`, created: '',
+      expand: { user: { name: names[user] } }
+    });
+    /** Answers each collection with its rows; an Error rejects that one read. */
+    function feedRows(rows: Record<string, unknown[] | Error>) {
+      mocks.getFullList.mockImplementation(async () => {
+        const answer = rows[mocks.fullLists.at(-1)!] ?? [];
+        if (answer instanceof Error) throw answer;
+        return answer;
+      });
+    }
+    function closedDay() {
+      const day = homeDay();
+      day.serverOffset = 0;
+      day.enterScope(false);
+      return at(day, '2026-12-26T23:41:00Z');
+    }
+
+    it('spike events and the reel skip a trainspotter and a put-off person', async () => {
+      const day = closedDay();
+      feedRows({
+        drink_entries: [drink('spotter', 1), drink('gone', 2), drink('rider', 3)],
+        media: [photo('p-spotter', 'spotter', 5)], users: roster
+      });
+      await day.loadFeed();
+      expect(day.spikeEvents.length).toBeGreaterThan(0);
+      expect(new Set(day.spikeEvents.map((e) => e.user))).toEqual(new Set(['rider']));
+      expect(day.spikeEvents.find((e) => e.kind === 'pathfinder')?.user).toBe('rider');
+      const reel = day.closingReel()!;
+      const text = JSON.stringify(reel);
+      expect(text).toContain('Rider');
+      expect(text).not.toContain('Spotter');
+      expect(text).not.toContain('Gone');
+      expect(reel.filter((s) => s.kind === 'photo')).toEqual([]);
+      expect(reel.find((s) => s.kind === 'finale')).toMatchObject({ total: 1 });
+      // Chat is not filtered: the trainspotter's photo is still in the feed.
+      expect(day.feed.media.map((m) => m.id)).toEqual(['p-spotter']);
+      expect(day.feed.drinks).toHaveLength(3);
+    });
+
+    it('reelReady waits for a roster read in the qualifying round', async () => {
+      const day = closedDay();
+      feedRows({ drink_entries: [drink('rider', 1)], users: new Error('offline') });
+      day.checkClosing(); await settle();
+      // The feed itself is published, but the reel is not built without a roster.
+      expect(day.feed.drinks).toHaveLength(1);
+      expect(day.feedOkRead).toBe(day.closingRead);
+      expect(day.feedError).toBe(false);
+      expect(day.reelReady).toBe(false);
+      feedRows({ drink_entries: [drink('rider', 1)], users: roster });
+      await day.loadFeed();
+      expect(day.rosterOk).toBe(day.feedOkRead);
+      expect(day.reelReady).toBe(true);
+    });
+
+    it('a failed roster read keeps the last roster', async () => {
+      const day = closedDay();
+      feedRows({ users: roster });
+      await day.loadFeed();
+      const first = day.rosterOk;
+      expect(day.roster.map((u) => u.id)).toEqual(['rider', 'spotter', 'gone']);
+      feedRows({ drink_entries: [drink('spotter', 1)], users: new Error('offline') });
+      await day.loadFeed();
+      expect(day.roster.map((u) => u.id)).toEqual(['rider', 'spotter', 'gone']);
+      expect(day.rosterOk).toBe(first);
+      expect(day.feedError).toBe(false);
+      // The last roster still filters the new feed.
+      expect(day.feed.drinks).toHaveLength(1);
+      expect(day.riderFeed.drinks).toEqual([]);
+    });
+
+    it('riderFeed drives milestones and the Tab\'s crew count', async () => {
+      const day = closedDay();
+      // Nine rider beers, then the trainspotter's: the tenth beer of the night, were it counted.
+      const drinks = [...Array.from({ length: 9 }, (_, i) => drink('rider', 1 + i)), drink('spotter', 20)];
+      feedRows({
+        drink_entries: drinks,
+        media: [photo('p-early', 'rider', 30), photo('p-cheered', 'rider', 31)],
+        chat_messages: [{ id: 'c-spotter', user: 'spotter', body: 'hi', at: '2026-12-26T20:40:00Z', expand: { user: { name: 'Spotter' } } }],
+        // The trainspotter's Cheers still counts toward what the reel picks.
+        reactions: [{ id: 'r1', user: 'spotter', target_kind: 'media', target_id: 'p-cheered', itinerary: 'r1', at: '2026-12-26T20:45:00Z' }],
+        users: roster
+      });
+      await day.loadFeed();
+      const ids = (rows: { id: string }[]) => rows.map((r) => r.id);
+      expect(ids(milestones(day.feed.drinks, day.feed.media, day.stops, day.today))).toContain('milestone:total:10');
+      expect(ids(milestones(day.riderFeed.drinks, day.riderFeed.media, day.stops, day.today))).not.toContain('milestone:total:10');
+      expect(tally(day.feed.drinks, 'a', 'rider').crew.beer).toBe(10);
+      expect(tally(day.riderFeed.drinks, 'a', 'rider').crew.beer).toBe(9);
+      // Chat is not filtered.
+      expect(day.feed.drinks).toHaveLength(10);
+      expect(ids(day.feed.messages)).toEqual(['c-spotter']);
+      expect(day.riderFeed.messages).toEqual([]);
+      expect(reactionSummary(day.riderFeed.reactions, '').get('media:p-cheered')?.count).toBe(1);
+      const photos = day.closingReel()!.filter((s) => s.kind === 'photo');
+      expect(photos.map((s) => s.kind === 'photo' && s.mediaId)).toEqual(['p-cheered']);
     });
   });
 

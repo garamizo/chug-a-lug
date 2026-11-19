@@ -13,8 +13,9 @@ import { boardingJourney, pickTrip, plannedTrain, rideHome, type Boarding, type 
 import { fetchAlerts, fetchDay, fetchNext, fetchStatus } from './feed';
 import { isEventDay as onEventDate, planNow } from './planClock';
 import { resolveCurrentRoute } from './route';
+import { riderFilter, ridersOnly } from '$lib/roles';
 import { spikes, type SpikeEvent } from './spikes';
-import type { Alert, Broadcast, BroadcastAck, ChatMessage, Checkin, DrinkEntry, FeedMode, Itinerary, Leg, Media, NextTrip, Reaction, Stop } from '$lib/types';
+import type { Alert, Broadcast, BroadcastAck, ChatMessage, Checkin, DrinkEntry, FeedMode, Itinerary, Leg, Media, NextTrip, Reaction, Stop, UserRecord } from '$lib/types';
 
 export class LiveDay {
   itinerary = $state<Itinerary | null>(null);
@@ -31,8 +32,20 @@ export class LiveDay {
   ackedIds = $state<string[]>([]);
   /** Got it taps still being saved: hidden now, so a reload racing the save cannot bring one back. */
   acking = $state<string[]>([]);
-  /** Everything the crew did on this route today: the chat, milestones, leaderboard and Tab read it. */
+  /** Everything everyone did on this route today, trainspotters included: the chat reads it. */
   feed = $state<{ drinks: DrinkEntry[]; media: Media[]; messages: ChatMessage[]; reactions: Reaction[] }>({ drinks: [], media: [], messages: [], reactions: [] });
+  /** Everyone's role (id, name, role, is_admin), read with the feed. Memory only: there is no feed mirror. */
+  roster = $state<UserRecord[]>([]);
+  /** The request number of the last feed read whose roster answered: the reel waits for one. */
+  rosterOk = $state(0);
+  /**
+   * The feed as the night's aggregates count it: riders' drinks, photos and messages only, for Spikes,
+   * milestones, the reel and the Tab's crew count. Cheers stay unfiltered: anyone's counts toward the reel.
+   */
+  riderFeed = $derived.by(() => {
+    const isRider = riderFilter(this.roster), { drinks, media, messages, reactions } = this.feed;
+    return { drinks: ridersOnly(drinks, isRider), media: ridersOnly(media, isRider), messages: ridersOnly(messages, isRider), reactions };
+  });
   feedError = $state(false);
   // One flag, one owner: the root layout (which has no live day of its own) sets this from the
   // menu, and the `(app)` layout — the only place with a route to post to — reads it to render the
@@ -106,7 +119,7 @@ export class LiveDay {
    * rows on the same `today` and `closedAt`). Rebuilt only when the feed, stops, day or Closing Time change.
    */
   spikeEvents = $derived<SpikeEvent[]>(spikes({
-    drinks: this.feed.drinks, media: this.feed.media, messages: this.feed.messages, stops: this.stops, date: this.today, closedAt: this.closedAt
+    drinks: this.riderFeed.drinks, media: this.riderFeed.media, messages: this.riderFeed.messages, stops: this.stops, date: this.today, closedAt: this.closedAt
   }));
   /**
    * The night a Closing Time reel belongs to: the route, the server's Chicago day and the simulation run.
@@ -126,11 +139,14 @@ export class LiveDay {
   get closingRead(): number | null { return this.closingAsk; }
   /** The request number of the last feed read whose answer was published. */
   get feedOkRead(): number { return this.feedOk; }
-  /** The feed holds the whole night: a read started after Closing Time, for this scope, was accepted. */
+  /**
+   * The feed holds the whole night: a read started after Closing Time, for this scope, was accepted,
+   * and so was a roster read from that round or later, so the reel never counts unfiltered rows.
+   */
   get reelReady(): boolean {
     const scope = this.closingScope;
     return this.closedAt !== null && this.closingAsk !== null && !!scope && this.closingFor === closingKey(scope)
-      && this.feedOk >= this.closingAsk;
+      && this.feedOk >= this.closingAsk && this.rosterOk >= this.closingAsk;
   }
   /**
    * Closing Time's reel from the feed as it stands: null before Closing Time or without a route. The
@@ -142,7 +158,7 @@ export class LiveDay {
     const windows = stopWindows(this.stops, this.legs, this.startAt, this.now.getTime() - this.realNow.getTime(), closedAt);
     return buildReel({
       itineraryTitle: route.title, eventDate: route.event_date, stops: this.stops, windows,
-      drinks: this.feed.drinks, media: this.feed.media, messages: this.feed.messages, reactions: this.feed.reactions,
+      drinks: this.riderFeed.drinks, media: this.riderFeed.media, messages: this.riderFeed.messages, reactions: this.riderFeed.reactions,
       spikes: this.spikeEvents, date: this.today, closedAt
     });
   }
@@ -367,16 +383,19 @@ export class LiveDay {
     // Cheers by the event clock too (stamped by the server), not `created`: a rehearsal's wall time is another day.
     const reactionsToday = pb.filter('itinerary = {:id} && at >= {:start} && at < {:end}', { id, start, end });
     try {
-      const [drinks, media, messages, reactions] = await Promise.all([
+      const [drinks, media, messages, reactions, roster] = await Promise.all([
         pb.collection('drink_entries').getFullList<DrinkEntry>({ filter: byStop, expand: 'user,stop', sort: 'at,action_order,created,id', cache: 'no-store' }),
         pb.collection('media').getFullList<Media>({ filter: mediaByRoute, expand: 'user', sort: 'at,created,id', cache: 'no-store' }),
         pb.collection('chat_messages').getFullList<ChatMessage>({ filter: byRoute, expand: 'user', sort: 'at,created,id', cache: 'no-store' }),
-        pb.collection('reactions').getFullList<Reaction>({ filter: reactionsToday, cache: 'no-store' })
+        pb.collection('reactions').getFullList<Reaction>({ filter: reactionsToday, cache: 'no-store' }),
+        // The roster rides along but never fails the round: without it the last roster stands.
+        pb.collection('users').getFullList<UserRecord>({ fields: 'id,name,role,is_admin', cache: 'no-store' }).catch(() => null)
       ]);
       if (request !== this.feedRead || scope !== this.scopeKey || id !== this.itinerary?.id) return;
       this.feed = { drinks, media, messages, reactions };
       this.feedError = false;
       this.feedOk = request;
+      if (roster) { this.roster = roster; this.rosterOk = request; }
     } catch { if (request === this.feedRead && scope === this.scopeKey) this.feedError = true; }
   }
 
