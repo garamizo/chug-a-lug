@@ -44,14 +44,18 @@ In `web/tests/e2e/helpers.ts` add `expectRaisedClose(page: Page, sheetId: string
 - the X's top is above the sheet's top and its bottom is below it;
 - the gap from the X's right edge to the sheet's right edge is `>= 0` and `< 40`;
 - `document.elementFromPoint(xCentre, sheetTop - 8)` resolves inside `[data-testid=closeId]`;
-- when `bodyId` is given, it repeats that hit test after setting the body's `scrollTop = scrollHeight`.
+- when `bodyId` is given, it appends a 2000px-tall spacer `div` to the body (a test-only DOM change that makes the scroller overflow), sets `scrollTop = scrollHeight`, and asserts `scrollHeight > clientHeight` and `scrollTop > 0`. Only then does it repeat the straddle and hit-test checks.
 
 Call it in:
-- `liveUx.spec.ts` stop-sheet test with `('stop-sheet', 'sheet-close', 'stop-sheet-body')`. It replaces the old right-edge lines, and the `overscroll-behavior-y` assertion moves to `stop-sheet-body`.
+- `liveUx.spec.ts` stop-sheet test with `('stop-sheet', 'sheet-close', 'stop-sheet-body')`. It replaces the old right-edge lines, and the `overscroll-behavior-y` assertion moves to `stop-sheet-body`. Call it **after** the `sheet-next` swipe check below, because the spacer stays in the DOM.
 - `planning.spec.ts` ~L50 with `('venue-sheet', 'venue-sheet-close', 'venue-sheet-body')`.
-- Any one test that opens the Tab (e.g. `chat.spec.ts` before its `tab-close` click) with `('tab-sheet', 'tab-close')`.
+- `chat.spec.ts` first test, before its `tab-close` click (~L26), with `('tab-sheet', 'tab-close')`.
 
-In `layoutSweep.spec.ts` "Conductor pages", add `{ name: 'station picker, venue sheet', … }`. It opens `/plan/${ids.itineraryId}/add`, picks a station whose venues exist in the fixture (as `planning.spec.ts` does), clicks `venue-node-0`, and is ready on `venue-sheet`. If that fixture has no venues, use the draft from `planning.spec.ts`'s setup pattern instead.
+Add these checks to `liveUx.spec.ts`:
+- **Swipe from inside the scroller.** In the stop-sheet test, before the `sheet-next` click: `stop-sheet-body.dispatchEvent('touchstart', { touches: [{ identifier: 0, clientX: 300, clientY: 400 }] })`, then `dispatchEvent('touchend', { changedTouches: [{ identifier: 0, clientX: 150, clientY: 400 }] })`. Expect `sheet-name` to be "Berwyn Beer Hall". Then go back to the first stop with `sheet-prev`, so the existing `sheet-next` line still reads the same.
+- **Lightbox covers the X.** In "a photo opened from the sheet sits above it", while the Lightbox is open over the sheet, the raised X's centre point (`elementFromPoint`) must not resolve inside `[data-testid=sheet-close]`. Read the X's box before opening the photo.
+
+In `layoutSweep.spec.ts` "Conductor pages", add `{ name: 'station picker, venue sheet', … }`. The `eventDay` fixture has no nearby venues, and the harness disables Google/Overpass. The state therefore installs, before it navigates, a `page.route('**/api/places/nearby**', …)` mock returning one venue for `NAPERVILLE` (the planning.spec shape, `id: 'node/2'`). It then opens `/plan/${ids.itineraryId}/add?station=NAPERVILLE&side=left`, clicks `venue-node-2`, and is ready on `venue-sheet`. Unroute it afterwards.
 
 - [ ] **Step 2: Run to verify it fails**
 
