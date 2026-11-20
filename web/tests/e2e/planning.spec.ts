@@ -53,6 +53,13 @@ test('draft with real train times, layover change, card edits, votes, comments, 
   await page.getByTestId('venue-sheet-close').click();
   await expect(page.getByTestId('venue-sheet')).toBeHidden();
   await expect(page).toHaveURL(/\/add\?station=NAPERVILLE&side=left$/);
+  // A tap inside the sheet keeps it; a tap on the dimmed screen behind closes it.
+  await page.getByTestId('venue-node-2').click();
+  await page.getByTestId('venue-sheet').getByRole('heading', { name: 'Naperville Wine Bar' }).click();
+  await expect(page.getByTestId('venue-sheet')).toBeVisible();
+  await page.mouse.click(20, 20);
+  await expect(page.getByTestId('venue-sheet')).toBeHidden();
+  await expect(page).toHaveURL(/\/add\?station=NAPERVILLE&side=left$/);
   await page.getByTestId('venue-node-2').click();
   await page.getByTestId('sheet-add').click();
   await expect(page).toHaveURL(editUrl);

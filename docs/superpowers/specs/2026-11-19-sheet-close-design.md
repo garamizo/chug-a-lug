@@ -58,9 +58,10 @@ everywhere: a round X at the top right, raised so it straddles the sheet's top b
 ## Trade-off accepted
 
 Close moves from the bottom right (in reach of a right thumb) to the top right. Back (the
-`?stop=`/`?venue=` history entry) and Escape still close the stop and venue sheets. They have no
-tap-outside close today, and this change does not add one. The Tab keeps its scrim tap and
-Escape.
+`?stop=`/`?venue=` history entry) and Escape still close the stop and venue sheets, and (added at
+the user's request after review) so does a tap on the dimmed screen behind them, as RoleWindow does:
+a click whose target is the padding-less dialog itself fell on the backdrop. The Tab keeps its
+scrim tap and Escape.
 
 ## Tests
 

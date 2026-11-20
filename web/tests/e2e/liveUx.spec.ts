@@ -63,6 +63,12 @@ test('the route strip shows where the crew is; a stop, tapped or shared, opens i
   // The strip opens any stop, even from a scrolled Live, and a shared stop link opens the sheet; closing it stays on Live.
   await openSheetFromScrolledPage(page, page.getByTestId('strip-stop-1'), 'stop-sheet');
   await expect(page.getByTestId('sheet-name')).toHaveText('Berwyn Beer Hall');
+  // A tap inside the sheet keeps it; a tap on the dimmed screen behind closes it.
+  await page.getByTestId('sheet-name').click();
+  await expect(page.getByTestId('stop-sheet')).toBeVisible();
+  await page.mouse.click(20, 20);
+  await expect(page.getByTestId('stop-sheet')).toBeHidden();
+  await expect(page).toHaveURL(/\/live$/);
   await page.goto(`/live?stop=${ids.secondStopId}`);
   await expect(page.getByTestId('sheet-name')).toHaveText('Berwyn Beer Hall');
   await page.getByTestId('sheet-close').click();

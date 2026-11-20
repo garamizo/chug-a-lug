@@ -37,8 +37,10 @@
   });
 </script>
 
+<!-- The dialog has no padding of its own, so a click whose target is the dialog fell on the backdrop. -->
 <dialog bind:this={dialog} class="sheet" aria-label={copy.venueDetails} data-testid="venue-sheet"
-  oncancel={(e) => { e.preventDefault(); onclose(); }}>
+  oncancel={(e) => { e.preventDefault(); onclose(); }}
+  onclick={(e) => { if (e.target === dialog) onclose(); }}>
   {#if venue}
     <SheetClose label={copy.closeSheet} onclick={onclose} testid="venue-sheet-close" />
     <div class="body" data-testid="venue-sheet-body">

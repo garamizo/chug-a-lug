@@ -38,8 +38,10 @@
   const go = (step: number) => { const next = ordered[index + step]; if (next) pageStop(next.id); };
 </script>
 
+<!-- The dialog has no padding of its own, so a click whose target is the dialog fell on the backdrop. -->
 <dialog bind:this={dialog} class="sheet" aria-label={copy.stopDetails} data-testid="stop-sheet"
   oncancel={(e) => { e.preventDefault(); closeStop(); }}
+  onclick={(e) => { if (e.target === dialog) closeStop(); }}
   ontouchstart={(e) => (startX = e.touches[0].clientX)}
   ontouchend={(e) => { const dx = e.changedTouches[0].clientX - startX; if (Math.abs(dx) > 60) go(dx < 0 ? 1 : -1); }}>
   {#if stop}
